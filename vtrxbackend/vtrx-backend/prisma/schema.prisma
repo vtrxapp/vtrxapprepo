@@ -1,0 +1,386 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// VTRX — Prisma Database Schema
+// ─────────────────────────────────────────────────────────────────────────────
+// This file defines every table in your PostgreSQL database.
+// Think of it like a blueprint for your data.
+//
+// After editing this file, run:
+//   npm run db:migrate -- --name your_change_name
+// to apply changes to your real database.
+// ─────────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── USERS ─────────────────────────────────────────────────────────────────────
+// Stores your app users. cognitoId links to AWS Cognito (the real auth system).
+model User {
+  id              String    @id @default(uuid())
+  cognitoId       String    @unique  // AWS Cognito user ID
+  email           String    @unique
+  username        String    @unique
+  name            String?
+  avatarUrl       String?
+  gender          String?
+  age             Int?
+  weight          Float?    // in lbs
+  height          String?   // e.g. "5'10"
+  goal            String?   // "Build Muscle", "Lose Weight" etc
+  fitnessLevel    String?   // "Beginner", "Intermediate", "Advanced"
+  daysPerWeek     Int?      @default(3)
+  equipment       String[]  // ["Dumbbells", "Barbell"] etc
+  location        String?   // "Full Gym", "Home" etc
+  isPremium       Boolean   @default(false)
+  streakDays      Int       @default(0)
+  lastActiveAt    DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations — one user has many of these
+  workoutLogs     WorkoutLog[]
+  progressLogs    ProgressLog[]
+  savedWorkouts   SavedWorkout[]
+  savedMeals      SavedMeal[]
+  notifications   Notification[]
+  subscription    Subscription?
+  moodLogs        MoodLog[]
+  posts           CommunityPost[]
+  comments        Comment[]
+  deviceTokens    DeviceToken[]
+  personalRecords PersonalRecord[]
+  waterLogs       WaterLog[]
+
+  @@map("users")
+}
+
+// ── WORKOUTS ──────────────────────────────────────────────────────────────────
+// A workout programme (e.g. "Day 1 — Upper Body Strength")
+model Workout {
+  id          String     @id @default(uuid())
+  name        String
+  type        String     // "STRENGTH", "CARDIO", "HIIT", "RECOVERY"
+  duration    Int        // in minutes
+  calories    Int?
+  difficulty  String?    // "Beginner", "Intermediate", "Advanced"
+  description String?
+  imageUrl    String?
+  ymoveId     String?    // Ymove platform workout ID (for video content)
+  isPublic    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // A workout has many exercises
+  exercises   WorkoutExercise[]
+  logs        WorkoutLog[]
+  savedBy     SavedWorkout[]
+
+  @@map("workouts")
+}
+
+// ── EXERCISES ─────────────────────────────────────────────────────────────────
+// Individual exercises (Bench Press, Squats etc)
+model Exercise {
+  id           String   @id @default(uuid())
+  name         String
+  muscleGroup  String   // "Chest", "Legs", "Back" etc
+  equipment    String?  // "Barbell", "Dumbbells", "Bodyweight"
+  instructions String?
+  videoUrl     String?  // S3/CloudFront URL or Ymove video ID
+  ymoveId      String?  // Ymove exercise ID
+  thumbnailUrl String?
+  createdAt    DateTime @default(now())
+
+  // This exercise can appear in many workouts
+  workouts     WorkoutExercise[]
+  sets         ExerciseSet[]
+
+  @@map("exercises")
+}
+
+// ── WORKOUT_EXERCISES (junction table) ───────────────────────────────────────
+// Links workouts to exercises, with order and target sets/reps
+model WorkoutExercise {
+  id         String   @id @default(uuid())
+  workoutId  String
+  exerciseId String
+  order      Int      // display order in workout
+  sets       Int      @default(3)
+  reps       String   // "8-12" or "30s" etc
+  restSecs   Int?     @default(60)
+  notes      String?
+
+  workout    Workout  @relation(fields: [workoutId],  references: [id], onDelete: Cascade)
+  exercise   Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  @@unique([workoutId, exerciseId, order])
+  @@map("workout_exercises")
+}
+
+// ── WORKOUT_LOGS ──────────────────────────────────────────────────────────────
+// Records every time a user completes a workout
+model WorkoutLog {
+  id           String        @id @default(uuid())
+  userId       String
+  workoutId    String?
+  name         String        // workout name at time of logging
+  type         String
+  duration     Int           // actual duration in minutes
+  caloriesBurned Int?
+  volume       Float?        // total weight lifted (kg)
+  notes        String?
+  completedAt  DateTime      @default(now())
+  createdAt    DateTime      @default(now())
+
+  user         User          @relation(fields: [userId],    references: [id], onDelete: Cascade)
+  workout      Workout?      @relation(fields: [workoutId], references: [id], onDelete: SetNull)
+  sets         ExerciseSet[]
+  aiSummary    AISummary?
+
+  @@map("workout_logs")
+}
+
+// ── EXERCISE_SETS ─────────────────────────────────────────────────────────────
+// Individual sets logged during a workout
+model ExerciseSet {
+  id           String      @id @default(uuid())
+  workoutLogId String
+  exerciseId   String
+  setNumber    Int
+  reps         Int?
+  weight       Float?      // in lbs
+  duration     Int?        // in seconds (for timed sets)
+  completed    Boolean     @default(false)
+  createdAt    DateTime    @default(now())
+
+  workoutLog   WorkoutLog  @relation(fields: [workoutLogId], references: [id], onDelete: Cascade)
+  exercise     Exercise    @relation(fields: [exerciseId],   references: [id], onDelete: Cascade)
+
+  @@map("exercise_sets")
+}
+
+// ── MOOD_LOGS ─────────────────────────────────────────────────────────────────
+// Daily mood/energy check-ins from the home screen
+model MoodLog {
+  id        String   @id @default(uuid())
+  userId    String
+  mood      String   // "empty", "low", "okay", "good", "peak"
+  notes     String?
+  loggedAt  DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("mood_logs")
+}
+
+// ── PROGRESS_LOGS ─────────────────────────────────────────────────────────────
+// Weekly body measurement snapshots
+model ProgressLog {
+  id        String   @id @default(uuid())
+  userId    String
+  weight    Float?
+  bodyFat   Float?
+  waist     Float?
+  chest     Float?
+  arms      Float?
+  notes     String?
+  photoUrl  String?  // S3 URL for progress photos
+  loggedAt  DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("progress_logs")
+}
+
+// ── AI_SUMMARIES ──────────────────────────────────────────────────────────────
+// AI-generated coaching summaries after each workout
+model AISummary {
+  id           String     @id @default(uuid())
+  workoutLogId String     @unique
+  summary      String     // The AI-generated text
+  keyInsights  String[]   // Array of bullet points
+  recommendations String[] // What to do next
+  energyKey    String?    // Mood context used to generate it
+  model        String?    // "gpt-4o", "claude-3-5-sonnet" etc
+  tokensUsed   Int?
+  createdAt    DateTime   @default(now())
+
+  workoutLog   WorkoutLog @relation(fields: [workoutLogId], references: [id], onDelete: Cascade)
+
+  @@map("ai_summaries")
+}
+
+// ── RECIPES ───────────────────────────────────────────────────────────────────
+// Nutrition recipes (from Ymove API or our own)
+model Recipe {
+  id           String      @id @default(uuid())
+  name         String
+  calories     Int
+  protein      Float       // grams
+  carbs        Float       // grams
+  fat          Float       // grams
+  prepTime     Int?        // minutes
+  servings     Int?        @default(1)
+  imageUrl     String?
+  tags         String[]    // ["High Protein", "Vegan", "Muscle Gain"]
+  instructions String?
+  ymoveId      String?     // Ymove recipe ID
+  isPublic     Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+
+  savedBy      SavedMeal[]
+
+  @@map("recipes")
+}
+
+// ── SAVED_WORKOUTS ────────────────────────────────────────────────────────────
+model SavedWorkout {
+  id        String   @id @default(uuid())
+  userId    String
+  workoutId String
+  savedAt   DateTime @default(now())
+
+  user      User     @relation(fields: [userId],    references: [id], onDelete: Cascade)
+  workout   Workout  @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workoutId])
+  @@map("saved_workouts")
+}
+
+// ── SAVED_MEALS ───────────────────────────────────────────────────────────────
+model SavedMeal {
+  id       String   @id @default(uuid())
+  userId   String
+  recipeId String
+  savedAt  DateTime @default(now())
+
+  user     User     @relation(fields: [userId],   references: [id], onDelete: Cascade)
+  recipe   Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, recipeId])
+  @@map("saved_meals")
+}
+
+// ── NOTIFICATIONS ─────────────────────────────────────────────────────────────
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String   // "workout_reminder", "streak_alert", "ai_ready" etc
+  title     String
+  body      String
+  read      Boolean  @default(false)
+  data      Json?    // extra metadata
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+// ── SUBSCRIPTIONS ─────────────────────────────────────────────────────────────
+model Subscription {
+  id                String    @id @default(uuid())
+  userId            String    @unique
+  plan              String    // "free", "monthly", "annual"
+  status            String    // "active", "cancelled", "expired"
+  stripeCustomerId  String?
+  stripeSubId       String?
+  currentPeriodEnd  DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+// ── COMMUNITY_POSTS ───────────────────────────────────────────────────────────
+// Social feed posts (coming soon feature)
+model CommunityPost {
+  id        String    @id @default(uuid())
+  userId    String
+  content   String
+  imageUrl  String?
+  likes     Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comments  Comment[]
+
+  @@map("community_posts")
+}
+
+// ── COMMENTS ──────────────────────────────────────────────────────────────────
+model Comment {
+  id        String        @id @default(uuid())
+  postId    String
+  userId    String
+  content   String
+  createdAt DateTime      @default(now())
+
+  post      CommunityPost @relation(fields: [postId],  references: [id], onDelete: Cascade)
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("comments")
+}
+
+// ── DEVICE_TOKENS ─────────────────────────────────────────────────────────────
+// Firebase push notification tokens — one per device
+model DeviceToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique  // Firebase FCM token
+  platform  String   // "ios" or "android"
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("device_tokens")
+}
+
+// ── STRIPE_EVENTS ─────────────────────────────────────────────────────────────
+// Log every Stripe webhook event for debugging and idempotency
+model StripeEvent {
+  id          String   @id // Stripe event ID (e.g. evt_xxx)
+  type        String   // "payment_intent.succeeded" etc
+  processed   Boolean  @default(false)
+  data        Json
+  createdAt   DateTime @default(now())
+
+  @@map("stripe_events")
+}
+
+// ── PERSONAL_RECORDS ──────────────────────────────────────────────────────────
+model PersonalRecord {
+  id          String   @id @default(uuid())
+  userId      String
+  exerciseName String
+  weight      Float?   // in lbs
+  reps        Int?
+  duration    Int?     // seconds (for timed records)
+  achievedAt  DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("personal_records")
+}
+
+// ── WATER_LOGS ────────────────────────────────────────────────────────────────
+model WaterLog {
+  id        String   @id @default(uuid())
+  userId    String
+  glasses   Int      @default(0)
+  loggedAt  DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("water_logs")
+}

@@ -1,0 +1,51 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# amplify.yml — AWS Amplify Build Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+# This file tells AWS Amplify how to build and deploy your React app.
+# AWS Amplify reads this file automatically when you connect your GitHub repo.
+#
+# How AWS Amplify works:
+# 1. You connect your GitHub repo in the AWS Amplify console
+# 2. Every time you push to your main branch, Amplify runs this build
+# 3. It installs dependencies, builds the app, and deploys to a CDN
+# 4. Your app is live at a URL like: https://main.xxxx.amplifyapp.com
+# ─────────────────────────────────────────────────────────────────────────────
+
+version: 1
+
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - cd vtrx-frontend
+        - npm install
+
+    build:
+      commands:
+        - npm run build
+
+  artifacts:
+    # The folder Amplify deploys — must match vite.config.js outDir
+    baseDirectory: vtrx-frontend/dist
+    files:
+      - '**/*'
+
+  cache:
+    paths:
+      - vtrx-frontend/node_modules/**/*
+
+  # ── React Router fix for AWS Amplify ─────────────────────────────────────
+  # Without this, refreshing the page on any route other than / gives a 404.
+  # This tells Amplify to always serve index.html and let React Router handle routing.
+  customHeaders:
+    - pattern: '**/*'
+      headers:
+        - key: Cache-Control
+          value: 'public, max-age=31536000, immutable'
+
+# Routing rewrites — CRITICAL for React Router to work on Amplify
+# Without this: /dashboard works when you click a link but 404s on refresh
+rewrites:
+  - source: '</^[^.]+$|\.(?!(css|gif|ico|jpg|js|png|txt|svg|woff|woff2|ttf|map|json)$)([^.]+$)/>'
+    target: '/index.html'
+    status: '200'

@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>VTRX — AI-Powered Fitness Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --blue:#00A3FF;--blue2:#0066CC;--dark:#050810;--card:#0c1220;
+  --border:rgba(0,163,255,0.15);--text:#e8eaf0;--muted:#7a8499;
+  --font-display:'Bebas Neue',sans-serif;
+  --font-body:'DM Sans',sans-serif;
+  --font-mono:'Space Mono',monospace;
+}
+html{scroll-behavior:smooth;overflow-x:hidden}
+body{background:var(--dark);color:var(--text);font-family:var(--font-body);overflow-x:hidden;cursor:none}
+
+/* ── CURSOR ─────────────────────────────────────────────────────────────────── */
+.cursor{position:fixed;width:12px;height:12px;background:var(--blue);border-radius:50%;pointer-events:none;z-index:9999;transform:translate(-50%,-50%);transition:transform 0.1s,width 0.2s,height 0.2s;mix-blend-mode:screen}
+.cursor-ring{position:fixed;width:40px;height:40px;border:1.5px solid rgba(0,163,255,0.5);border-radius:50%;pointer-events:none;z-index:9998;transform:translate(-50%,-50%);transition:transform 0.15s ease,width 0.2s,height 0.2s,border-color 0.2s}
+.cursor.expand{width:20px;height:20px}
+.cursor-ring.expand{width:60px;height:60px;border-color:var(--blue)}
+
+/* ── NAV ─────────────────────────────────────────────────────────────────────── */
+nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:20px 48px;display:flex;align-items:center;justify-content:space-between;transition:background 0.3s,backdrop-filter 0.3s}
+nav.scrolled{background:rgba(5,8,16,0.85);backdrop-filter:blur(20px);border-bottom:1px solid var(--border)}
+.nav-logo{font-family:var(--font-display);font-size:32px;color:var(--blue);letter-spacing:2px;text-decoration:none}
+.nav-links{display:flex;align-items:center;gap:36px}
+.nav-links a{color:var(--muted);text-decoration:none;font-size:14px;font-weight:500;letter-spacing:0.5px;transition:color 0.2s}
+.nav-links a:hover{color:var(--text)}
+.nav-cta{background:var(--blue);color:#fff;padding:10px 24px;border-radius:50px;font-size:14px;font-weight:600;text-decoration:none;transition:all 0.2s;letter-spacing:0.5px}
+.nav-cta:hover{background:#fff;color:var(--dark);transform:scale(1.05)}
+.nav-mobile{display:none;flex-direction:column;gap:5px;cursor:pointer;padding:4px}
+.nav-mobile span{width:24px;height:2px;background:var(--text);display:block;transition:all 0.3s}
+
+/* ── CANVAS ──────────────────────────────────────────────────────────────────── */
+#hero-canvas{position:absolute;inset:0;z-index:0}
+
+/* ── HERO ────────────────────────────────────────────────────────────────────── */
+#hero{position:relative;min-height:100vh;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:120px 48px 80px}
+.hero-inner{position:relative;z-index:2;text-align:center;max-width:900px;margin:0 auto}
+.hero-badge{display:inline-flex;align-items:center;gap:8px;background:rgba(0,163,255,0.1);border:1px solid rgba(0,163,255,0.3);border-radius:50px;padding:8px 18px;margin-bottom:32px;font-size:12px;font-weight:600;color:var(--blue);letter-spacing:1.5px;text-transform:uppercase}
+.hero-badge::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--blue);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(1.5)}}
+.hero-title{font-family:var(--font-display);font-size:clamp(72px,12vw,160px);line-height:0.9;letter-spacing:2px;margin-bottom:24px}
+.hero-title span{display:block}
+.hero-title .line1{color:var(--text)}
+.hero-title .line2{color:var(--blue);text-shadow:0 0 80px rgba(0,163,255,0.5)}
+.hero-sub{font-size:18px;color:var(--muted);line-height:1.7;max-width:520px;margin:0 auto 48px;font-weight:300}
+.hero-sub strong{color:var(--text);font-weight:500}
+.hero-actions{display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap}
+.btn-primary{background:var(--blue);color:#fff;padding:16px 36px;border-radius:50px;font-size:15px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;gap:10px;transition:all 0.3s;letter-spacing:0.5px;border:none;cursor:pointer}
+.btn-primary:hover{background:#fff;color:var(--dark);transform:translateY(-2px);box-shadow:0 20px 60px rgba(0,163,255,0.3)}
+.btn-secondary{background:transparent;color:var(--text);padding:16px 36px;border-radius:50px;font-size:15px;font-weight:500;text-decoration:none;display:inline-flex;align-items:center;gap:10px;transition:all 0.3s;border:1px solid rgba(255,255,255,0.15)}
+.btn-secondary:hover{border-color:var(--blue);color:var(--blue);transform:translateY(-2px)}
+.btn-store{background:rgba(255,255,255,0.06);color:var(--text);padding:14px 28px;border-radius:14px;font-size:13px;font-weight:500;text-decoration:none;display:inline-flex;align-items:center;gap:10px;transition:all 0.3s;border:1px solid rgba(255,255,255,0.1)}
+.btn-store:hover{background:rgba(255,255,255,0.1);border-color:rgba(255,255,255,0.2);transform:translateY(-2px)}
+.btn-store svg{opacity:0.9}
+.hero-stats{display:flex;align-items:center;justify-content:center;gap:48px;margin-top:64px;padding-top:48px;border-top:1px solid var(--border)}
+.stat{text-align:center}
+.stat-num{font-family:var(--font-display);font-size:42px;color:var(--blue);letter-spacing:1px;display:block}
+.stat-label{font-size:12px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-top:4px}
+.hero-scroll{position:absolute;bottom:32px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:8px;opacity:0.4}
+.hero-scroll span{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--muted)}
+.scroll-line{width:1px;height:60px;background:linear-gradient(to bottom,var(--blue),transparent);animation:scrollLine 2s ease-in-out infinite}
+@keyframes scrollLine{0%{transform:scaleY(0);transform-origin:top}50%{transform:scaleY(1);transform-origin:top}51%{transform-origin:bottom}100%{transform:scaleY(0);transform-origin:bottom}}
+
+/* ── SECTIONS ────────────────────────────────────────────────────────────────── */
+section{padding:120px 48px;position:relative}
+.section-label{font-size:11px;letter-spacing:3px;text-transform:uppercase;color:var(--blue);font-family:var(--font-mono);margin-bottom:16px}
+.section-title{font-family:var(--font-display);font-size:clamp(42px,6vw,80px);line-height:1;margin-bottom:20px;letter-spacing:1px}
+.section-sub{font-size:17px;color:var(--muted);line-height:1.7;max-width:560px;font-weight:300}
+.container{max-width:1200px;margin:0 auto}
+
+/* ── NOISE OVERLAY ───────────────────────────────────────────────────────────── */
+body::before{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.035'/%3E%3C/svg%3E");pointer-events:none;z-index:9997;opacity:0.4}
+
+/* ── FEATURES ────────────────────────────────────────────────────────────────── */
+#features{background:linear-gradient(180deg,var(--dark) 0%,#060c18 100%)}
+.features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:2px;margin-top:80px}
+.feature-card{background:var(--card);padding:40px 36px;position:relative;overflow:hidden;transition:all 0.4s;border:1px solid transparent}
+.feature-card::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(0,163,255,0.06) 0%,transparent 60%);opacity:0;transition:opacity 0.4s}
+.feature-card:hover{border-color:var(--border);transform:translateY(-4px)}
+.feature-card:hover::before{opacity:1}
+.feature-icon{width:52px;height:52px;border-radius:14px;background:rgba(0,163,255,0.1);border:1px solid rgba(0,163,255,0.2);display:flex;align-items:center;justify-content:center;margin-bottom:24px}
+.feature-title{font-family:var(--font-display);font-size:26px;letter-spacing:0.5px;margin-bottom:12px}
+.feature-desc{font-size:15px;color:var(--muted);line-height:1.7;font-weight:300}
+.feature-tag{display:inline-block;margin-top:20px;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--blue);font-family:var(--font-mono)}
+
+/* ── AI SECTION ──────────────────────────────────────────────────────────────── */
+#ai{overflow:hidden}
+.ai-layout{display:grid;grid-template-columns:1fr 1fr;gap:80px;align-items:center;margin-top:80px}
+.ai-visual{position:relative;height:500px}
+#ai-canvas{position:absolute;inset:0;border-radius:20px;overflow:hidden}
+.ai-card{position:absolute;background:rgba(12,18,32,0.9);backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:16px;padding:20px 24px}
+.ai-card.card1{bottom:40px;left:20px;right:20px}
+.ai-card.card2{top:30px;right:-20px;width:200px}
+.ai-card-label{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--blue);font-family:var(--font-mono);margin-bottom:8px}
+.ai-card-text{font-size:13px;color:var(--text);line-height:1.6}
+.ai-typing{display:flex;gap:4px;margin-top:8px}
+.ai-typing span{width:6px;height:6px;border-radius:50%;background:var(--blue);animation:typing 1.4s infinite}
+.ai-typing span:nth-child(2){animation-delay:0.2s}
+.ai-typing span:nth-child(3){animation-delay:0.4s}
+@keyframes typing{0%,60%,100%{transform:translateY(0);opacity:0.4}30%{transform:translateY(-6px);opacity:1}}
+.ai-stat{text-align:center;padding:16px}
+.ai-stat-num{font-family:var(--font-display);font-size:28px;color:var(--blue)}
+.ai-stat-label{font-size:11px;color:var(--muted);margin-top:2px}
+.ai-features{display:flex;flex-direction:column;gap:28px}
+.ai-feature{display:flex;gap:20px;align-items:flex-start}
+.ai-feature-dot{width:36px;height:36px;border-radius:10px;background:rgba(0,163,255,0.1);border:1px solid rgba(0,163,255,0.2);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
+.ai-feature-title{font-size:16px;font-weight:600;margin-bottom:6px;color:var(--text)}
+.ai-feature-desc{font-size:14px;color:var(--muted);line-height:1.6;font-weight:300}
+
+/* ── PRICING ─────────────────────────────────────────────────────────────────── */
+#pricing{background:linear-gradient(180deg,#060c18 0%,var(--dark) 100%)}
+.pricing-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:64px;max-width:800px;margin-left:auto;margin-right:auto}
+.pricing-card{background:var(--card);border:1px solid var(--border);border-radius:24px;padding:40px;position:relative;overflow:hidden;transition:all 0.3s}
+.pricing-card.featured{border-color:var(--blue);background:linear-gradient(135deg,rgba(0,163,255,0.08) 0%,var(--card) 100%)}
+.pricing-card.featured::before{content:'MOST POPULAR';position:absolute;top:20px;right:20px;font-size:10px;letter-spacing:2px;color:var(--blue);font-family:var(--font-mono);background:rgba(0,163,255,0.1);padding:4px 10px;border-radius:20px;border:1px solid rgba(0,163,255,0.2)}
+.pricing-name{font-family:var(--font-display);font-size:24px;letter-spacing:1px;margin-bottom:8px}
+.pricing-price{display:flex;align-items:baseline;gap:4px;margin:20px 0}
+.price-amount{font-family:var(--font-display);font-size:56px;color:var(--blue)}
+.price-period{color:var(--muted);font-size:14px}
+.pricing-desc{font-size:14px;color:var(--muted);margin-bottom:32px;line-height:1.6}
+.pricing-features{list-style:none;display:flex;flex-direction:column;gap:14px;margin-bottom:36px}
+.pricing-features li{display:flex;align-items:center;gap:12px;font-size:14px;color:var(--text)}
+.pricing-features li::before{content:'';width:16px;height:16px;border-radius:50%;background:rgba(0,163,255,0.15);border:1px solid rgba(0,163,255,0.3);flex-shrink:0;background-image:url("data:image/svg+xml,%3Csvg width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2300A3FF' stroke-width='3' xmlns='http://www.w3.org/2000/svg'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:center}
+.pricing-features li.locked{opacity:0.35}
+.pricing-features li.locked::before{background-image:url("data:image/svg+xml,%3Csvg width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a8499' stroke-width='2.5' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='3' y='11' width='18' height='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0110 0v4'/%3E%3C/svg%3E");border-color:rgba(122,132,153,0.2);background-color:rgba(122,132,153,0.1)}
+.trial-badge{text-align:center;margin-top:32px;font-size:13px;color:var(--muted)}
+.trial-badge strong{color:var(--blue)}
+
+/* ── TESTIMONIALS ────────────────────────────────────────────────────────────── */
+#testimonials{overflow:hidden}
+.testimonials-track{display:flex;gap:24px;margin-top:60px;animation:scroll-left 40s linear infinite}
+.testimonials-track:hover{animation-play-state:paused}
+@keyframes scroll-left{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.testimonial-card{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:32px;min-width:340px;flex-shrink:0}
+.testimonial-stars{display:flex;gap:4px;margin-bottom:16px}
+.testimonial-stars svg{color:#FFB800}
+.testimonial-text{font-size:15px;color:var(--text);line-height:1.7;font-weight:300;margin-bottom:20px}
+.testimonial-author{display:flex;align-items:center;gap:12px}
+.testimonial-avatar{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,var(--blue),var(--blue2));display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-size:18px;color:#fff}
+.testimonial-name{font-size:14px;font-weight:600;color:var(--text)}
+.testimonial-role{font-size:12px;color:var(--muted)}
+
+/* ── HOW IT WORKS ────────────────────────────────────────────────────────────── */
+#how{background:linear-gradient(180deg,var(--dark) 0%,#060c18 100%)}
+.steps-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin-top:80px;position:relative}
+.steps-grid::before{content:'';position:absolute;top:36px;left:12.5%;right:12.5%;height:1px;background:linear-gradient(to right,transparent,var(--border),var(--blue),var(--border),transparent);z-index:0}
+.step-item{padding:32px 24px;text-align:center;position:relative;z-index:1}
+.step-num{width:72px;height:72px;border-radius:50%;background:var(--card);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;margin:0 auto 24px;font-family:var(--font-display);font-size:28px;color:var(--blue);transition:all 0.3s}
+.step-item:hover .step-num{background:var(--blue);color:#fff;border-color:var(--blue);transform:scale(1.1)}
+.step-title{font-size:16px;font-weight:600;margin-bottom:8px;color:var(--text)}
+.step-desc{font-size:13px;color:var(--muted);line-height:1.6}
+
+/* ── DOWNLOAD ────────────────────────────────────────────────────────────────── */
+#download{text-align:center;position:relative;overflow:hidden}
+#download-canvas{position:absolute;inset:0;z-index:0}
+.download-inner{position:relative;z-index:1}
+.download-title{font-family:var(--font-display);font-size:clamp(52px,8vw,100px);line-height:0.95;margin-bottom:24px;letter-spacing:1px}
+.download-sub{font-size:17px;color:var(--muted);max-width:480px;margin:0 auto 48px;line-height:1.7;font-weight:300}
+.download-stores{display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap;margin-bottom:32px}
+.download-note{font-size:12px;color:var(--muted);letter-spacing:1px}
+
+/* ── FOOTER ──────────────────────────────────────────────────────────────────── */
+footer{border-top:1px solid var(--border);padding:60px 48px 40px}
+.footer-inner{max-width:1200px;margin:0 auto}
+.footer-top{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:60px;margin-bottom:60px}
+.footer-brand-name{font-family:var(--font-display);font-size:36px;color:var(--blue);letter-spacing:2px;margin-bottom:12px}
+.footer-brand-desc{font-size:14px;color:var(--muted);line-height:1.7;font-weight:300}
+.footer-col-title{font-size:12px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);font-family:var(--font-mono);margin-bottom:20px}
+.footer-links{list-style:none;display:flex;flex-direction:column;gap:12px}
+.footer-links a{color:var(--muted);text-decoration:none;font-size:14px;transition:color 0.2s}
+.footer-links a:hover{color:var(--text)}
+.footer-bottom{display:flex;align-items:center;justify-content:space-between;padding-top:32px;border-top:1px solid var(--border)}
+.footer-copy{font-size:13px;color:var(--muted)}
+.footer-socials{display:flex;gap:16px}
+.footer-socials a{width:36px;height:36px;border-radius:10px;background:rgba(255,255,255,0.04);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;transition:all 0.2s;color:var(--muted);text-decoration:none}
+.footer-socials a:hover{background:rgba(0,163,255,0.1);border-color:var(--blue);color:var(--blue)}
+
+/* ── ANIMATIONS ──────────────────────────────────────────────────────────────── */
+.reveal{opacity:0;transform:translateY(30px);transition:opacity 0.7s ease,transform 0.7s ease}
+.reveal.visible{opacity:1;transform:translateY(0)}
+.reveal-delay-1{transition-delay:0.1s}
+.reveal-delay-2{transition-delay:0.2s}
+.reveal-delay-3{transition-delay:0.3s}
+.reveal-delay-4{transition-delay:0.4s}
+
+/* ── MOBILE ──────────────────────────────────────────────────────────────────── */
+@media(max-width:900px){
+  nav{padding:16px 24px}
+  .nav-links{display:none}
+  .nav-mobile{display:flex}
+  section{padding:80px 24px}
+  .hero-inner{padding:0 8px}
+  .features-grid{grid-template-columns:1fr}
+  .ai-layout{grid-template-columns:1fr}
+  .ai-visual{height:320px}
+  .pricing-grid{grid-template-columns:1fr;max-width:400px}
+  .steps-grid{grid-template-columns:1fr 1fr}
+  .steps-grid::before{display:none}
+  .footer-top{grid-template-columns:1fr 1fr;gap:40px}
+  .footer-bottom{flex-direction:column;gap:20px;text-align:center}
+  .hero-stats{gap:24px;flex-wrap:wrap}
+  .cursor,.cursor-ring{display:none}
+  body{cursor:auto}
+}
+</style>
+</head>
+<body>
+
+<!-- Custom cursor -->
+<div class="cursor" id="cursor"></div>
+<div class="cursor-ring" id="cursor-ring"></div>
+
+<!-- ── NAV ──────────────────────────────────────────────────────────────────── -->
+<nav id="nav">
+  <a href="#hero" class="nav-logo">VTRX</a>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#ai">AI Coach</a>
+    <a href="#pricing">Pricing</a>
+    <a href="#how">How It Works</a>
+    <a href="#download" class="nav-cta">Get the App</a>
+  </div>
+  <div class="nav-mobile" id="nav-mobile">
+    <span></span><span></span><span></span>
+  </div>
+</nav>
+
+<!-- ── HERO ──────────────────────────────────────────────────────────────────── -->
+<section id="hero">
+  <canvas id="hero-canvas"></canvas>
+  <div class="hero-inner">
+    <div class="hero-badge">
+      <span></span>
+      AI-Powered Fitness Platform
+    </div>
+    <h1 class="hero-title">
+      <span class="line1">TRAIN</span>
+      <span class="line2">SMARTER</span>
+    </h1>
+    <p class="hero-sub">
+      VTRX combines <strong>AI coaching</strong>, personalised workout programming, and smart nutrition guidance. Your elite coach — in your pocket.
+    </p>
+    <div class="hero-actions">
+      <a href="#download" class="btn-store">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+        App Store
+      </a>
+      <a href="#download" class="btn-store">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M3.18 23.76c.37.21.8.22 1.2.02l12.11-6.85-2.67-2.67-10.64 9.5zM20.5 10.06L17.74 8.5 14.77 11.5l2.97 2.97 2.78-1.57a1.75 1.75 0 000-2.84zM2.1.26C1.74.48 1.5.9 1.5 1.43v21.14c0 .53.24.95.6 1.17l.1.06 11.84-11.84v-.28L2.1.26zm12.39 11.76l-3.16-3.16-9.23-9.23 12.06 6.82 2.67 2.67-2.34 2.9z"/></svg>
+        Google Play
+      </a>
+      <a href="#features" class="btn-secondary">
+        See Features
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      </a>
+    </div>
+    <div class="hero-stats">
+      <div class="stat"><span class="stat-num" data-target="50000">0</span><span class="stat-label">Active Users</span></div>
+      <div class="stat"><span class="stat-num" data-target="98">0</span><span class="stat-label">% Satisfaction</span></div>
+      <div class="stat"><span class="stat-num" data-target="2000000">0</span><span class="stat-label">Workouts Logged</span></div>
+      <div class="stat"><span class="stat-num" data-target="4.9">0</span><span class="stat-label">App Store Rating</span></div>
+    </div>
+  </div>
+  <div class="hero-scroll">
+    <span>Scroll</span>
+    <div class="scroll-line"></div>
+  </div>
+</section>
+
+<!-- ── FEATURES ───────────────────────────────────────────────────────────────── -->
+<section id="features">
+  <div class="container">
+    <div class="reveal"><span class="section-label">What you get</span></div>
+    <h2 class="section-title reveal reveal-delay-1">Built for<br>serious athletes</h2>
+    <p class="section-sub reveal reveal-delay-2">Every feature available free for 1 month. No credit card. No catch.</p>
+    <div class="features-grid" style="margin-top:64px">
+      <div class="feature-card reveal">
+        <div class="feature-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00A3FF" stroke-width="1.8"><path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/></svg>
+        </div>
+        <div class="feature-title">Smart Programmes</div>
+        <p class="feature-desc">5-day training plans built around your goal, equipment, and schedule. Adapts as you progress. No guesswork.</p>
+        <span class="feature-tag">→ Included Free</span>
+      </div>
+      <div class="feature-card reveal reveal-delay-1">
+        <div class="feature-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00A3FF" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+        </div>
+        <div class="feature-title">AI Coach</div>
+        <p class="feature-desc">GPT-4o analyses every workout. Real coaching summaries, recovery advice, and mood-adapted training — after every session.</p>
+        <span class="feature-tag">→ Premium</span>
+      </div>
+      <div class="feature-card reveal reveal-delay-2">
+        <div class="feature-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00A3FF" stroke-width="1.8"><path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z"/></svg>
+        </div>
+        <div class="feature-title">Nutrition Hub</div>
+        <p class="feature-desc">Browse hundreds of recipes, get a personalised weekly meal plan, and auto-generated grocery list. Fuelling made simple.</p>
+        <span class="feature-tag">→ Premium</span>
+      </div>
+      <div class="feature-card reveal">
+        <div class="feature-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00A3FF" stroke-width="1.8"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        </div>
+        <div class="feature-title">Progress Tracking</div>
+        <p class="feature-desc">Charts, streaks, personal records, body measurements, and progress photos. See every improvement over time.</p>
+        <span class="feature-tag">→ Premium</span>
+      </div>
+      <div class="feature-card reveal reveal-delay-1">
+        <div class="feature-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00A3FF" stroke-width="1.8"><path d="M12 2c0 6-6 8-6 14a6 6 0 0012 0c0-6-6-8-6-14z"/></svg>
+        </div>
+        <div class="feature-title">Streak System</div>
+        <p class="feature-desc">Daily check-ins, workout streaks, and mood tracking. The consistency you build becomes the results you see.</p>
+        <span class="feature-tag">→ Included Free</span>
+      </div>
+      <div class="feature-card reveal reveal-delay-2">
+        <div class="feature-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00A3FF" stroke-width="1.8"><path d="M6 9H4.5a2.5 2.5 0 010-5H6"/><path d="M18 9h1.5a2.5 2.5 0 000-5H18"/><path d="M18 2H6v7a6 6 0 0012 0V2z"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21"/><path d="M14 14.66V17c0 .55.47.98.97 1.21"/></svg>
+        </div>
+        <div class="feature-title">Challenges</div>
+        <p class="feature-desc">Compete, earn rewards, and build habits through stake-based fitness challenges. Coming soon — stay tuned.</p>
+        <span class="feature-tag">→ Coming Soon</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── AI SECTION ─────────────────────────────────────────────────────────────── -->
+<section id="ai">
+  <div class="container">
+    <div class="ai-layout">
+      <div>
+        <span class="section-label reveal">Your coach</span>
+        <h2 class="section-title reveal reveal-delay-1">AI that<br>actually coaches</h2>
+        <p class="section-sub reveal reveal-delay-2" style="margin-bottom:48px">Not generic tips. Real analysis of your actual data — powered by GPT-4o. Included in your free trial.</p>
+        <div class="ai-features">
+          <div class="ai-feature reveal reveal-delay-1">
+            <div class="ai-feature-dot">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00A3FF" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            </div>
+            <div>
+              <div class="ai-feature-title">Post-workout analysis</div>
+              <p class="ai-feature-desc">Every session gets a detailed coaching summary with performance insights and what to focus on next time.</p>
+            </div>
+          </div>
+          <div class="ai-feature reveal reveal-delay-2">
+            <div class="ai-feature-dot">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00A3FF" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+            </div>
+            <div>
+              <div class="ai-feature-title">Mood-adapted training</div>
+              <p class="ai-feature-desc">Check in with your energy each day. The AI recommends whether to push hard, train light, or rest — based on how you actually feel.</p>
+            </div>
+          </div>
+          <div class="ai-feature reveal reveal-delay-3">
+            <div class="ai-feature-dot">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00A3FF" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+            </div>
+            <div>
+              <div class="ai-feature-title">Weekly performance reports</div>
+              <p class="ai-feature-desc">Every Sunday — a full week in review. Volume, consistency, progress vs the week before, and what to prioritise next week.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ai-visual reveal reveal-delay-2">
+        <canvas id="ai-canvas"></canvas>
+        <div class="ai-card card2">
+          <div class="ai-card-label">AI Coach</div>
+          <div style="display:flex;gap:8px">
+            <div class="ai-stat"><div class="ai-stat-num">GPT</div><div class="ai-stat-label">4o</div></div>
+            <div style="width:1px;background:var(--border)"></div>
+            <div class="ai-stat"><div class="ai-stat-num">∞</div><div class="ai-stat-label">Insights</div></div>
+          </div>
+        </div>
+        <div class="ai-card card1">
+          <div class="ai-card-label">Live Analysis</div>
+          <div class="ai-card-text" id="ai-typewriter">Analysing your Upper Body Strength session...</div>
+          <div class="ai-typing"><span></span><span></span><span></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── HOW IT WORKS ───────────────────────────────────────────────────────────── -->
+<section id="how">
+  <div class="container">
+    <div style="text-align:center">
+      <span class="section-label reveal">Simple process</span>
+      <h2 class="section-title reveal reveal-delay-1">From signup<br>to results</h2>
+    </div>
+    <div class="steps-grid">
+      <div class="step-item reveal">
+        <div class="step-num">1</div>
+        <div class="step-title">Create Account</div>
+        <p class="step-desc">Sign up in 60 seconds. Answer a few questions about your goal, level, and equipment.</p>
+      </div>
+      <div class="step-item reveal reveal-delay-1">
+        <div class="step-num">2</div>
+        <div class="step-title">Get Your Plan</div>
+        <p class="step-desc">VTRX builds a personalised 5-day programme around your life. Not a template — a plan built for you.</p>
+      </div>
+      <div class="step-item reveal reveal-delay-2">
+        <div class="step-num">3</div>
+        <div class="step-title">Train & Log</div>
+        <p class="step-desc">Follow your sessions, log sets and reps, and check in your energy each day. The more you log, the smarter the AI gets.</p>
+      </div>
+      <div class="step-item reveal reveal-delay-3">
+        <div class="step-num">4</div>
+        <div class="step-title">Get Coached</div>
+        <p class="step-desc">After every session, your AI coach reviews your performance and tells you exactly what to do next to keep improving.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── TESTIMONIALS ───────────────────────────────────────────────────────────── -->
+<section id="testimonials" style="padding-bottom:0;overflow:hidden">
+  <div class="container" style="margin-bottom:60px">
+    <span class="section-label reveal">Real people</span>
+    <h2 class="section-title reveal reveal-delay-1">What athletes<br>are saying</h2>
+  </div>
+  <div style="overflow:hidden;margin:0 -48px">
+    <div class="testimonials-track" id="testimonials-track"></div>
+  </div>
+</section>
+
+<!-- ── PRICING ────────────────────────────────────────────────────────────────── -->
+<section id="pricing">
+  <div class="container">
+    <div style="text-align:center">
+      <span class="section-label reveal">Simple pricing</span>
+      <h2 class="section-title reveal reveal-delay-1">Start free.<br>Go Premium.</h2>
+      <p class="section-sub reveal reveal-delay-2" style="margin:0 auto 8px">Try everything free for 1 months. No credit card required to start.</p>
+    </div>
+    <div class="pricing-grid">
+      <div class="pricing-card reveal">
+        <div class="pricing-name">Free</div>
+        <div class="pricing-price"><span class="price-amount">$0</span><span class="price-period">/month</span></div>
+        <p class="pricing-desc">Log workouts, track streaks, and get one AI weekly summary — free forever.</p>
+        <ul class="pricing-features">
+          <li>1 training programme — 5 days, personalised</li>
+          <li>Unlimited workout logging</li>
+          <li>14-day workout history</li>
+          <li>1 basic AI weekly summary</li>
+          <li>Browse all recipes (view only)</li>
+          <li>Save up to 3 recipes</li>
+          <li>Streak tracking &amp; water tracker</li>
+          <li class="locked">Full AI coaching after every session</li>
+          <li class="locked">Meal planning &amp; grocery list</li>
+          <li class="locked">Progress charts &amp; full history</li>
+        </ul>
+        <a href="#download" class="btn-secondary" style="width:100%;justify-content:center">Get Started Free</a>
+      </div>
+      <div class="pricing-card featured reveal reveal-delay-1">
+        <div class="pricing-name">Premium</div>
+        <div class="pricing-price"><span class="price-amount">$9.99</span><span class="price-period">/month</span></div>
+        <p class="pricing-desc">Everything from your free trial — permanently. Full AI, no limits.</p>
+        <ul class="pricing-features">
+          <li>Everything in your 1-month free trial</li>
+          <li>AI coaching after every single workout</li>
+          <li>Weekly AI performance report every Sunday</li>
+          <li>Mood-based AI training recommendations</li>
+          <li>Unlimited programmes + full customisation</li>
+          <li>Full workout history all time</li>
+          <li>Weekly meal plan and grocery list</li>
+          <li>Progress photos charts and measurements</li>
+          <li>Challenges access coming soon</li>
+        </ul>
+        <a href="#download" class="btn-primary" style="width:100%;justify-content:center">Start Free — 1 Month On Us</a>
+        <p class="trial-badge">1 month completely free. Then <strong>$9.99/month</strong> — cancel anytime</p>
+      </div>
+    </div>
+    <div style="text-align:center;margin-top:24px">
+      <p style="font-size:14px;color:var(--muted)">Annual plan — <strong style="color:var(--blue)">$69.99/year</strong> — saves $49.89. 1 month free trial included.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ── DOWNLOAD ───────────────────────────────────────────────────────────────── -->
+<section id="download" style="padding:140px 48px">
+  <canvas id="download-canvas"></canvas>
+  <div class="download-inner container" style="max-width:700px;margin:0 auto;text-align:center">
+    <span class="section-label reveal">Get started</span>
+    <h2 class="download-title reveal reveal-delay-1">
+      Download<br><span style="color:var(--blue)">VTRX</span><br>Today
+    </h2>
+    <p class="download-sub reveal reveal-delay-2">Available on iPhone and Android. Free to download. 1-month Premium trial included.</p>
+    <div class="download-stores reveal reveal-delay-3">
+      <a href="#" class="btn-store" style="padding:16px 32px">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+        <div style="text-align:left"><div style="font-size:10px;opacity:0.7;letter-spacing:0.5px">Download on the</div><div style="font-size:16px;font-weight:700">App Store</div></div>
+      </a>
+      <a href="#" class="btn-store" style="padding:16px 32px">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M3.18 23.76c.37.21.8.22 1.2.02l12.11-6.85-2.67-2.67-10.64 9.5zM20.5 10.06L17.74 8.5 14.77 11.5l2.97 2.97 2.78-1.57a1.75 1.75 0 000-2.84zM2.1.26C1.74.48 1.5.9 1.5 1.43v21.14c0 .53.24.95.6 1.17l.1.06 11.84-11.84v-.28L2.1.26zm12.39 11.76l-3.16-3.16-9.23-9.23 12.06 6.82 2.67 2.67-2.34 2.9z"/></svg>
+        <div style="text-align:left"><div style="font-size:10px;opacity:0.7;letter-spacing:0.5px">Get it on</div><div style="font-size:16px;font-weight:700">Google Play</div></div>
+      </a>
+    </div>
+    <p class="download-note reveal reveal-delay-4">Free forever · 1-month full trial · Cancel anytime</p>
+  </div>
+</section>
+
+<!-- ── FOOTER ─────────────────────────────────────────────────────────────────── -->
+<footer>
+  <div class="footer-inner">
+    <div class="footer-top">
+      <div>
+        <div class="footer-brand-name">VTRX</div>
+        <p class="footer-brand-desc">The AI-powered fitness platform that coaches you like an elite athlete. Train smarter. Recover better. Perform at your peak.</p>
+      </div>
+      <div>
+        <div class="footer-col-title">Product</div>
+        <ul class="footer-links">
+          <li><a href="#features">Features</a></li>
+          <li><a href="#pricing">Pricing</a></li>
+          <li><a href="#ai">AI Coach</a></li>
+          <li><a href="#download">Download</a></li>
+        </ul>
+      </div>
+      <div>
+        <div class="footer-col-title">Company</div>
+        <ul class="footer-links">
+          <li><a href="#">About</a></li>
+          <li><a href="#">Blog</a></li>
+          <li><a href="#">Careers</a></li>
+          <li><a href="#">Contact</a></li>
+        </ul>
+      </div>
+      <div>
+        <div class="footer-col-title">Legal</div>
+        <ul class="footer-links">
+          <li><a href="#">Privacy Policy</a></li>
+          <li><a href="#">Terms of Service</a></li>
+          <li><a href="#">Cookie Policy</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <p class="footer-copy">© 2026 VTRX. All rights reserved.</p>
+      <div class="footer-socials">
+        <a href="#" title="Instagram">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>
+        </a>
+        <a href="#" title="Twitter/X">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+        </a>
+        <a href="#" title="TikTok">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 00-.79-.05 6.34 6.34 0 00-6.34 6.34 6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.33-6.34V8.69a8.18 8.18 0 004.78 1.52V6.75a4.85 4.85 0 01-1.01-.06z"/></svg>
+        </a>
+        <a href="#" title="YouTube">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M23.495 6.205a3.007 3.007 0 00-2.088-2.088c-1.87-.501-9.396-.501-9.396-.501s-7.507-.01-9.396.501A3.007 3.007 0 00.527 6.205a31.247 31.247 0 00-.522 5.805 31.247 31.247 0 00.522 5.783 3.007 3.007 0 002.088 2.088c1.868.502 9.396.502 9.396.502s7.506 0 9.396-.502a3.007 3.007 0 002.088-2.088 31.247 31.247 0 00.5-5.783 31.247 31.247 0 00-.5-5.805zM9.609 15.601V8.408l6.264 3.602z"/></svg>
+        </a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+// ── CURSOR ──────────────────────────────────────────────────────────────────────
+const cursor = document.getElementById('cursor');
+const ring   = document.getElementById('cursor-ring');
+let mx=0,my=0,rx=0,ry=0;
+document.addEventListener('mousemove',e=>{mx=e.clientX;my=e.clientY;cursor.style.left=mx+'px';cursor.style.top=my+'px'});
+(function animRing(){rx+=(mx-rx)*0.12;ry+=(my-ry)*0.12;ring.style.left=rx+'px';ring.style.top=ry+'px';requestAnimationFrame(animRing)})();
+document.querySelectorAll('a,button,.btn-primary,.btn-secondary,.btn-store,.feature-card,.pricing-card').forEach(el=>{
+  el.addEventListener('mouseenter',()=>{cursor.classList.add('expand');ring.classList.add('expand')});
+  el.addEventListener('mouseleave',()=>{cursor.classList.remove('expand');ring.classList.remove('expand')});
+});
+
+// ── NAV SCROLL ──────────────────────────────────────────────────────────────────
+const nav=document.getElementById('nav');
+window.addEventListener('scroll',()=>{nav.classList.toggle('scrolled',window.scrollY>60)});
+
+// ── REVEAL ON SCROLL ────────────────────────────────────────────────────────────
+const obs=new IntersectionObserver(entries=>{entries.forEach(e=>{if(e.isIntersecting)e.target.classList.add('visible')})},{threshold:0.1});
+document.querySelectorAll('.reveal').forEach(el=>obs.observe(el));
+
+// ── HERO 3D CANVAS — Particle field ─────────────────────────────────────────────
+(function(){
+  const canvas=document.getElementById('hero-canvas');
+  const scene=new THREE.Scene();
+  const camera=new THREE.PerspectiveCamera(60,canvas.clientWidth/canvas.clientHeight,0.1,1000);
+  camera.position.z=30;
+  const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  renderer.setSize(canvas.clientWidth,canvas.clientHeight);
+
+  // Particles
+  const N=3000;
+  const positions=new Float32Array(N*3);
+  const colors=new Float32Array(N*3);
+  for(let i=0;i<N;i++){
+    positions[i*3]=(Math.random()-0.5)*100;
+    positions[i*3+1]=(Math.random()-0.5)*100;
+    positions[i*3+2]=(Math.random()-0.5)*60;
+    const t=Math.random();
+    colors[i*3]=t*0+0;colors[i*3+1]=t*0.64+0;colors[i*3+2]=1;
+  }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.BufferAttribute(positions,3));
+  geo.setAttribute('color',new THREE.BufferAttribute(colors,3));
+  const mat=new THREE.PointsMaterial({size:0.15,vertexColors:true,transparent:true,opacity:0.7});
+  const points=new THREE.Points(geo,mat);
+  scene.add(points);
+
+  // Torus knot
+  const torusGeo=new THREE.TorusKnotGeometry(8,0.8,200,16,2,3);
+  const torusMat=new THREE.MeshBasicMaterial({color:0x00A3FF,wireframe:true,opacity:0.08,transparent:true});
+  const torus=new THREE.Mesh(torusGeo,torusMat);
+  scene.add(torus);
+
+  // Mouse parallax
+  let mouseX=0,mouseY=0;
+  document.addEventListener('mousemove',e=>{mouseX=(e.clientX/window.innerWidth-0.5)*2;mouseY=(e.clientY/window.innerHeight-0.5)*2});
+
+  let t=0;
+  function animate(){
+    requestAnimationFrame(animate);
+    t+=0.003;
+    points.rotation.y=t*0.05;
+    points.rotation.x=t*0.02;
+    torus.rotation.x=t*0.3;
+    torus.rotation.y=t*0.2;
+    camera.position.x+=(mouseX*3-camera.position.x)*0.05;
+    camera.position.y+=(-mouseY*2-camera.position.y)*0.05;
+    camera.lookAt(scene.position);
+    renderer.render(scene,camera);
+  }
+  animate();
+
+  window.addEventListener('resize',()=>{
+    const w=canvas.clientWidth,h=canvas.clientHeight;
+    camera.aspect=w/h;camera.updateProjectionMatrix();
+    renderer.setSize(w,h);
+  });
+})();
+
+// ── AI CANVAS — Floating spheres ────────────────────────────────────────────────
+(function(){
+  const canvas=document.getElementById('ai-canvas');
+  if(!canvas)return;
+  const scene=new THREE.Scene();
+  const camera=new THREE.PerspectiveCamera(50,1,0.1,100);
+  camera.position.z=8;
+  const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+
+  const resize=()=>{
+    const w=canvas.clientWidth||400,h=canvas.clientHeight||400;
+    camera.aspect=w/h;camera.updateProjectionMatrix();
+    renderer.setSize(w,h);
+  };
+  resize();
+
+  // DNA helix
+  const points=[];
+  for(let i=0;i<100;i++){
+    const t=i/100*Math.PI*6;
+    const x=Math.cos(t)*2,y=(i/100-0.5)*8,z=Math.sin(t)*2;
+    points.push(new THREE.Vector3(x,y,z));
+  }
+  const points2=[];
+  for(let i=0;i<100;i++){
+    const t=i/100*Math.PI*6+Math.PI;
+    const x=Math.cos(t)*2,y=(i/100-0.5)*8,z=Math.sin(t)*2;
+    points2.push(new THREE.Vector3(x,y,z));
+  }
+  const curve1=new THREE.CatmullRomCurve3(points);
+  const curve2=new THREE.CatmullRomCurve3(points2);
+  const geo1=new THREE.TubeGeometry(curve1,200,0.03,8,false);
+  const geo2=new THREE.TubeGeometry(curve2,200,0.03,8,false);
+  const mat=new THREE.MeshBasicMaterial({color:0x00A3FF,opacity:0.6,transparent:true});
+  scene.add(new THREE.Mesh(geo1,mat));
+  scene.add(new THREE.Mesh(geo2,mat.clone()));
+
+  // Spheres at helix nodes
+  for(let i=0;i<20;i++){
+    const t=i/20;
+    const ang=t*Math.PI*6;
+    const geo=new THREE.SphereGeometry(0.12,8,8);
+    const m=new THREE.MeshBasicMaterial({color:i%2===0?0x00A3FF:0xffffff,opacity:0.8,transparent:true});
+    const mesh=new THREE.Mesh(geo,m);
+    mesh.position.set(Math.cos(ang)*2,(t-0.5)*8,Math.sin(ang)*2);
+    scene.add(mesh);
+  }
+
+  let t2=0;
+  function animate(){
+    requestAnimationFrame(animate);
+    t2+=0.005;
+    scene.rotation.y=t2*0.3;
+    renderer.render(scene,camera);
+  }
+  animate();
+  window.addEventListener('resize',resize);
+})();
+
+// ── DOWNLOAD CANVAS ──────────────────────────────────────────────────────────────
+(function(){
+  const canvas=document.getElementById('download-canvas');
+  if(!canvas)return;
+  const scene=new THREE.Scene();
+  const camera=new THREE.PerspectiveCamera(60,canvas.clientWidth/canvas.clientHeight,0.1,100);
+  camera.position.z=20;
+  const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+
+  const resize=()=>{
+    const w=canvas.clientWidth||window.innerWidth,h=canvas.clientHeight||600;
+    camera.aspect=w/h;camera.updateProjectionMatrix();
+    renderer.setSize(w,h);
+  };
+  resize();
+
+  // Icosahedron wireframe
+  const geo=new THREE.IcosahedronGeometry(6,2);
+  const mat=new THREE.MeshBasicMaterial({color:0x00A3FF,wireframe:true,opacity:0.06,transparent:true});
+  const mesh=new THREE.Mesh(geo,mat);
+  scene.add(mesh);
+
+  // Outer ring
+  const ringGeo=new THREE.TorusGeometry(9,0.05,8,100);
+  const ringMat=new THREE.MeshBasicMaterial({color:0x0066CC,opacity:0.15,transparent:true});
+  scene.add(new THREE.Mesh(ringGeo,ringMat));
+
+  let t=0;
+  function animate(){
+    requestAnimationFrame(animate);
+    t+=0.004;
+    mesh.rotation.x=t*0.2;
+    mesh.rotation.y=t*0.3;
+    renderer.render(scene,camera);
+  }
+  animate();
+  window.addEventListener('resize',resize);
+})();
+
+// ── COUNTER ANIMATION ────────────────────────────────────────────────────────────
+const formatNum=(n,target)=>{
+  if(target>=1000000)return(n/1000000).toFixed(1)+'M+';
+  if(target>=10000)return Math.floor(n/1000)+'K+';
+  if(target<10)return n.toFixed(1);
+  return Math.floor(n)+'%';
+};
+const counters=document.querySelectorAll('[data-target]');
+const counterObs=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{
+    if(!e.isIntersecting)return;
+    const el=e.target;
+    const target=parseFloat(el.dataset.target);
+    let current=0;
+    const step=target/60;
+    const timer=setInterval(()=>{
+      current=Math.min(current+step,target);
+      el.textContent=formatNum(current,target);
+      if(current>=target)clearInterval(timer);
+    },16);
+    counterObs.unobserve(el);
+  });
+},{threshold:0.5});
+counters.forEach(c=>counterObs.observe(c));
+
+// ── TESTIMONIALS ─────────────────────────────────────────────────────────────────
+const testimonials=[
+  {name:'Marcus T.',role:'Bodybuilder • 2 years with VTRX',text:'The AI summaries after each session are game-changing. It told me exactly why my bench was plateauing and what to do. No coach has ever been that specific.',initials:'MT'},
+  {name:'Sophia R.',role:'Marathon runner • Premium member',text:'I was sceptical about AI coaching but after 3 months my times are down 4 minutes. The mood-based recommendations on recovery days are genuinely smart.',initials:'SR'},
+  {name:'James K.',role:'Home gym athlete • 18 months',text:'Finally an app that works for home training. No barbell? No problem. The programme adapts to exactly what I have available.',initials:'JK'},
+  {name:'Aaliya M.',role:'CrossFit athlete • 1 year',text:'The nutrition hub with meal planning changed everything. I stopped guessing and my energy levels during WODs are noticeably better.',initials:'AM'},
+  {name:'Chris B.',role:'Powerlifter • 3 years',text:'Personal records tracker is addictive. Watching my squat go from 180 to 230kg over 18 months is motivation I never had with a paper log.',initials:'CB'},
+  {name:'Priya D.',role:'Fitness beginner • 8 months',text:'I knew nothing about training when I started. VTRX guided me through everything without being overwhelming. Lost 18lbs and actually enjoy it now.',initials:'PD'},
+  {name:'Tom H.',role:'HIIT enthusiast • 6 months',text:'The streak system kept me consistent when I never was before. Longest streak so far: 41 months. That\'s more than I ever managed in 10 years of gym memberships.',initials:'TH'},
+  {name:'Yemi A.',role:'Strength athlete • 2 years',text:'Worth every penny of the annual plan. The weekly AI reports feel like having a personal coach reviewing your training journal every Sunday.',initials:'YA'},
+];
+
+const track=document.getElementById('testimonials-track');
+const allT=[...testimonials,...testimonials];
+allT.forEach(t=>{
+  const card=document.createElement('div');
+  card.className='testimonial-card';
+  card.innerHTML=`
+    <div class="testimonial-stars">${'<svg width="14" height="14" viewBox="0 0 24 24" fill="#FFB800"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>'.repeat(5)}</div>
+    <p class="testimonial-text">"${t.text}"</p>
+    <div class="testimonial-author">
+      <div class="testimonial-avatar">${t.initials}</div>
+      <div><div class="testimonial-name">${t.name}</div><div class="testimonial-role">${t.role}</div></div>
+    </div>`;
+  track.appendChild(card);
+});
+
+// ── AI TYPEWRITER ────────────────────────────────────────────────────────────────
+const messages=[
+  'Solid session. 4 sets × 8 reps at 185lbs — your volume is up 12% from last week. Push the third set harder next time.',
+  'Recovery day recommended. You have trained 4 consecutive days. Keep protein high and sleep 8+ hours tonight.',
+  'New personal record on bench press. Your progressive overload is on track — increase by 5lbs next session.',
+  'High energy today — perfect timing for your hardest session of the week. Complex carbs 90 min before training.',
+  'Week 4 complete. 5 workouts, 180 minutes, 1,640 calories burned. Up 2 sessions from last week. Excellent consistency.',
+];
+let msgIdx=0;
+const typeEl=document.getElementById('ai-typewriter');
+function typeMsg(){
+  const msg=messages[msgIdx%messages.length];
+  typeEl.textContent='';
+  let i=0;
+  const timer=setInterval(()=>{
+    typeEl.textContent+=msg[i];
+    i++;
+    if(i>=msg.length){clearInterval(timer);setTimeout(()=>{msgIdx++;typeMsg();},3000);}
+  },30);
+}
+typeMsg();
+
+// ── SMOOTH SCROLL ────────────────────────────────────────────────────────────────
+document.querySelectorAll('a[href^="#"]').forEach(a=>{
+  a.addEventListener('click',e=>{
+    e.preventDefault();
+    const target=document.querySelector(a.getAttribute('href'));
+    if(target)target.scrollIntoView({behavior:'smooth'});
+  });
+});
+</script>
+</body>
+</html>
