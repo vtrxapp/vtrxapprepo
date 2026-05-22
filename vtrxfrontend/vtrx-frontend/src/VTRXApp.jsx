@@ -229,36 +229,74 @@ const ENERGY_LEVELS = [
 function SlideIcon({ type }) {
   const s = { width:18, height:18, viewBox:"0 0 24 24", fill:"none", stroke:"#00A3FF", strokeWidth:"2" };
   // Workouts slide
-  if (type==="bolt"||type==="⚡") return <svg {...s}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>;
-  if (type==="fire"||type==="🔥") return <svg {...s}><path d="M12 2c0 6-6 8-6 14a6 6 0 0012 0c0-6-6-8-6-14z"/></svg>;
-  if (type==="chart"||type==="📈") return <svg {...s}><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>;
-  if (type==="muscle"||type==="💪") return <svg {...s}><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>;
+  if (type==="bolt") return <svg {...s}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>;
+  if (type==="fire") return <svg {...s}><path d="M12 2c0 6-6 8-6 14a6 6 0 0012 0c0-6-6-8-6-14z"/></svg>;
+  if (type==="chart") return <svg {...s}><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>;
+  if (type==="muscle"||type==="muscle") return <svg {...s}><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>;
   // Nutrition slide
-  if (type==="fork"||type==="🍽️") return <svg {...s}><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>;
-  if (type==="bar"||type==="📊")  return <svg {...s}><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>;
-  if (type==="drop"||type==="💧") return <svg {...s}><path d="M12 2.69l5.66 5.66a8 8 0 11-11.31 0z"/></svg>;
+  if (type==="fork") return <svg {...s}><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>;
+  if (type==="bar")  return <svg {...s}><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>;
+  if (type==="drop") return <svg {...s}><path d="M12 2.69l5.66 5.66a8 8 0 11-11.31 0z"/></svg>;
   // Challenge slide
-  if (type==="trophy"||type==="🏆") return <svg {...s}><path d="M6 9H4.5a2.5 2.5 0 010-5H6"/><path d="M18 9h1.5a2.5 2.5 0 000-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0012 0V2z"/></svg>;
-  if (type==="coin"||type==="💰")  return <svg {...s}><circle cx="12" cy="12" r="10"/><path d="M12 8v8M9 10h6M9 14h6"/></svg>;
-  if (type==="globe"||type==="🌍") return <svg {...s}><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>;
-  if (type==="list"||type==="📋")  return <svg {...s}><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg>;
+  if (type==="trophy") return <svg {...s}><path d="M6 9H4.5a2.5 2.5 0 010-5H6"/><path d="M18 9h1.5a2.5 2.5 0 000-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0012 0V2z"/></svg>;
+  if (type==="coin")  return <svg {...s}><circle cx="12" cy="12" r="10"/><path d="M12 8v8M9 10h6M9 14h6"/></svg>;
+  if (type==="globe") return <svg {...s}><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>;
+  if (type==="list")  return <svg {...s}><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg>;
   // Community slide
-  if (type==="users"||type==="👥") return <svg {...s}><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>;
-  if (type==="star"||type==="⭐")  return <svg {...s}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>;
-  if (type==="medal"||type==="🏅") return <svg {...s}><circle cx="12" cy="14" r="6"/><path d="M9 2h6l1 7H8l1-7z"/><path d="M9.5 9l-2 5M14.5 9l2 5"/></svg>;
-  if (type==="heart"||type==="❤️") return <svg {...s}><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>;
+  if (type==="users") return <svg {...s}><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>;
+  if (type==="star")  return <svg {...s}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>;
+  if (type==="medal") return <svg {...s}><circle cx="12" cy="14" r="6"/><path d="M9 2h6l1 7H8l1-7z"/><path d="M9.5 9l-2 5M14.5 9l2 5"/></svg>;
+  if (type==="heart") return <svg {...s}><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>;
   // Default
   return <svg {...s}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
 }
 
 const ONBOARDING_SLIDES = [
-  { id:0, bg:"https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=800&q=80", overlay:"linear-gradient(180deg,rgba(0,0,0,0.3) 0%,rgba(0,0,0,0.5) 45%,rgba(0,0,0,0.88) 100%)", tag:"WELCOME TO VTRX", headline:["Transform your body.","Break past limits.","Unlock your potential."], body:"This isn't just about workouts — it's about redefining what you're capable of." },
-  { id:1, bg:"https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?w=800&q=80", overlay:"linear-gradient(180deg,rgba(0,0,0,0.25) 0%,rgba(0,0,0,0.5) 40%,rgba(0,0,0,0.88) 100%)", tag:"CUSTOM WORKOUTS", headline:["Move with purpose.","Build strength at your pace.","Enjoy the journey."], features:[{icon:"⚡",text:"AI-powered workout plans"},{icon:"🔥",text:"High-intensity interval training"},{icon:"📈",text:"Progressive overload tracking"},{icon:"💪",text:"Strength & conditioning"}] },
-  { id:2, bg:"https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=800&q=80", overlay:"linear-gradient(180deg,rgba(0,10,20,0.35) 0%,rgba(0,10,20,0.55) 40%,rgba(0,10,20,0.9) 100%)", tag:"NUTRITION MASTERY", headline:["Fuel your body with care.","Make simple, smart choices.","Feel better inside out."], features:[{icon:"🍽️",text:"Macro-based meal planning"},{icon:"📊",text:"Calorie & nutrient tracking"},{icon:"🔥",text:"Fat burning meal recipes"},{icon:"💧",text:"Hydration & supplement guides"}] },
-  { id:3, bg:"https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=800&q=80", overlay:"linear-gradient(180deg,rgba(0,0,0,0.4) 0%,rgba(0,0,0,0.5) 40%,rgba(0,0,0,0.9) 100%)", tag:"COMING SOON", headline:["Challenges are coming.","Stake money. Stay consistent.","Winners take the pot."], features:[{icon:"🏆",text:"Join challenges with money at stake"},{icon:"💰",text:"Complete the challenge, win the pool"},{icon:"🔥",text:"Compete with thousands globally"},{icon:"📋",text:"Guided daily challenge instructions"}], comingSoon:true },
-  { id:4, bg:"https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?w=800&q=80", overlay:"linear-gradient(180deg,rgba(0,0,0,0.45) 0%,rgba(0,0,0,0.5) 35%,rgba(0,0,0,0.92) 100%)", tag:"START YOUR JOURNEY", headline:["Train together.","Push each other further.","Nobody falls behind."], cta:true },
+  {
+    id: 0, bg: "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=800&q=80",
+    overlay: "linear-gradient(180deg,rgba(0,0,0,0.3) 0%,rgba(0,0,0,0.5) 45%,rgba(0,0,0,0.88) 100%)",
+    tag: "WELCOME TO VTRX",
+    headline: ["Transform your body.", "Break past limits.", "Unlock your potential."],
+    body: "This isn't just about workouts — it's about redefining what you're capable of. Your goals, your pace, your evolution.",
+  },
+  {
+    id: 1, bg: "https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?w=800&q=80",
+    overlay: "linear-gradient(180deg,rgba(0,0,0,0.25) 0%,rgba(0,0,0,0.5) 40%,rgba(0,0,0,0.88) 100%)",
+    tag: "CUSTOM WORKOUTS",
+    headline: ["Move with purpose.", "Build strength at your pace.", "Enjoy the journey."],
+    features: [{ icon: "bolt",   text: "AI-powered workout plans" },
+               { icon: "fire",   text: "High-intensity interval training" },
+               { icon: "chart",  text: "Progressive overload tracking" },
+               { icon: "muscle", text: "Strength & conditioning" }],
+  },
+  {
+    id: 2, bg: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=800&q=80",
+    overlay: "linear-gradient(180deg,rgba(0,10,20,0.35) 0%,rgba(0,10,20,0.55) 40%,rgba(0,10,20,0.9) 100%)",
+    tag: "NUTRITION MASTERY",
+    headline: ["Fuel your body with care.", "Make simple, smart choices.", "Feel better inside out."],
+    features: [{ icon: "fork",  text: "Macro-based meal planning" },
+               { icon: "bar",   text: "Calorie & nutrient tracking" },
+               { icon: "fire",  text: "Fat burning meal recipes" },
+               { icon: "drop",  text: "Hydration & supplement guides" }],
+  },
+  {
+    id: 3, bg: "https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?w=800&q=80",
+    overlay: "linear-gradient(180deg,rgba(0,0,0,0.4) 0%,rgba(0,0,0,0.5) 40%,rgba(0,0,0,0.9) 100%)",
+    tag: "CHALLENGE MODE",
+    headline: ["Take on the challenge.", "Grow one day at a time.", "Celebrate every win."],
+    features: [{ icon: "coin",   text: "Join with money at stake" },
+               { icon: "medal",  text: "Win money and badges" },
+               { icon: "fire",   text: "Build habits, not pressure" },
+               { icon: "list",   text: "Guided challenge instructions" }],
+  },
+  {
+    id: 4, bg: "https://images.unsplash.com/photo-1550345332-09e3ac987658?w=800&q=80",
+    overlay: "linear-gradient(180deg,rgba(0,0,0,0.45) 0%,rgba(0,0,0,0.5) 35%,rgba(0,0,0,0.92) 100%)",
+    tag: "START YOUR JOURNEY",
+    headline: ["Train together.", "Push each other further.", "Nobody falls behind."],
+    cta: true,
+  },
 ];
-
 // ─────────────────────────────────────────────────────────────────────────────
 // SHARED MICRO-COMPONENTS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1037,6 +1075,16 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
   );
 }
 
+// ── Post-workout mood SVG face icons ────────────────────────────────────────
+function PostMoodIcon({ type, color }) {
+  const s = { width:26, height:26, viewBox:"0 0 24 24", fill:"none", stroke:color||"#888", strokeWidth:"2", strokeLinecap:"round" };
+  if (type==="drained") return <svg {...s}><circle cx="12" cy="12" r="10"/><line x1="9" y1="9" x2="9.01" y2="9" strokeWidth="3"/><line x1="15" y1="9" x2="15.01" y2="9" strokeWidth="3"/><path d="M16 16s-1.5-2-4-2-4 2-4 2"/></svg>;
+  if (type==="okay")    return <svg {...s}><circle cx="12" cy="12" r="10"/><line x1="9" y1="9" x2="9.01" y2="9" strokeWidth="3"/><line x1="15" y1="9" x2="15.01" y2="9" strokeWidth="3"/><line x1="9" y1="15" x2="15" y2="15"/></svg>;
+  if (type==="good")    return <svg {...s}><circle cx="12" cy="12" r="10"/><line x1="9" y1="9" x2="9.01" y2="9" strokeWidth="3"/><line x1="15" y1="9" x2="15.01" y2="9" strokeWidth="3"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/></svg>;
+  if (type==="pumped")  return <svg {...s}><circle cx="12" cy="12" r="10"/><line x1="9" y1="9" x2="9.01" y2="9" strokeWidth="3"/><line x1="15" y1="9" x2="15.01" y2="9" strokeWidth="3"/><path d="M8 13s1.5 3 4 3 4-3 4-3"/></svg>;
+  return <svg {...s}><circle cx="12" cy="12" r="10"/></svg>;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ── NEW INNER PAGE: AI SUMMARY (FULL TABBED) ─────────────────────────────────
 function AISummaryPage({ energyKey, onBack }) {
@@ -1097,10 +1145,10 @@ function AISummaryPage({ energyKey, onBack }) {
   ];
 
   const postMoods = [
-    { key:"drained", emoji:"😵", label:"Drained", color:"#EF4444" },
-    { key:"okay",    emoji:"😐", label:"Okay",    color:"#F97316" },
-    { key:"good",    emoji:"🙂", label:"Good",    color:"#22C55E" },
-    { key:"pumped",  emoji:"🔥", label:"Pumped",  color:PRIMARY   },
+    { key:"drained", label:"Drained", color:"#EF4444" },
+    { key:"okay",    label:"Okay",    color:"#F97316" },
+    { key:"good",    label:"Good",    color:"#22C55E" },
+    { key:"pumped",  label:"Pumped",  color:PRIMARY   },
   ];
 
   const cardBg = dark ? "linear-gradient(145deg,#0a0f1e,#141b35)" : "#ffffff";
@@ -1201,8 +1249,8 @@ function AISummaryPage({ energyKey, onBack }) {
                   <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center" }}>
                     <span style={{ fontFamily:FONT,fontSize:12,color:"#888888" }}>Was this helpful?</span>
                     <div style={{ display:"flex",gap:10 }}>
-                      {[{v:"👎",svg:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3z"/><path d="M17 2h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17"/></svg>},{v:"👍",svg:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3z"/><path d="M7 22H4.72A2.31 2.31 0 012 20v-7a2.31 2.31 0 012.72-2H7"/></svg>}].map((t,i)=>(
-                        <button key={i} onClick={()=>setFeedback(i)} style={{ background:feedback===i?(dark?"rgba(255,255,255,0.1)":"rgba(0,0,0,0.06)"):"none",border:"none",borderRadius:10,padding:"6px 12px",cursor:"pointer",fontSize:22,opacity:feedback!==null&&feedback!==i?0.3:1,transition:"all 0.2s" }}>{t.svg}</button>
+                      {[{v:"down",svg:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3z"/><path d="M17 2h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17"/></svg>},{v:"up",svg:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3z"/><path d="M7 22H4.72A2.31 2.31 0 012 20v-7a2.31 2.31 0 012.72-2H7"/></svg>}].map((t,i)=>(
+                        <button key={i} onClick={()=>setFeedback(i)} style={{ background:feedback===i?(dark?"rgba(255,255,255,0.1)":"rgba(0,0,0,0.06)"):"none",border:"none",borderRadius:10,padding:"6px 12px",cursor:"pointer",opacity:feedback!==null&&feedback!==i?0.3:1,display:"flex",alignItems:"center",transition:"all 0.2s" }}>{t.svg}</button>
                       ))}
                     </div>
                   </div>
@@ -1237,7 +1285,7 @@ function AISummaryPage({ energyKey, onBack }) {
               <div style={{ display:"flex",justifyContent:"space-around" }}>
                 {postMoods.map(m=>(
                   <button key={m.key} onClick={()=>setPostMood(m.key)} style={{ display:"flex",flexDirection:"column",alignItems:"center",gap:8,background:"none",border:"none",cursor:"pointer" }}>
-                    <div style={{ width:56,height:56,borderRadius:"50%",border:`2px solid ${postMood===m.key?m.color:BORDER}`,background:postMood===m.key?`${m.color}22`:"transparent",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,transition:"all 0.2s",boxShadow:postMood===m.key?`0 0 16px ${m.color}55`:"none",transform:postMood===m.key?"scale(1.1)":"scale(1)" }}>{m.emoji}</div>
+                    <div style={{ width:56,height:56,borderRadius:"50%",border:`2px solid ${postMood===m.key?m.color:BORDER}`,background:postMood===m.key?`${m.color}22`:"transparent",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s",boxShadow:postMood===m.key?`0 0 16px ${m.color}55`:"none",transform:postMood===m.key?"scale(1.1)":"scale(1)" }}><PostMoodIcon type={m.key} color={m.color}/></div>
                     <span style={{ fontFamily:FONT,fontSize:11,color:postMood===m.key?m.color:"#888888",fontWeight:postMood===m.key?700:500,transition:"all 0.2s" }}>{m.label}</span>
                   </button>
                 ))}
@@ -1382,38 +1430,47 @@ function ProgDots({ total, current }) {
   );
 }
 
-function OnboardSlide({ slide, isActive, isLast }) {
+function OnboardSlide({ slide, isActive }) {
   const [rdy, setRdy] = useState(false);
-  useEffect(()=>{ if(isActive){const t=setTimeout(()=>setRdy(true),60);return()=>clearTimeout(t);}else setRdy(false);},[isActive]);
+  useEffect(() => {
+    if (isActive) { const t = setTimeout(() => setRdy(true), 60); return () => clearTimeout(t); }
+    else setRdy(false);
+  }, [isActive]);
+
   return (
-    <div style={{ position:"absolute",inset:0,opacity:isActive?1:0,transition:"opacity 0.4s ease",pointerEvents:isActive?"auto":"none" }}>
-      <img src={slide.bg} alt="" style={{ position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",objectPosition:"center top",transform:isActive?"scale(1)":"scale(1.04)",transition:"transform 0.6s ease" }}/>
-      <div style={{ position:"absolute",inset:0,background:slide.overlay }}/>
-      <div style={{ position:"relative",height:"100%",display:"flex",flexDirection:"column",padding:"0 28px" }}>
-        <div style={{ paddingTop:66,display:"flex",flexDirection:"column",alignItems:"center",gap:5,animation:rdy?"fadeDown 0.5s ease 0.1s both":"none" }}>
-          <VTRXLogo size={50}/><div style={{ fontFamily:FONT,fontWeight:900,fontSize:26,color:PRIMARY,letterSpacing:4 }}>VTRX</div>
-          <div style={{ fontFamily:FONT,fontWeight:600,fontSize:10,color:"rgba(255,255,255,0.82)",letterSpacing:3.5 }}>UNLOCK YOUR FULL POTENTIAL</div>
+    <div style={{ position: "absolute", inset: 0, opacity: isActive ? 1 : 0, transition: "opacity 0.4s ease", pointerEvents: isActive ? "auto" : "none" }}>
+      <img src={slide.bg} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "center top", transform: isActive ? "scale(1)" : "scale(1.04)", transition: "transform 0.6s ease" }} />
+      <div style={{ position: "absolute", inset: 0, background: slide.overlay }} />
+      <div style={{ position: "relative", height: "100%", display: "flex", flexDirection: "column", padding: "0 28px" }}>
+        <div style={{ paddingTop: 66, display: "flex", flexDirection: "column", alignItems: "center", gap: 5, animation: rdy ? "fadeDown 0.5s ease 0.1s both" : "none" }}>
+          <VTRXLogo size={50} />
+          <div style={{ fontFamily: FONT, fontWeight: 900, fontSize: 26, color: PRIMARY, letterSpacing: 4 }}>VTRX</div>
+          <div style={{ fontFamily: FONT, fontWeight: 600, fontSize: 10, color: "rgba(255,255,255,0.82)", letterSpacing: 3.5 }}>UNLOCK YOUR FULL POTENTIAL</div>
         </div>
-        <div style={{ flex:1 }}/>
-        {!isLast&&<div style={{ paddingBottom:60 }}>
-          <div style={{ fontFamily:FONT,fontWeight:800,fontSize:11,color:slide.comingSoon?"#F59E0B":PRIMARY,letterSpacing:3,marginBottom:14,animation:rdy?"fadeUp 0.5s ease 0.15s both":"none" }}>{slide.tag}</div>
-          {slide.headline.map((line,i)=>(
-            <div key={i} style={{ fontFamily:FONT,fontWeight:800,fontSize:22,color:"#fff",lineHeight:1.25,marginBottom:2,animation:rdy?`fadeUp 0.5s ease ${0.2+i*0.07}s both`:"none" }}>{line}</div>
+        <div style={{ flex: 1 }} />
+        <div style={{ paddingBottom: 60 }}>
+          <div style={{ fontFamily: FONT, fontWeight: 800, fontSize: 11, color: PRIMARY, letterSpacing: 3, marginBottom: 14, animation: rdy ? "fadeUp 0.5s ease 0.15s both" : "none" }}>{slide.tag}</div>
+          {slide.headline.map((line, i) => (
+            <div key={i} style={{ fontFamily: FONT, fontWeight: 800, fontSize: 22, color: "#fff", lineHeight: 1.25, marginBottom: 2, animation: rdy ? `fadeUp 0.5s ease ${0.2 + i * 0.07}s both` : "none" }}>{line}</div>
           ))}
-          {slide.body&&<p style={{ fontFamily:FONT,fontWeight:400,fontSize:14,color:"rgba(255,255,255,0.7)",lineHeight:1.65,margin:"14px 0 0",animation:rdy?"fadeUp 0.5s ease 0.38s both":"none" }}>{slide.body}</p>}
-          {slide.features&&<div style={{ display:"flex",flexDirection:"column",gap:13,marginTop:20 }}>{slide.features.map((f,i)=>(
-            <div key={i} style={{ display:"flex",alignItems:"center",gap:14,animation:rdy?`fadeUp 0.5s ease ${0.28+i*0.08}s both`:"none" }}>
-              <div style={{ width:38,height:38,borderRadius:"50%",background:"rgba(0,163,255,0.18)",border:"1.5px solid rgba(0,163,255,0.4)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}><SlideIcon type={f.icon}/></div>
-              <span style={{ fontFamily:FONT,fontSize:15,fontWeight:500,color:"rgba(255,255,255,0.92)" }}>{f.text}</span>
+          {slide.body && <p style={{ fontFamily: FONT, fontWeight: 400, fontSize: 13.5, color: "rgba(255,255,255,0.7)", lineHeight: 1.65, margin: "14px 0 0", animation: rdy ? "fadeUp 0.5s ease 0.38s both" : "none" }}>{slide.body}</p>}
+          {slide.features && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 13, marginTop: 20 }}>
+              {slide.features.map((f, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 14, animation: rdy ? `fadeUp 0.5s ease ${0.28 + i * 0.08}s both` : "none" }}>
+                  <div style={{ width: 38, height: 38, borderRadius: "50%", background: "rgba(0,163,255,0.18)", border: "1.5px solid rgba(0,163,255,0.4)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><SlideIcon type={f.icon}/></div>
+                  <span style={{ fontFamily: FONT, fontSize: 15, fontWeight: 500, color: "rgba(255,255,255,0.92)" }}>{f.text}</span>
+                </div>
+              ))}
             </div>
-          ))}</div>}
-        </div>}
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-// ─── Preference screen helpers ────────────────────────────────────────────────
+
 function Chip({ label, selected, onSelect }) {
   return <button onClick={onSelect} style={{ padding:"12px 20px",borderRadius:50,border:selected?`2px solid ${PRIMARY}`:"2px solid rgba(255,255,255,0.9)",background:selected?"rgba(0,163,255,0.2)":"rgba(255,255,255,0.92)",color:selected?PRIMARY:"#111",fontFamily:FONT,fontWeight:600,fontSize:14,cursor:"pointer",whiteSpace:"nowrap",boxShadow:selected?`0 0 14px rgba(0,163,255,0.4)`:"none",transition:"all 0.18s ease" }}>{label}</button>;
 }
@@ -1423,13 +1480,6 @@ function ChipGroup({ options, value, onChange, multi }) {
 }
 function Q({ n, text, sub }) {
   return <p style={{ fontFamily:FONT,fontWeight:600,fontSize:14,color:"#fff",lineHeight:1.45,margin:"22px 0 11px",textShadow:"0 1px 8px rgba(0,0,0,0.8)" }}>{n}. {text}{sub&&<span style={{ color:"rgba(255,255,255,0.6)",fontWeight:400 }}> {sub}</span>}</p>;
-  const s = { width:"18", height:"18", viewBox:"0 0 24 24", fill:"none", stroke:"#999", strokeWidth:"2" };
-  if (type==="user")   return <svg {...s}><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>;
-  if (type==="phone")  return <svg {...s}><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81 19.79 19.79 0 01.12 1.18 2 2 0 012.11 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 7.09a16 16 0 006 6l.56-.56a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 14.9v2.02z"/></svg>;
-  if (type==="lock")   return <svg {...s}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>;
-  if (type==="gender") return <svg {...s}><circle cx="12" cy="8" r="4"/><path d="M12 12v8M9 18h6"/></svg>;
-  if (type==="email")  return <svg {...s}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>;
-  return null;
 }
 
 function BodyFieldIcon({ type }) {
@@ -4725,6 +4775,49 @@ function StatIcon({ type, color }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ── Trial Ended Banner ────────────────────────────────────────────────────────
+function TrialEndedBanner({ onUpgrade }) {
+  const [show, setShow] = useState(true);
+  if (!show) return null;
+  return (
+    <div style={{ position:"fixed",bottom:80,left:16,right:16,zIndex:200,
+      background:"linear-gradient(135deg,#0A1628 0%,#0d1f3c 100%)",
+      border:"1px solid #00A3FF",borderRadius:20,padding:"16px 18px",
+      boxShadow:"0 8px 40px rgba(0,163,255,0.2)" }}>
+      <div style={{ display:"flex",alignItems:"flex-start",gap:12 }}>
+        <div style={{ width:36,height:36,borderRadius:10,background:"rgba(0,163,255,0.15)",
+          border:"1px solid rgba(0,163,255,0.3)",display:"flex",alignItems:"center",
+          justifyContent:"center",flexShrink:0 }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00A3FF" strokeWidth="2">
+            <circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/>
+          </svg>
+        </div>
+        <div style={{ flex:1 }}>
+          <div style={{ fontFamily:"Montserrat,sans-serif",fontWeight:800,fontSize:14,color:"#fff",marginBottom:4 }}>
+            Your free trial has ended
+          </div>
+          <div style={{ fontFamily:"Montserrat,sans-serif",fontSize:12,color:"#888",lineHeight:1.5,marginBottom:10 }}>
+            You had AI coaching after every workout, full meal planning, and complete history. Keep all of it for $9.99/month.
+          </div>
+          <div style={{ display:"flex",gap:8 }}>
+            <button onClick={onUpgrade}
+              style={{ flex:1,padding:"9px 0",borderRadius:50,background:"#00A3FF",border:"none",
+                fontFamily:"Montserrat,sans-serif",fontWeight:800,fontSize:12,color:"#fff",cursor:"pointer",letterSpacing:0.5 }}>
+              KEEP PREMIUM — $9.99/MO
+            </button>
+            <button onClick={()=>setShow(false)}
+              style={{ padding:"9px 14px",borderRadius:50,background:"transparent",
+                border:"1px solid #333",fontFamily:"Montserrat,sans-serif",fontSize:12,color:"#666",cursor:"pointer" }}>
+              Later
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, streakDay=1, energyKey, onMoodSelect }) {
   const { dark, toggle: toggleTheme } = useTheme();
   const { user, profileImg } = useUser();
@@ -4959,43 +5052,37 @@ function VTRXAppInner() {
 
   // ── Onboarding screens ────────────────────────────────────────────────────
   if (phase==="onboarding") {
-    const slides = [
-      { icon:"bolt",   title:"Train Smarter",       sub:"AI-powered workouts built around your goals, energy and schedule." },
-      { icon:"target", title:"Hit Your Goals",       sub:"Whether you're cutting, bulking or staying active — VTRX adapts to you." },
-      { icon:"muscle", title:"Fuel Right",           sub:"Personalised meal suggestions matched to your training intensity each day." },
-      { icon:"fire",   title:"Build Streaks",        sub:"Daily consistency beats occasional perfection. VTRX keeps you accountable." },
-      { icon:"star",   title:"Earn & Compete",       sub:"Challenges and rewards coming soon. Train with purpose." },
-    ];
     return (
-      <div style={{ position:"absolute",inset:0,background:BG,overflow:"hidden" }}>
-        {slides.map((s,i)=>(
-          <div key={i} style={{ position:"absolute",inset:0,display:screen===i?"flex":"none",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"60px 32px 40px" }}>
-            <div style={{ width:80,height:80,borderRadius:24,background:`${PRIMARY}18`,border:`1.5px solid ${PRIMARY}44`,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:32 }}>
-              <SlideIcon type={s.icon} size={36}/>
-            </div>
-            <div style={{ fontFamily:FONT,fontWeight:900,fontSize:28,color:"#fff",textAlign:"center",marginBottom:16,letterSpacing:-0.5 }}>{s.title}</div>
-            <div style={{ fontFamily:FONT,fontSize:15,color:"#888",textAlign:"center",lineHeight:1.7,maxWidth:300 }}>{s.sub}</div>
-          </div>
-        ))}
-        {/* Dots */}
-        <div style={{ position:"absolute",bottom:160,left:0,right:0,display:"flex",justifyContent:"center",gap:8 }}>
-          {slides.map((_,i)=>(
-            <div key={i} style={{ width:i===screen?20:8,height:8,borderRadius:4,background:i===screen?PRIMARY:"#333",transition:"all 0.3s" }}/>
+      <div style={{ position:"absolute",inset:0,background:"#000",overflow:"hidden" }}>
+        {ONBOARDING_SLIDES.map((s,i) => <OnboardSlide key={s.id} slide={s} isActive={i===screen}/>)}
+        <div style={{ position:"absolute",top:18,left:0,right:0,display:"flex",justifyContent:"center",zIndex:20 }}>
+          {ONBOARDING_SLIDES.map((_,i) => (
+            <div key={i} onClick={()=>setScreen(i)} style={{ height:3,width:i===screen?28:18,borderRadius:2,background:i===screen?PRIMARY:"rgba(255,255,255,0.35)",transition:"all 0.3s",margin:"0 4px",cursor:"pointer" }}/>
           ))}
         </div>
-        {/* Buttons */}
-        <div style={{ position:"absolute",bottom:40,left:32,right:32,display:"flex",flexDirection:"column",gap:12 }}>
-          <button onClick={screen<slides.length-1?goNext:()=>setPhase("preferences")}
-            style={{ width:"100%",padding:"16px",borderRadius:50,background:PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff",cursor:"pointer",letterSpacing:1 }}>
-            {screen<slides.length-1?"NEXT":"GET STARTED"}
-          </button>
-          {screen===0&&(
-            <button onClick={()=>setPhase("login")}
-              style={{ width:"100%",padding:"14px",borderRadius:50,background:"transparent",border:`1px solid ${BORDER}`,fontFamily:FONT,fontWeight:600,fontSize:14,color:"#888",cursor:"pointer" }}>
-              Already have an account? Log in
+        {screen===ONBOARDING_SLIDES.length-1 && (
+          <div style={{ position:"absolute",bottom:50,left:28,right:28,zIndex:20,display:"flex",flexDirection:"column",gap:12,animation:"fadeUp 0.5s ease 0.6s both" }}>
+            <button onClick={()=>{ setPhase("preferences"); setScreen(0); }}
+              style={{ width:"100%",padding:"16px 0",borderRadius:50,border:"none",background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:2,cursor:"pointer",boxShadow:`0 4px 28px ${PRIMARY}55` }}>
+              GET STARTED
             </button>
-          )}
-        </div>
+            <button onClick={()=>setPhase("login")}
+              style={{ width:"100%",padding:"15px 0",background:"transparent",border:"1.5px solid rgba(255,255,255,0.35)",borderRadius:50,fontFamily:FONT,fontWeight:600,fontSize:14,color:"rgba(255,255,255,0.85)",cursor:"pointer",letterSpacing:0.5 }}>
+              Log In
+            </button>
+            <p style={{ fontFamily:FONT,fontSize:11,color:"rgba(255,255,255,0.4)",textAlign:"center",lineHeight:1.55 }}>
+              By signing up you agree to our <span style={{ color:PRIMARY,cursor:"pointer" }}>Terms of Service</span> and <span style={{ color:PRIMARY,cursor:"pointer" }}>Privacy Policy</span>
+            </p>
+          </div>
+        )}
+        {screen<ONBOARDING_SLIDES.length-1 && (
+          <div style={{ position:"absolute",bottom:34,left:0,right:0,display:"flex",justifyContent:"center",alignItems:"center",gap:7,zIndex:20,animation:"fadeUp 0.5s ease 0.8s both" }}>
+            <span style={{ fontFamily:FONT,fontWeight:600,fontSize:13.5,color:PRIMARY,letterSpacing:1 }}>Swipe</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+          </div>
+        )}
+        {screen>0 && <div onClick={()=>setScreen(s=>s-1)} style={{ position:"absolute",left:0,top:"20%",width:"18%",height:"55%",zIndex:15,cursor:"pointer" }}/>}
+        {screen<ONBOARDING_SLIDES.length-1 && <div onClick={()=>setScreen(s=>s+1)} style={{ position:"absolute",right:0,top:"20%",width:"18%",height:"55%",zIndex:15,cursor:"pointer" }}/>}
       </div>
     );
   }
@@ -5020,6 +5107,8 @@ function VTRXAppInner() {
     ];
     return SCREENS[Math.min(screen, SCREENS.length-1)];
   }
+
+  // ── Dashboard ───────────────────────────────────────────────────────────────
 
   // ── Dashboard ─────────────────────────────────────────────────────────────
   const handleLogout = async () => {
@@ -5059,6 +5148,9 @@ function VTRXAppInner() {
   };
 
 
+
+  // Only show dashboard if phase is dashboard
+  if (phase !== "dashboard") return null;
 
   // Inner pages
   if (innerPage==="aiSummary")     return <AISummaryPage energyKey={energyKey} workoutDone={workoutDone} onBack={goBack}/>;
