@@ -1152,7 +1152,7 @@ function AISummaryPage({ energyKey, onBack }) {
       </div>
 
       {/* ── SCROLL CONTENT ── */}
-      <div ref={scrollRef} onScroll={onScroll} ref={aiScrollRef} style={{ flex:1,overflowY:"auto",padding:"12px 16px 40px" }}>
+      <div ref={(el)=>{if(scrollRef)scrollRef.current=el;if(aiScrollRef)aiScrollRef.current=el;}} onScroll={onScroll} style={{ flex:1,overflowY:"auto",padding:"12px 16px 40px" }}>
 
         {/* ════ TAB: AI SUMMARY ════ */}
         {tab==="summary" && (
@@ -5151,6 +5151,8 @@ function VTRXApp() {
 }
 
 
+
+export default VTRXApp;
 
 const root = document.getElementById("root");
 if (root) {
