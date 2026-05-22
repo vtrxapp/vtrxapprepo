@@ -1784,13 +1784,12 @@ function ForgotPasswordPage({ onBack }) {
 }
 
 
-function LoginScreen({ onLogin, onSignUp }) {
-  const [showForgot, setShowForgot] = useState(false);
-  const [email,  setEmail]          = useState("");
-  const [pass,   setPass]           = useState("");
-  const [showPass, setShowPass]     = useState(false);
-  const [err,    setErr]            = useState("");
-  const [loading, setLoading]       = useState(false);
+function LoginScreen({ onLogin, onSignUp, onForgot }) {
+  const [email,   setEmail]   = useState("");
+  const [pass,    setPass]    = useState("");
+  const [showPass,setShowPass]= useState(false);
+  const [err,     setErr]     = useState("");
+  const [loading, setLoading] = useState(false);
 
   const handle = async () => {
     if (!email.trim()) { setErr("Please enter your email."); return; }
@@ -1815,55 +1814,90 @@ function LoginScreen({ onLogin, onSignUp }) {
     } finally { setLoading(false); }
   };
 
-  if (showForgot) return <ForgotPasswordPage onBack={()=>setShowForgot(false)}/>;
   return (
-    <div style={{ position:"absolute",inset:0 }}>
-      <img src="https://images.unsplash.com/photo-1517963879433-6ad2b056d712?w=800&q=80" alt="" style={{ position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover" }}/>
-      <div style={{ position:"absolute",inset:0,background:"linear-gradient(180deg,rgba(0,0,0,0.45) 0%,rgba(0,0,0,0.92) 100%)" }}/>
-      <div style={{ position:"absolute",inset:0,display:"flex",flexDirection:"column",padding:"60px 28px 48px",overflowY:"auto" }}>
-        <div style={{ flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:0 }}>
-          <VTRXLogo size={52}/>
-          <div style={{ fontFamily:FONT,fontWeight:900,fontSize:30,color:"#fff",marginTop:20,marginBottom:4,letterSpacing:-0.5 }}>Welcome back</div>
-          <div style={{ fontFamily:FONT,fontSize:14,color:"#888",marginBottom:36 }}>Sign in to your account</div>
-          {/* Email */}
-          <div style={{ width:"100%",marginBottom:14 }}>
-            <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email address"
-              type="email" autoCapitalize="none" autoCorrect="off"
-              style={{ width:"100%",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:14,padding:"15px 18px",fontFamily:FONT,fontSize:16,color:"#fff",outline:"none",boxSizing:"border-box" }}/>
-          </div>
-          {/* Password */}
-          <div style={{ width:"100%",position:"relative",marginBottom:8 }}>
-            <input value={pass} onChange={e=>setPass(e.target.value)} placeholder="Password"
-              type={showPass?"text":"password"}
-              onKeyDown={e=>e.key==="Enter"&&handle()}
-              style={{ width:"100%",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:14,padding:"15px 52px 15px 18px",fontFamily:FONT,fontSize:16,color:"#fff",outline:"none",boxSizing:"border-box" }}/>
-            <button onClick={()=>setShowPass(p=>!p)} style={{ position:"absolute",right:14,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",padding:4 }}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2">
-                {showPass ? <><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></> : <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>}
-              </svg>
-            </button>
-          </div>
-          {err && <div style={{ fontFamily:FONT,fontSize:13,color:"#EF4444",marginBottom:8,textAlign:"center",width:"100%" }}>{err}</div>}
-          <button onClick={()=>setShowForgot(true)} style={{ background:"none",border:"none",fontFamily:FONT,fontSize:13,color:"#888",cursor:"pointer",alignSelf:"flex-end",marginBottom:24,padding:0 }}>Forgot password?</button>
-          <button onClick={handle} disabled={loading}
-            style={{ width:"100%",padding:"16px 0",borderRadius:50,background:loading?"#555":PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff",cursor:loading?"not-allowed":"pointer",letterSpacing:1,marginBottom:16,opacity:loading?0.7:1,transition:"all 0.2s" }}>
-            {loading ? "SIGNING IN..." : "SIGN IN"}
-          </button>
-          <div style={{ fontFamily:FONT,fontSize:14,color:"#888" }}>
-            Don't have an account?{" "}
-            <button onClick={onSignUp} style={{ background:"none",border:"none",fontFamily:FONT,fontSize:14,color:PRIMARY,cursor:"pointer",fontWeight:700,padding:0 }}>Sign up</button>
-          </div>
-        </div>
+    <Shell
+      bg="https://images.unsplash.com/photo-1517963879433-6ad2b056d712?w=800&q=80"
+      overlay="linear-gradient(180deg,rgba(0,0,0,0.55) 0%,rgba(0,0,0,0.6) 40%,rgba(0,0,0,0.95) 100%)"
+    >
+      {/* Logo header */}
+      <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", paddingTop:50 }}>
+        <VTRXLogo size={50}/>
+        <div style={{ fontFamily:FONT, fontWeight:900, fontSize:28, color:PRIMARY, letterSpacing:5, marginTop:10, marginBottom:4 }}>VTRX</div>
+        <div style={{ fontFamily:FONT, fontWeight:600, fontSize:10, color:"rgba(255,255,255,0.8)", letterSpacing:3 }}>WELCOME BACK</div>
       </div>
-    </div>
+
+      {/* Form */}
+      <div style={{ padding:"0 26px 48px", display:"flex", flexDirection:"column", gap:14 }}>
+
+        {/* Email field */}
+        <div style={{ position:"relative" }}>
+          <div style={{ position:"absolute", left:18, top:"50%", transform:"translateY(-50%)", zIndex:1, display:"flex", alignItems:"center" }}>
+            <BodyFieldIcon type="email"/>
+          </div>
+          <input
+            value={email} onChange={e=>setEmail(e.target.value)}
+            placeholder="Email address" type="email"
+            autoCapitalize="none" autoCorrect="off"
+            style={{ width:"100%", background:"rgba(255,255,255,0.92)", borderRadius:50, border:`2px solid transparent`, padding:"16px 18px 16px 44px", fontFamily:FONT, fontSize:14, fontWeight:500, color:"#111", outline:"none", boxSizing:"border-box" }}
+          />
+        </div>
+
+        {/* Password field */}
+        <div style={{ position:"relative" }}>
+          <div style={{ position:"absolute", left:18, top:"50%", transform:"translateY(-50%)", zIndex:1, display:"flex", alignItems:"center" }}>
+            <BodyFieldIcon type="lock"/>
+          </div>
+          <input
+            value={pass} onChange={e=>setPass(e.target.value)}
+            placeholder="Password" type={showPass?"text":"password"}
+            onKeyDown={e=>e.key==="Enter"&&handle()}
+            style={{ width:"100%", background:"rgba(255,255,255,0.92)", borderRadius:50, border:`2px solid transparent`, padding:"16px 46px 16px 44px", fontFamily:FONT, fontSize:14, fontWeight:500, color:"#111", outline:"none", boxSizing:"border-box" }}
+          />
+          <button onClick={()=>setShowPass(p=>!p)}
+            style={{ position:"absolute", right:18, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2">
+              {showPass
+                ? <><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></>
+                : <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>
+              }
+            </svg>
+          </button>
+        </div>
+
+        {/* Error */}
+        {err && <div style={{ fontFamily:FONT, fontSize:13, color:"#EF4444", textAlign:"center", marginTop:-6 }}>{err}</div>}
+
+        {/* Forgot password */}
+        <div style={{ textAlign:"right", marginTop:-6 }}>
+          <button onClick={onForgot||null} style={{ background:"none", border:"none", fontFamily:FONT, fontSize:13, color:"rgba(255,255,255,0.6)", cursor:"pointer", padding:0 }}>
+            Forgot password?
+          </button>
+        </div>
+
+        {/* Sign in button */}
+        <div style={{ marginTop:4 }}>
+          <CTA label={loading ? "SIGNING IN..." : "SIGN IN"} onClick={handle}/>
+        </div>
+
+        {/* Sign up link */}
+        <div style={{ textAlign:"center" }}>
+          <span style={{ fontFamily:FONT, fontSize:13, color:"rgba(255,255,255,0.6)" }}>Don't have an account? </span>
+          <button onClick={onSignUp} style={{ background:"none", border:"none", fontFamily:FONT, fontSize:13, color:"#fff", fontWeight:800, cursor:"pointer", padding:0 }}>
+            Sign up
+          </button>
+        </div>
+
+      </div>
+    </Shell>
   );
 }
-
 
 function SignUpScreen({ onContinue, onBack }) {
   const [f, setF]         = useState({ name:"", username:"", email:"", password:"", confirm:"" });
   const [err, setErr]     = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPass, setShowPass] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const s = k => e => setF({ ...f, [k]: e.target.value });
 
   const handle = async () => {
@@ -1883,7 +1917,6 @@ function SignUpScreen({ onContinue, onBack }) {
           password: f.password,
         }),
       });
-      // Store email for verification step
       if (typeof localStorage !== "undefined") localStorage.setItem("vtrx_pending_email", f.email.trim().toLowerCase());
       onContinue();
     } catch (e) {
@@ -1892,49 +1925,78 @@ function SignUpScreen({ onContinue, onBack }) {
   };
 
   const fields = [
-    { key:"name",     label:"FULL NAME",    placeholder:"Your name",       type:"text"     },
-    { key:"username", label:"USERNAME",     placeholder:"@username",       type:"text"     },
-    { key:"email",    label:"EMAIL",        placeholder:"Email address",   type:"email"    },
-    { key:"password", label:"PASSWORD",     placeholder:"Min 8 characters",type:"password" },
-    { key:"confirm",  label:"CONFIRM PASSWORD", placeholder:"Repeat password", type:"password" },
+    { key:"name",     icon:"user",  placeholder:"Full name",        type:"text"     },
+    { key:"username", icon:"user",  placeholder:"Username",         type:"text"     },
+    { key:"email",    icon:"email", placeholder:"Email address",    type:"email"    },
+    { key:"password", icon:"lock",  placeholder:"Password (min 8)", type:"password", toggle: true, show: showPass, setShow: setShowPass },
+    { key:"confirm",  icon:"lock",  placeholder:"Confirm password", type:"password", toggle: true, show: showConfirm, setShow: setShowConfirm },
   ];
 
   return (
-    <Shell bg="https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=800&q=80" overlay="linear-gradient(180deg,rgba(0,0,0,0.5) 0%,rgba(0,0,0,0.92) 100%)">
-      <div style={{ flex:1,overflowY:"auto",padding:"60px 24px 40px" }}>
-        <div style={{ display:"flex",alignItems:"center",gap:14,marginBottom:28 }}>
-          <button onClick={onBack} style={{ width:36,height:36,borderRadius:"50%",background:"rgba(255,255,255,0.1)",border:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0 }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-          </button>
-          <div>
-            <div style={{ fontFamily:FONT,fontWeight:900,fontSize:22,color:"#fff" }}>Create Account</div>
-            <div style={{ fontFamily:FONT,fontSize:13,color:"#888",marginTop:2 }}>Step 1 of 6</div>
-          </div>
-        </div>
+    <Shell
+      bg="https://images.unsplash.com/photo-1571902943202-507ec2618e8f?w=800&q=80"
+      overlay="linear-gradient(180deg,rgba(0,0,0,0.5) 0%,rgba(0,0,0,0.58) 45%,rgba(0,0,0,0.92) 100%)"
+    >
+      {/* Logo header */}
+      <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", paddingTop:50 }}>
+        <VTRXLogo size={50}/>
+        <div style={{ fontFamily:FONT, fontWeight:900, fontSize:28, color:PRIMARY, letterSpacing:5, marginTop:10, marginBottom:4 }}>VTRX</div>
+        <div style={{ fontFamily:FONT, fontWeight:600, fontSize:10, color:"rgba(255,255,255,0.8)", letterSpacing:3 }}>UNLEASH YOUR FULL POTENTIAL</div>
+      </div>
 
-        {fields.map(({key,label,placeholder,type}) => (
-          <div key={key} style={{ marginBottom:16 }}>
-            <div style={{ fontFamily:FONT,fontSize:11,fontWeight:700,color:"#888",letterSpacing:1,marginBottom:6 }}>{label}</div>
-            <input value={f[key]} onChange={s(key)} placeholder={placeholder} type={type}
+      {/* Form */}
+      <div style={{ padding:"0 26px 40px", display:"flex", flexDirection:"column", gap:12 }}>
+
+        {fields.map(({ key, icon, placeholder, type, toggle, show, setShow }) => (
+          <div key={key} style={{ position:"relative" }}>
+            <div style={{ position:"absolute", left:18, top:"50%", transform:"translateY(-50%)", zIndex:1, display:"flex", alignItems:"center" }}>
+              <BodyFieldIcon type={icon}/>
+            </div>
+            <input
+              value={f[key]}
+              onChange={s(key)}
+              placeholder={placeholder}
+              type={toggle ? (show ? "text" : "password") : type}
               autoCapitalize="none" autoCorrect="off"
-              style={{ width:"100%",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:14,padding:"14px 16px",fontFamily:FONT,fontSize:16,color:"#fff",outline:"none",boxSizing:"border-box" }}/>
+              style={{ width:"100%", background:"rgba(255,255,255,0.92)", borderRadius:50, border:`2px solid transparent`, padding:`16px ${toggle ? 46 : 18}px 16px 44px`, fontFamily:FONT, fontSize:14, fontWeight:500, color:"#111", outline:"none", boxSizing:"border-box" }}
+            />
+            {toggle && (
+              <button onClick={()=>setShow(p=>!p)}
+                style={{ position:"absolute", right:18, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2">
+                  {show
+                    ? <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>
+                    : <><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></>
+                  }
+                </svg>
+              </button>
+            )}
           </div>
         ))}
 
-        {err && <div style={{ fontFamily:FONT,fontSize:13,color:"#EF4444",marginBottom:12,textAlign:"center" }}>{err}</div>}
+        {/* Error */}
+        {err && <div style={{ fontFamily:FONT, fontSize:13, color:"#EF4444", textAlign:"center" }}>{err}</div>}
 
-        <button onClick={handle} disabled={loading}
-          style={{ width:"100%",padding:"16px 0",borderRadius:50,background:loading?"#555":PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff",cursor:loading?"not-allowed":"pointer",letterSpacing:1,marginTop:8,opacity:loading?0.7:1 }}>
-          {loading ? "CREATING ACCOUNT..." : "CONTINUE"}
-        </button>
-        <div style={{ fontFamily:FONT,fontSize:11,color:"#555",textAlign:"center",marginTop:16,lineHeight:1.6 }}>
-          By continuing you agree to VTRX Terms of Service and Privacy Policy.
+        {/* Sign up button */}
+        <div style={{ marginTop:4 }}>
+          <CTA label={loading ? "CREATING ACCOUNT..." : "SIGN UP"} onClick={handle}/>
+        </div>
+
+        {/* Log in link */}
+        <div style={{ textAlign:"center" }}>
+          <span style={{ fontFamily:FONT, fontSize:13, color:"rgba(255,255,255,0.6)" }}>Already have an account? </span>
+          <button onClick={onBack} style={{ background:"none", border:"none", fontFamily:FONT, fontSize:13, color:"#fff", fontWeight:800, cursor:"pointer", padding:0 }}>
+            Log In
+          </button>
+        </div>
+
+        <div style={{ fontFamily:FONT, fontSize:11, color:"rgba(255,255,255,0.35)", textAlign:"center", lineHeight:1.5 }}>
+          By signing up you agree to our Terms of Service and Privacy Policy.
         </div>
       </div>
     </Shell>
   );
 }
-
 
 function EmailVerificationScreen({ onContinue, onBack }) {
   const [code, setCode]         = useState("");
@@ -1962,13 +2024,15 @@ function EmailVerificationScreen({ onContinue, onBack }) {
   };
 
   const resend = async () => {
+    if (!email) { setErr("No email found — please go back and sign up."); return; }
     setResend(true);
     try {
-      await apiCall("/auth/forgot-password", { method:"POST", body:JSON.stringify({ email }) });
+      await apiCall("/auth/resend-code", { method:"POST", body:JSON.stringify({ email }) });
       setResent(true);
-      setTimeout(() => setResent(false), 4000);
-    } catch {}
-    finally { setResend(false); }
+      setTimeout(() => setResent(false), 5000);
+    } catch (e) {
+      setErr(e.message || "Could not resend. Please wait a moment and try again.");
+    } finally { setResend(false); }
   };
 
   return (
@@ -4689,9 +4753,6 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
 
   const aiSug = AI_SUGGESTIONS[energyKey] || AI_SUGGESTIONS.okay;
 
-  const [trialEndedDismissed, setTrialEndedDismissed] = useState(false);
-  const showTrialBanner = !isPremium && !trialEndedDismissed;
-
   if (showProfile) return <ProfilePage onBack={()=>setShowProfile(false)} onLogout={()=>{ setShowProfile(false); onLogout&&onLogout(); }}/>;
   if (selectedRecipe !== null) return <RecipeFullPage r={RECIPES[selectedRecipe]} onBack={()=>setSelectedRecipe(null)} saved={savedIds.includes(selectedRecipe)} onToggleSave={()=>toggleSave(selectedRecipe)}/>;
 
@@ -4968,7 +5029,9 @@ function TrialEndedBanner({ onUpgrade }) {
 
 function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, streakDay=1, energyKey, onMoodSelect }) {
   const { dark, toggle: toggleTheme } = useTheme();
-  const { user, profileImg } = useUser();
+  const { user, profileImg, isPremium } = useUser();
+  const [trialEndedDismissed, setTrialEndedDismissed] = useState(false);
+  const showTrialBanner = !isPremium && !trialEndedDismissed;
   const [showSwap, setShowSwap] = useState(false);
   const [swapCount, setSwapCount] = useState(0);
   const MAX_SWAPS = 2;
@@ -5173,8 +5236,10 @@ function VTRXAppInner() {
   const [energyKey,     setEnergyKey]     = useState("okay");
   const [notifCount,    setNotifCount]    = useState(0);
   const [liveUser,      setLiveUser]      = useState(null);
-  const dashScrollRef = useRef(null);
+  const dashScrollRef  = useRef(null);
   const savedScrollPos = useRef(0);
+  const mouseStart     = useRef(null);
+  const touchStart     = useRef(null);
 
   // Load real data on mount
   useEffect(() => {
