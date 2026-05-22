@@ -5,11 +5,32 @@ import ReactDOM from "react-dom/client";
 
 // ── API Configuration ─────────────────────────────────────────────────────────
 const API_URL = typeof import_meta_env !== "undefined"
-  ? (import_meta_env.VITE_API_URL || "http://localhost:5000/api")
-  : "http://localhost:5000/api";
+  ? (import_meta_env.VITE_API_URL || "")
+  : "";
+
+// When no real backend URL is set, all API calls silently succeed (demo/preview mode)
+const DEMO_MODE = !API_URL;
 
 // ── API Helper ────────────────────────────────────────────────────────────────
 const apiCall = async (endpoint, options = {}) => {
+  // Demo/preview mode — no backend configured, return mock success
+  if (DEMO_MODE) {
+    // Simulate a brief network delay
+    await new Promise(r => setTimeout(r, 400));
+    // Return plausible mock responses per endpoint
+    if (endpoint === "/auth/signup")         return { success:true, data:{ message:"Account created" } };
+    if (endpoint === "/auth/confirm-email")  return { success:true, data:{ message:"Verified" } };
+    if (endpoint === "/auth/login")          return { success:true, data:{ token:"demo_token", user:{ id:"demo", name:"Demo User", email:"demo@vtrx.app" }, cognitoTokens:{} } };
+    if (endpoint === "/auth/me")             return { success:true, data:{ id:"demo", name:"Demo User", email:"demo@vtrx.app", isPremium:false } };
+    if (endpoint === "/auth/logout")         return { success:true };
+    if (endpoint === "/auth/forgot-password")return { success:true };
+    if (endpoint === "/auth/reset-password") return { success:true };
+    if (endpoint === "/payments/create-checkout") return { success:true, data:{ url:"#" } };
+    if (endpoint === "/notifications")       return { success:true, data:[] };
+    if (endpoint === "/users/mood")          return { success:true };
+    if (endpoint === "/workouts/log")        return { success:true };
+    return { success:true, data:{} };
+  }
   const token = typeof localStorage !== "undefined" ? localStorage.getItem("vtrx_token") : null;
   const res   = await fetch(`${API_URL}${endpoint}`, {
     headers: {
@@ -501,6 +522,131 @@ function FitnessStatsPage({ onBack }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // ── NEW INNER PAGE: RECIPE / NUTRITION ───────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ── RECIPE FULL PAGE ─────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+function RecipeFullPage({ recipe, r, isSaved, saved, onSave, onToggleSave, onBack }) {
+  const meal  = recipe || r;
+  const isS   = isSaved !== undefined ? isSaved : (saved || false);
+  const doSave = onSave || onToggleSave || (()=>{});
+  const [checked,    setChecked]    = useState([]);
+  const [rating,     setRating]     = useState(0);
+  const [hovered,    setHovered]    = useState(0);
+  const [rated,      setRated]      = useState(false);
+  const [showRating, setShowRating] = useState(false);
+  if (!meal) return null;
+  const toggle = (i) => setChecked(p => p.includes(i) ? p.filter(x=>x!==i) : [...p,i]);
+  const handleRate = (star) => { setRating(star); setRated(true); setTimeout(()=>setShowRating(false),1400); };
+  return (
+    <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column" }}>
+      <BackHeader title="RECIPE" onBack={onBack}
+        right={
+          <button onClick={doSave} style={{ width:40,height:40,borderRadius:"50%",background:isS?`${PRIMARY}22`:CARD,border:`1px solid ${isS?PRIMARY:BORDER}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill={isS?PRIMARY:"none"} stroke={isS?PRIMARY:"#888"} strokeWidth="2"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>
+          </button>
+        }
+      />
+      <div style={{ flex:1,overflowY:"auto" }}>
+        <div style={{ position:"relative",height:220 }}>
+          <img src={meal.img} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+          <div style={{ position:"absolute",inset:0,background:"linear-gradient(180deg,transparent 30%,rgba(0,0,0,0.75) 100%)" }}/>
+          <div style={{ position:"absolute",bottom:16,left:18 }}>
+            <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff",lineHeight:1.2,marginBottom:6 }}>{meal.name}</div>
+            <div style={{ display:"flex",gap:16 }}>
+              <div style={{ display:"flex",alignItems:"center",gap:5 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <span style={{ fontFamily:FONT,fontSize:12,color:"rgba(255,255,255,0.9)",fontWeight:600 }}>{meal.mins} min</span>
+              </div>
+              {meal.servings&&<div style={{ display:"flex",alignItems:"center",gap:5 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+                <span style={{ fontFamily:FONT,fontSize:12,color:"rgba(255,255,255,0.9)",fontWeight:600 }}>{meal.servings} servings</span>
+              </div>}
+            </div>
+          </div>
+        </div>
+        <div style={{ padding:"0 16px 40px" }}>
+          {meal.desc&&<div style={{ background:"#fff",borderRadius:16,padding:"16px 18px",marginTop:16,marginBottom:14 }}>
+            <p style={{ fontFamily:FONT,fontSize:13.5,color:"#222",lineHeight:1.65,margin:0 }}>{meal.desc}</p>
+          </div>}
+          <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"18px",marginBottom:14 }}>
+            <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#fff",marginBottom:16 }}>Nutritional Value</div>
+            <div style={{ display:"flex",justifyContent:"space-around" }}>
+              {[{ltr:"C",label:"Calories",val:meal.cal,bg:"#EA580C"},{ltr:"P",label:"Protein",val:`${meal.protein}g`,bg:"#DC2626"},{ltr:"F",label:"Fats",val:`${meal.fats}g`,bg:"#16A34A"},{ltr:"W",label:"Carbs",val:`${meal.carbs}g`,bg:"#0EA5E9"}].map(s=>(
+                <div key={s.ltr} style={{ textAlign:"center" }}>
+                  <div style={{ width:50,height:50,borderRadius:"50%",background:s.bg,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 8px",fontFamily:FONT,fontWeight:900,fontSize:18,color:"#fff" }}>{s.ltr}</div>
+                  <div style={{ fontFamily:FONT,fontSize:11,color:"#888",marginBottom:2 }}>{s.label}</div>
+                  <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:s.bg }}>{s.val}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          {meal.ingredients&&meal.ingredients.length>0&&(
+            <div style={{ background:"#fff",borderRadius:20,padding:"18px",marginBottom:14 }}>
+              <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#111",marginBottom:14 }}>Ingredients</div>
+              {meal.ingredients.map((ing,i)=>(
+                <div key={i} onClick={()=>toggle(i)} style={{ display:"flex",alignItems:"center",gap:14,padding:"10px 0",borderBottom:i<meal.ingredients.length-1?"1px solid #eee":"none",cursor:"pointer" }}>
+                  <div style={{ width:22,height:22,borderRadius:4,border:`2px solid ${checked.includes(i)?PRIMARY:"#ccc"}`,background:checked.includes(i)?PRIMARY:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all 0.2s" }}>
+                    {checked.includes(i)&&<svg width="12" height="9" viewBox="0 0 12 9" fill="none" stroke="#fff" strokeWidth="2.5"><polyline points="1,4.5 4.5,8 11,1"/></svg>}
+                  </div>
+                  <span style={{ fontFamily:FONT,fontSize:14,color:checked.includes(i)?"#aaa":"#222",textDecoration:checked.includes(i)?"line-through":"none" }}>{ing}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {meal.steps&&meal.steps.length>0&&(
+            <div style={{ background:"#fff",borderRadius:20,padding:"18px",marginBottom:16 }}>
+              <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#111",marginBottom:14 }}>Directions</div>
+              {meal.steps.map((s,i)=>(
+                <div key={i} style={{ marginBottom:14 }}>
+                  <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#111",marginBottom:4 }}>Step {i+1}</div>
+                  <div style={{ fontFamily:FONT,fontSize:13.5,color:"#444",lineHeight:1.65,paddingLeft:12 }}>{typeof s==="string"?s:(s.body||s.title||"")}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          {rated?(
+            <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"16px 20px",display:"flex",alignItems:"center",gap:14 }}>
+              <div style={{ display:"flex",gap:3 }}>{[1,2,3,4,5].map(s=><svg key={s} width="18" height="18" viewBox="0 0 24 24" fill={s<=rating?"#F59E0B":"#333"}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>)}</div>
+              <div style={{ flex:1 }}><div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#22C55E" }}>Thanks for rating!</div></div>
+            </div>
+          ):(
+            <button onClick={()=>setShowRating(true)} style={{ width:"100%",padding:"16px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1.5,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,boxShadow:`0 4px 24px ${PRIMARY}55` }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              Rate this Recipe
+            </button>
+          )}
+        </div>
+      </div>
+      {showRating&&(
+        <>
+          <div onClick={()=>setShowRating(false)} style={{ position:"absolute",inset:0,background:"rgba(0,0,0,0.75)",zIndex:50 }}/>
+          <div style={{ position:"absolute",bottom:0,left:0,right:0,background:CARD,borderRadius:"24px 24px 0 0",border:`1px solid ${BORDER}`,borderBottom:"none",padding:"24px 24px 44px",zIndex:51 }}>
+            <div style={{ display:"flex",justifyContent:"center",marginBottom:12 }}><div style={{ width:40,height:4,borderRadius:2,background:"#2a2a2a" }}/></div>
+            <button onClick={()=>setShowRating(false)} style={{ position:"absolute",top:20,right:20,width:32,height:32,borderRadius:"50%",background:"#1e1e1e",border:`1px solid ${BORDER}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#aaa" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+            <div style={{ textAlign:"center",marginBottom:20 }}>
+              <div style={{ fontFamily:FONT,fontWeight:900,fontSize:18,color:"#fff",marginBottom:4 }}>Rate this Recipe</div>
+              <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:PRIMARY }}>{meal.name}</div>
+            </div>
+            <div style={{ display:"flex",justifyContent:"center",gap:12,marginBottom:8 }}>
+              {[1,2,3,4,5].map(star=>(
+                <button key={star} onMouseEnter={()=>setHovered(star)} onMouseLeave={()=>setHovered(0)} onClick={()=>handleRate(star)}
+                  style={{ background:"none",border:"none",cursor:"pointer",transform:hovered>=star?"scale(1.2)":"scale(1)",transition:"transform 0.15s",padding:0 }}>
+                  <svg width="44" height="44" viewBox="0 0 24 24" fill={hovered>=star?"#F59E0B":"#2a2a2a"} stroke={hovered>=star?"#F59E0B":"#444"} strokeWidth="1.5">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                  </svg>
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function NutritionPage({ meal, onBack }) {
   // Convert MEALS format to RecipeFullPage-compatible format
   const recipe = {
@@ -1436,7 +1582,9 @@ function OnboardSlide({ slide, isActive }) {
     if (isActive) { const t = setTimeout(() => setRdy(true), 60); return () => clearTimeout(t); }
     else setRdy(false);
   }, [isActive]);
-
+  // Last slide needs room for GET STARTED + Log In + legal text (~195px)
+  // Other slides just need room for "Swipe" hint (~70px)
+  const bottomPad = slide.cta ? 200 : 70;
   return (
     <div style={{ position: "absolute", inset: 0, opacity: isActive ? 1 : 0, transition: "opacity 0.4s ease", pointerEvents: isActive ? "auto" : "none" }}>
       <img src={slide.bg} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "center top", transform: isActive ? "scale(1)" : "scale(1.04)", transition: "transform 0.6s ease" }} />
@@ -1448,14 +1596,14 @@ function OnboardSlide({ slide, isActive }) {
           <div style={{ fontFamily: FONT, fontWeight: 600, fontSize: 10, color: "rgba(255,255,255,0.82)", letterSpacing: 3.5 }}>UNLOCK YOUR FULL POTENTIAL</div>
         </div>
         <div style={{ flex: 1 }} />
-        <div style={{ paddingBottom: 60 }}>
+        <div style={{ paddingBottom: bottomPad }}>
           <div style={{ fontFamily: FONT, fontWeight: 800, fontSize: 11, color: PRIMARY, letterSpacing: 3, marginBottom: 14, animation: rdy ? "fadeUp 0.5s ease 0.15s both" : "none" }}>{slide.tag}</div>
           {slide.headline.map((line, i) => (
             <div key={i} style={{ fontFamily: FONT, fontWeight: 800, fontSize: 22, color: "#fff", lineHeight: 1.25, marginBottom: 2, animation: rdy ? `fadeUp 0.5s ease ${0.2 + i * 0.07}s both` : "none" }}>{line}</div>
           ))}
           {slide.body && <p style={{ fontFamily: FONT, fontWeight: 400, fontSize: 13.5, color: "rgba(255,255,255,0.7)", lineHeight: 1.65, margin: "14px 0 0", animation: rdy ? "fadeUp 0.5s ease 0.38s both" : "none" }}>{slide.body}</p>}
           {slide.features && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 13, marginTop: 20 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 18 }}>
               {slide.features.map((f, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 14, animation: rdy ? `fadeUp 0.5s ease ${0.28 + i * 0.08}s both` : "none" }}>
                   <div style={{ width: 38, height: 38, borderRadius: "50%", background: "rgba(0,163,255,0.18)", border: "1.5px solid rgba(0,163,255,0.4)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><SlideIcon type={f.icon}/></div>
@@ -2186,7 +2334,7 @@ function MoodSheet({ visible, onSelect }) {
         ):lvl&&w?(
           <div style={{ padding:"6px 22px 0",animation:"fadeUp 0.3s ease both" }}>
             <div style={{ textAlign:"center",marginBottom:20 }}>
-              <div style={{ fontSize:52,marginBottom:10,lineHeight:1 }}>{lvl.emoji}</div>
+              <div style={{ width:60,height:60,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 10px" }}><EnergyFaceIcon type={lvl.faceType} size={52}/></div>
               <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff",marginBottom:4 }}>{lvl.label}</div>
               <div style={{ fontFamily:FONT,fontSize:13,color:"#444" }}>Here's what VTRX has lined up for you</div>
             </div>
@@ -5052,37 +5200,57 @@ function VTRXAppInner() {
 
   // ── Onboarding screens ────────────────────────────────────────────────────
   if (phase==="onboarding") {
+    const isLast = screen === ONBOARDING_SLIDES.length - 1;
     return (
-      <div style={{ position:"absolute",inset:0,background:"#000",overflow:"hidden" }}>
+      <div style={{ position:"absolute",inset:0,background:"#000",overflow:"hidden" }}
+        onMouseDown={e=>{ mouseStart.current=e.clientX; }}
+        onMouseUp={e=>{ if(mouseStart.current!=null){ const dx=e.clientX-mouseStart.current; if(Math.abs(dx)>40){ if(dx<0&&screen<ONBOARDING_SLIDES.length-1) setScreen(s=>s+1); else if(dx>0&&screen>0) setScreen(s=>s-1); } mouseStart.current=null; } }}
+        onTouchStart={e=>{ touchStart.current=e.touches[0].clientX; }}
+        onTouchEnd={e=>{ if(touchStart.current!=null){ const dx=e.changedTouches[0].clientX-touchStart.current; if(Math.abs(dx)>40){ if(dx<0&&screen<ONBOARDING_SLIDES.length-1) setScreen(s=>s+1); else if(dx>0&&screen>0) setScreen(s=>s-1); } touchStart.current=null; } }}
+      >
         {ONBOARDING_SLIDES.map((s,i) => <OnboardSlide key={s.id} slide={s} isActive={i===screen}/>)}
+
+        {/* Progress dots */}
         <div style={{ position:"absolute",top:18,left:0,right:0,display:"flex",justifyContent:"center",zIndex:20 }}>
           {ONBOARDING_SLIDES.map((_,i) => (
             <div key={i} onClick={()=>setScreen(i)} style={{ height:3,width:i===screen?28:18,borderRadius:2,background:i===screen?PRIMARY:"rgba(255,255,255,0.35)",transition:"all 0.3s",margin:"0 4px",cursor:"pointer" }}/>
           ))}
         </div>
-        {screen===ONBOARDING_SLIDES.length-1 && (
-          <div style={{ position:"absolute",bottom:50,left:28,right:28,zIndex:20,display:"flex",flexDirection:"column",gap:12,animation:"fadeUp 0.5s ease 0.6s both" }}>
+
+        {/* CTA buttons — last slide only, anchored to bottom with safe area */}
+        {isLast && (
+          <div style={{ position:"absolute",bottom:0,left:0,right:0,zIndex:20,padding:"0 28px 44px",background:"linear-gradient(180deg,transparent 0%,rgba(0,0,0,0.7) 30%,rgba(0,0,0,0.92) 100%)",paddingTop:32,display:"flex",flexDirection:"column",gap:12,animation:"fadeUp 0.5s ease 0.5s both" }}>
             <button onClick={()=>{ setPhase("preferences"); setScreen(0); }}
-              style={{ width:"100%",padding:"16px 0",borderRadius:50,border:"none",background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:2,cursor:"pointer",boxShadow:`0 4px 28px ${PRIMARY}55` }}>
+              style={{ width:"100%",padding:"17px 0",borderRadius:50,border:"none",background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:2,cursor:"pointer",boxShadow:`0 4px 28px ${PRIMARY}55` }}>
               GET STARTED
             </button>
             <button onClick={()=>setPhase("login")}
-              style={{ width:"100%",padding:"15px 0",background:"transparent",border:"1.5px solid rgba(255,255,255,0.35)",borderRadius:50,fontFamily:FONT,fontWeight:600,fontSize:14,color:"rgba(255,255,255,0.85)",cursor:"pointer",letterSpacing:0.5 }}>
+              style={{ width:"100%",padding:"16px 0",background:"transparent",border:"1.5px solid rgba(255,255,255,0.45)",borderRadius:50,fontFamily:FONT,fontWeight:600,fontSize:14,color:"rgba(255,255,255,0.9)",cursor:"pointer",letterSpacing:0.5 }}>
               Log In
             </button>
-            <p style={{ fontFamily:FONT,fontSize:11,color:"rgba(255,255,255,0.4)",textAlign:"center",lineHeight:1.55 }}>
+            <p style={{ fontFamily:FONT,fontSize:11,color:"rgba(255,255,255,0.4)",textAlign:"center",lineHeight:1.6,margin:0 }}>
               By signing up you agree to our <span style={{ color:PRIMARY,cursor:"pointer" }}>Terms of Service</span> and <span style={{ color:PRIMARY,cursor:"pointer" }}>Privacy Policy</span>
             </p>
           </div>
         )}
-        {screen<ONBOARDING_SLIDES.length-1 && (
-          <div style={{ position:"absolute",bottom:34,left:0,right:0,display:"flex",justifyContent:"center",alignItems:"center",gap:7,zIndex:20,animation:"fadeUp 0.5s ease 0.8s both" }}>
-            <span style={{ fontFamily:FONT,fontWeight:600,fontSize:13.5,color:PRIMARY,letterSpacing:1 }}>Swipe</span>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+
+        {/* Swipe hint — non-last slides */}
+        {!isLast && (
+          <div style={{ position:"absolute",bottom:28,left:0,right:0,display:"flex",justifyContent:"center",alignItems:"center",gap:7,zIndex:20,pointerEvents:"none" }}>
+            <span style={{ fontFamily:FONT,fontWeight:600,fontSize:13,color:PRIMARY,letterSpacing:1 }}>Swipe</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
           </div>
         )}
-        {screen>0 && <div onClick={()=>setScreen(s=>s-1)} style={{ position:"absolute",left:0,top:"20%",width:"18%",height:"55%",zIndex:15,cursor:"pointer" }}/>}
-        {screen<ONBOARDING_SLIDES.length-1 && <div onClick={()=>setScreen(s=>s+1)} style={{ position:"absolute",right:0,top:"20%",width:"18%",height:"55%",zIndex:15,cursor:"pointer" }}/>}
+
+        {/* Full-height tap zones — left goes back, right goes forward */}
+        {screen > 0 && (
+          <div onClick={()=>setScreen(s=>s-1)}
+            style={{ position:"absolute",left:0,top:40,bottom:0,width:"25%",zIndex:15,cursor:"pointer" }}/>
+        )}
+        {!isLast && (
+          <div onClick={()=>setScreen(s=>s+1)}
+            style={{ position:"absolute",right:0,top:40,bottom:60,width:"30%",zIndex:15,cursor:"pointer" }}/>
+        )}
       </div>
     );
   }
@@ -5250,8 +5418,6 @@ export default VTRXApp;
 // Bootstrap is handled by main.jsx in Vite
 // Only bootstrap if running standalone (not imported as module)
 if (typeof document !== "undefined" && !import.meta.env) {
-  const root = document.getElementById("root");
-  if (root) {
-    ReactDOM.createRoot(root).render(<VTRXApp/>);
-  }
+  const root = document.getElementById("root") || (() => { const d = document.createElement("div"); d.id="root"; document.body.appendChild(d); return d; })();
+  ReactDOM.createRoot(root).render(React.createElement(VTRXApp));
 }
