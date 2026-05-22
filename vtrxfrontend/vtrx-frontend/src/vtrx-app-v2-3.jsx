@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, createContext, useContext } from "react";
+import ReactDOM from "react-dom/client";
 
 
 
@@ -5154,9 +5155,11 @@ function VTRXApp() {
 
 export default VTRXApp;
 
-const root = document.getElementById("root");
-if (root) {
-  const r = ReactDOM.createRoot ? ReactDOM.createRoot(root) : null;
-  if (r) r.render(<VTRXApp/>);
-  else ReactDOM.render(<VTRXApp/>, root);
+// Bootstrap is handled by main.jsx in Vite
+// Only bootstrap if running standalone (not imported as module)
+if (typeof document !== "undefined" && !import.meta.env) {
+  const root = document.getElementById("root");
+  if (root) {
+    ReactDOM.createRoot(root).render(<VTRXApp/>);
+  }
 }
