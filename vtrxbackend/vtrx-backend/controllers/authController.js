@@ -260,4 +260,5 @@ module.exports = {
   forgotPassword,
   resetPassword,
   getMe,
+  resendVerificationCode,
 };
