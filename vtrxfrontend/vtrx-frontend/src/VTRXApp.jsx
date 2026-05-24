@@ -2868,8 +2868,6 @@ function CalendarPage({ onBack }) {
 function WorkoutHistoryPage({ onBack }) {
   const [history,  setHistory]  = React.useState([]);
   const [loading,  setLoading]  = React.useState(true);
-  const [filter,   setFilter2]  = React.useState("All");
-
   React.useEffect(()=>{
     setLoading(true);
     apiCall("/workouts/history?limit=30")
