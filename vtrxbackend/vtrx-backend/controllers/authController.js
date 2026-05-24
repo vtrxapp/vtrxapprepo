@@ -252,6 +252,22 @@ const getMe = async (req, res) => {
   res.json({ success: true, data: { user } });
 };
 
+const resendVerificationCode = async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ success: false, message: 'Email is required.' });
+
+  try {
+    await cognito.resendConfirmationCode({ email });
+    res.json({ success: true, message: 'Verification code resent. Check your inbox.' });
+  } catch (error) {
+    if (error.name === 'LimitExceededException') {
+      return res.status(429).json({ success: false, message: 'Too many attempts. Please wait a few minutes.' });
+    }
+    logger.error('Resend code error:', error);
+    res.status(500).json({ success: false, message: 'Could not resend code. Please try again.' });
+  }
+};
+
 module.exports = {
   signup,
   confirmEmail,
