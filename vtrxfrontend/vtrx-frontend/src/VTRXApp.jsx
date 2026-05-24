@@ -5960,7 +5960,6 @@ function VTRXAppInner() {
   const touchStart     = useRef(null);
 
   // Load real data on mount
-  useEffect(() => {
     // ── Load user profile from backend on mount ─────────────────────────────
   useEffect(()=>{
     if (DEMO_MODE) return;
@@ -6008,7 +6007,7 @@ function VTRXAppInner() {
     }
   }, []);
 
-
+  useEffect(()=>{
   const loadData = async () => {
       try {
         // Fetch notification count
