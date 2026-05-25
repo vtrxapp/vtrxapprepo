@@ -61,6 +61,14 @@ const clearAuth = () => {
   localStorage.removeItem("vtrx_user");
   localStorage.removeItem("vtrx_cognito_token");
 };
+
+const getAuthToken = () => {
+  try { return typeof localStorage !== "undefined" ? localStorage.getItem("vtrx_token") : null; } catch { return null; }
+};
+const getCachedUser = () => {
+  try { return JSON.parse(localStorage.getItem("vtrx_user") || "null"); } catch { return null; }
+};
+
 const getStoredUser = () => {
   try {
     if (typeof localStorage === "undefined") return null;
@@ -737,23 +745,14 @@ function AiTipIcon({ type }) {
   if (type==="lightbulb") return <svg {...s}><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 017 7c0 2.38-1.19 4.47-3 5.74V17H8v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 017-7z"/></svg>;
   return <svg {...s}><circle cx="12" cy="12" r="10"/></svg>;
 }
-function WorkoutDetailPage({ workout, onBack, onComplete, onExercise, completedExercises=[] }) {
+function WorkoutDetailPage({ workout, onBack, onComplete, onExercise, completedExercises=[], elapsed=0, started=false, onStart }) {
   const wdpScrollRef = useScrollPos("workout-detail");
-  const [started, setStarted]         = useState(false);
-  const [paused,  setPaused]          = useState(false);
   const [completedEx, setCompletedEx] = useState([]);
-  const [elapsed, setElapsed]         = useState(0);
-  const timerRef                      = useRef(null);
 
-  // Timer: start/pause/stop
-  useEffect(() => {
-    if (started && !paused) {
-      timerRef.current = setInterval(() => setElapsed(t => t + 1), 1000);
-    } else {
-      clearInterval(timerRef.current);
-    }
-    return () => clearInterval(timerRef.current);
-  }, [started, paused]);
+  // Auto-start timer when component first mounts
+  useEffect(()=>{
+    if (!started && onStart) onStart();
+  }, []);
 
   const fmt = (s) => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
   const toggleEx = (i) => setCompletedEx(p => p.includes(i) ? p.filter(x=>x!==i) : [...p,i]);
@@ -773,7 +772,7 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onExercise, completedE
           <div style={{ fontFamily:FONT,fontWeight:900,fontSize:15,color:"#fff",letterSpacing:2 }}>WORKOUT</div>
           {started && (
             <div style={{ display:"flex",alignItems:"center",gap:8,justifyContent:"center",marginTop:4 }}>
-              <div style={{ fontFamily:FONT,fontWeight:900,fontSize:22,color:paused?"#888":PRIMARY,letterSpacing:3,transition:"color 0.2s" }}>{fmt(elapsed)}</div>
+              <div style={{ fontFamily:FONT,fontWeight:900,fontSize:22,color:PRIMARY,letterSpacing:3,transition:"color 0.2s" }}>{fmt(elapsed)}</div>
               {paused && <span style={{ fontFamily:FONT,fontSize:10,color:"#888888",letterSpacing:1 }}>PAUSED</span>}
             </div>
           )}
@@ -804,7 +803,7 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onExercise, completedE
             {[
               {val:Array.isArray(workout.exercises)?workout.exercises.length:workout.exercises,lbl:"Exercises",col:"#FF6B35",svg:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FF6B35" strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>},
               {val:workout.cal,lbl:"Calories",col:"#EF4444",svg:<svg width="18" height="18" viewBox="0 0 24 24" fill="#EF4444"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>},
-              {val:workout.mins,lbl:"Minutes",col:"#22C55E",svg:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>},
+              {val:workout.mins||workout.duration||0,lbl:"Minutes",col:"#22C55E",svg:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>},
             ].map(s=>(
               <div key={s.lbl} style={{ textAlign:"center" }}>
                 <div style={{ display:"flex",alignItems:"center",justifyContent:"center",gap:5,marginBottom:4 }}>
@@ -871,7 +870,7 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onExercise, completedE
             START WORKOUT
           </button>
         ) : allDone ? (
-          <button onClick={onComplete} style={{ width:"100%",padding:"16px 0",borderRadius:50,background:"linear-gradient(135deg,#22C55E,#16A34A)",border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1,cursor:"pointer",boxShadow:"0 4px 24px rgba(34,197,94,0.5)" }}>
+          <button onClick={()=>onComplete(elapsed)} style={{ width:"100%",padding:"16px 0",borderRadius:50,background:"linear-gradient(135deg,#22C55E,#16A34A)",border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1,cursor:"pointer",boxShadow:"0 4px 24px rgba(34,197,94,0.5)" }}>
             COMPLETE WORKOUT
           </button>
         ) : (
@@ -1824,19 +1823,40 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
   const [email,   setEmail]   = useState("");
   const [pass,    setPass]    = useState("");
   const [showPass,setShowPass]= useState(false);
-  const [err,     setErr]     = useState("");
   const [loading, setLoading] = useState(false);
+  const [errors,    setErrors]    = useState({});
+  const [submitted, setSubmitted] = useState(false);
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  const validateField = (field, value) => {
+    if (!submitted) return;
+    if (field==="email") {
+      if (!value.trim())               setErrors(p=>({...p, email:"Email is required."}));
+      else if (!emailRegex.test(value.trim())) setErrors(p=>({...p, email:"Please enter a valid email address."}));
+      else                             setErrors(p=>({...p, email:undefined}));
+    }
+    if (field==="pass") {
+      if (!value.trim()) setErrors(p=>({...p, pass:"Password is required."}));
+      else               setErrors(p=>({...p, pass:undefined}));
+    }
+  };
 
   const handle = async () => {
-    if (!email.trim()) { setErr("Please enter your email."); return; }
-    if (!pass.trim())  { setErr("Please enter your password."); return; }
-    setErr(""); setLoading(true);
+    setSubmitted(true);
+    const errs = {};
+    if (!email.trim())               errs.email = "Email is required.";
+    else if (!emailRegex.test(email.trim())) errs.email = "Please enter a valid email address.";
+    if (!pass.trim())                errs.pass  = "Password is required.";
+    if (Object.keys(errs).length) { setErrors(errs); return; }
+    setErrors({}); setLoading(true);
     try {
       const data = await apiCall("/auth/login", {
         method: "POST",
         body:   JSON.stringify({ email: email.trim().toLowerCase(), password: pass }),
       });
-      storeAuth(data.data.token, data.data.user);
+      const d = data.data || data;
+      storeAuth(d.token, d.user);
       if (d.user) setUser(u=>({...u,...d.user}));
       if (data.data.cognitoTokens?.accessToken) {
         localStorage.setItem("vtrx_cognito_token", data.data.cognitoTokens.accessToken);
@@ -1844,9 +1864,9 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
       onLogin(data.data.user);
     } catch (e) {
       if (e.code === "EMAIL_NOT_CONFIRMED") {
-        setErr("Please verify your email before logging in. Check your inbox.");
+        setErrors({ general: "Please verify your email before logging in. Check your inbox." });
       } else {
-        setErr(e.message || "Login failed. Please check your details.");
+        setErrors({ general: e.message || "Incorrect email or password. Please try again." });
       }
     } finally { setLoading(false); }
   };
@@ -1872,10 +1892,10 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
             <BodyFieldIcon type="email"/>
           </div>
           <input
-            value={email} onChange={e=>setEmail(e.target.value)}
+            value={email} onChange={e=>{ setEmail(e.target.value); setErrors(p=>({...p,email:undefined})); }} onBlur={e=>validateField("email", e.target.value)}
             placeholder="Email address" type="email"
             autoCapitalize="none" autoCorrect="off"
-            style={{ width:"100%", background:"rgba(255,255,255,0.92)", borderRadius:50, border:`2px solid transparent`, padding:"16px 18px 16px 44px", fontFamily:FONT, fontSize:14, fontWeight:500, color:"#111", outline:"none", boxSizing:"border-box" }}
+            style={{ width:"100%", background:"rgba(255,255,255,0.92)", borderRadius:50, border:`2px solid ${submitted&&errors.email?"#EF4444":"transparent"}`, padding:"16px 18px 16px 44px", fontFamily:FONT, fontSize:14, fontWeight:500, color:"#111", outline:"none", boxSizing:"border-box" }}
           />
         </div>
 
@@ -1885,24 +1905,26 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
             <BodyFieldIcon type="lock"/>
           </div>
           <input
-            value={pass} onChange={e=>setPass(e.target.value)}
+            value={pass} onChange={e=>{ setPass(e.target.value); setErrors(p=>({...p,pass:undefined})); }} onBlur={e=>validateField("pass", e.target.value)}
             placeholder="Password" type={showPass?"text":"password"}
             onKeyDown={e=>e.key==="Enter"&&handle()}
-            style={{ width:"100%", background:"rgba(255,255,255,0.92)", borderRadius:50, border:`2px solid transparent`, padding:"16px 46px 16px 44px", fontFamily:FONT, fontSize:14, fontWeight:500, color:"#111", outline:"none", boxSizing:"border-box" }}
+            style={{ width:"100%", background:"rgba(255,255,255,0.92)", borderRadius:50, border:`2px solid ${submitted&&errors.pass?"#EF4444":"transparent"}`, padding:"16px 46px 16px 44px", fontFamily:FONT, fontSize:14, fontWeight:500, color:"#111", outline:"none", boxSizing:"border-box" }}
           />
           <button onClick={()=>setShowPass(p=>!p)}
             style={{ position:"absolute", right:18, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2">
               {showPass
-                ? <><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></>
-                : <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>
+                ? <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>
+                : <><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></>
               }
             </svg>
           </button>
         </div>
 
-        {/* Error */}
-        {err && <div style={{ fontFamily:FONT, fontSize:13, color:"#EF4444", textAlign:"center", marginTop:-6 }}>{err}</div>}
+        {/* Per-field errors */}
+        {submitted && errors.email && <div style={{ fontFamily:FONT, fontSize:12, color:"#EF4444", marginTop:6, marginBottom:4, paddingLeft:20 }}>⚠ {errors.email}</div>}
+        {submitted && errors.pass  && <div style={{ fontFamily:FONT, fontSize:12, color:"#EF4444", marginTop:6, marginBottom:4, paddingLeft:20 }}>⚠ {errors.pass}</div>}
+        {errors.general && <div style={{ fontFamily:FONT, fontSize:13, color:"#EF4444", textAlign:"center", marginTop:8, padding:"10px 16px", background:"rgba(239,68,68,0.1)", borderRadius:12, border:"1px solid rgba(239,68,68,0.3)" }}>{errors.general}</div>}
 
         {/* Forgot password */}
         <div style={{ textAlign:"right", marginTop:-6 }}>
@@ -1931,19 +1953,38 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
 
 function SignUpScreen({ onContinue, onBack }) {
   const [f, setF]         = useState({ name:"", username:"", email:"", password:"", confirm:"" });
-  const [err, setErr]     = useState("");
-  const [loading, setLoading] = useState(false);
+  const [errors,    setErrors]    = useState({});
+  const [submitted, setSubmitted] = useState(false);
+  const [loading,   setLoading]   = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const s = k => e => setF({ ...f, [k]: e.target.value });
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  const validateField = (key, value) => {
+    if (!submitted) return;
+    const e = {};
+    if (key==="name"     && !value.trim())             e.name     = "Full name is required.";
+    if (key==="username" && !value.trim())             e.username = "Username is required.";
+    if (key==="email"    && !value.trim())             e.email    = "Email is required.";
+    if (key==="email"    && value.trim() && !emailRegex.test(value.trim())) e.email = "Please enter a valid email (e.g. you@example.com).";
+    if (key==="password" && value.length < 8)          e.password = "Password must be at least 8 characters.";
+    if (key==="confirm"  && value !== f.password)      e.confirm  = "Passwords do not match.";
+    // Clear error if field is now valid, keep it if still invalid
+    setErrors(p => ({ ...p, [key]: e[key] }));
+  };
 
   const handle = async () => {
-    if (!f.name.trim())     { setErr("Please enter your name.");           return; }
-    if (!f.username.trim()) { setErr("Please choose a username.");         return; }
-    if (!f.email.trim())    { setErr("Please enter your email.");          return; }
-    if (f.password.length < 8) { setErr("Password must be at least 8 characters."); return; }
-    if (f.password !== f.confirm) { setErr("Passwords do not match.");     return; }
-    setErr(""); setLoading(true);
+    setSubmitted(true);
+    const errs = {};
+    if (!f.name.trim())                       errs.name     = "Full name is required.";
+    if (!f.username.trim())                   errs.username = "Username is required.";
+    if (!f.email.trim())                      errs.email    = "Email is required.";
+    else if (!emailRegex.test(f.email.trim())) errs.email   = "Please enter a valid email (e.g. you@example.com).";
+    if (f.password.length < 8)                errs.password = "Password must be at least 8 characters.";
+    if (f.password !== f.confirm)             errs.confirm  = "Passwords do not match.";
+    if (Object.keys(errs).length) { setErrors(errs); return; }
+    setErrors({}); setLoading(true);
     try {
       await apiCall("/auth/signup", {
         method: "POST",
@@ -1955,9 +1996,9 @@ function SignUpScreen({ onContinue, onBack }) {
         }),
       });
       if (typeof localStorage !== "undefined") localStorage.setItem("vtrx_pending_email", f.email.trim().toLowerCase());
-      onContinue();
+      onContinue(f.email.trim().toLowerCase());
     } catch (e) {
-      setErr(e.message || "Signup failed. Please try again.");
+      setErrors({ general: e.message || "Signup failed. Please check your details and try again." });
     } finally { setLoading(false); }
   };
 
@@ -1991,11 +2032,12 @@ function SignUpScreen({ onContinue, onBack }) {
             </div>
             <input
               value={f[key]}
-              onChange={s(key)}
+              onChange={e=>{ const v=e.target.value; setF(p=>({...p,[key]:v})); setErrors(p=>({...p,[key]:undefined})); }}
+              onBlur={e=>validateField(key, e.target.value)}
               placeholder={placeholder}
               type={toggle ? (show ? "text" : "password") : type}
               autoCapitalize="none" autoCorrect="off"
-              style={{ width:"100%", background:"rgba(255,255,255,0.92)", borderRadius:50, border:`2px solid transparent`, padding:`16px ${toggle ? 46 : 18}px 16px 44px`, fontFamily:FONT, fontSize:14, fontWeight:500, color:"#111", outline:"none", boxSizing:"border-box" }}
+              style={{ width:"100%", background:"rgba(255,255,255,0.92)", borderRadius:50, border:`2px solid ${submitted&&errors[key]?"#EF4444":"transparent"}`, padding:`16px ${toggle ? 46 : 18}px 16px 44px`, fontFamily:FONT, fontSize:14, fontWeight:500, color:"#111", outline:"none", boxSizing:"border-box" }}
             />
             {toggle && (
               <button onClick={()=>setShow(p=>!p)}
@@ -2011,8 +2053,11 @@ function SignUpScreen({ onContinue, onBack }) {
           </div>
         ))}
 
-        {/* Error */}
-        {err && <div style={{ fontFamily:FONT, fontSize:13, color:"#EF4444", textAlign:"center" }}>{err}</div>}
+        {/* Per-field errors — only shown after first submit attempt */}
+        {submitted && Object.entries(errors).filter(([k])=>k!=="general").map(([k,v])=>(
+          <div key={k} style={{ fontFamily:FONT, fontSize:12, color:"#EF4444", marginBottom:4, paddingLeft:8 }}>⚠ {v}</div>
+        ))}
+        {errors.general && <div style={{ fontFamily:FONT, fontSize:13, color:"#EF4444", textAlign:"center", padding:"10px 16px", background:"rgba(239,68,68,0.1)", borderRadius:12, border:"1px solid rgba(239,68,68,0.3)", marginBottom:8 }}>{errors.general}</div>}
 
         {/* Sign up button */}
         <div style={{ marginTop:4 }}>
@@ -2190,7 +2235,7 @@ function BodyScreen({ onContinue, onBack }) {
   return (
     <Shell bg="https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=800&q=80"
            overlay="linear-gradient(180deg,rgba(0,0,0,0.55) 0%,rgba(0,0,0,0.88) 100%)">
-      <NavBar title="Body Measurements" step={1} total={6} onBack={onBack} onSkip={onContinue}/>
+      <NavBar title="Body Measurements" step={1} total={4} onBack={onBack} onSkip={onContinue}/>
       <div style={{ flex:1,overflowY:"auto",padding:"0 24px 40px" }}>
 
         {/* Weight */}
@@ -2269,7 +2314,7 @@ function WorkoutTypeIcon({ type }) {
 }
 function WorkoutScreen({ onContinue, onBack }) {
   const[goal,setGoal]=useState("");const[level,setLevel]=useState("");const[style,setStyle]=useState([]);const[days,setDays]=useState("");const[time,setTime]=useState("");const[location,setLocation]=useState("");const[equip,setEquip]=useState([]);
-  return <Shell bg="https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=800&q=80" overlay="linear-gradient(180deg,rgba(0,0,0,0.55) 0%,rgba(0,0,0,0.55) 30%,rgba(0,0,0,0.85) 100%)"><NavBar title="Customize Workout" step={2} total={4} onBack={onBack} onSkip={onContinue}/><div style={{ flex:1,overflowY:"auto",padding:"0 24px 24px" }}><Q n="1" text="What is your primary goal?" sub="(Select one)"/><ChipGroup options={["Build Muscle","Lose Weight","Stay Active","Improve Endurance","Get Toned"]} value={goal} onChange={setGoal}/><Q n="2" text="What is your experience level?" sub="(Select one)"/><ChipGroup options={["Beginner","Intermediate","Advanced","Professional"]} value={level} onChange={setLevel}/><Q n="3" text="What is your preferred workout style?" sub="(Pick 1–3)"/><ChipGroup options={["Strength Training","Cardio","HIIT","Bodyweight","Functional Fitness"]} value={style} onChange={setStyle} multi/><Q n="4" text="How many times do you want to work out each week?"/><ChipGroup options={["1–2 Days/Week","3–4 Days/Week","5+ Days/Week"]} value={days} onChange={setDays}/><Q n="5" text="Where do you usually work out?" sub="(Select one)"/><ChipGroup options={["Full Gym","Home","Outdoors","Mix of both"]} value={location} onChange={setLocation}/><Q n="6" text="What equipment do you have access to?" sub="(Select all that apply)"/><ChipGroup options={["Dumbbells","Barbell & Plates","Pull-up Bar","Resistance Bands","Kettlebells","Bench","Cable Machine","No Equipment"]} value={equip} onChange={setEquip} multi/><Q n="7" text="How much time can you dedicate to fitness daily?"/><ChipGroup options={["15–30 minutes","30–45 minutes","45–60 minutes","60+ minutes"]} value={time} onChange={setTime}/><div style={{marginTop:28}}><CTA label="CONTINUE" onClick={onContinue}/></div></div></Shell>;
+  return <Shell bg="https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=800&q=80" overlay="linear-gradient(180deg,rgba(0,0,0,0.55) 0%,rgba(0,0,0,0.55) 30%,rgba(0,0,0,0.85) 100%)"><NavBar title="Customize Workout" step={2} total={4} onBack={onBack} onSkip={onContinue}/><div style={{ flex:1,overflowY:"auto",padding:"0 24px 24px" }}><Q n="1" text="What is your primary goal?" sub="(Select one)"/><ChipGroup options={["Build Muscle","Lose Weight","Stay Active","Improve Endurance","Get Toned"]} value={goal} onChange={setGoal}/><Q n="2" text="What is your experience level?" sub="(Select one)"/><ChipGroup options={["Beginner","Intermediate","Advanced","Professional"]} value={level} onChange={setLevel}/><Q n="3" text="What is your preferred workout style?" sub="(Pick 1–3)"/><ChipGroup options={["Strength Training","Cardio","HIIT","Bodyweight","Functional Fitness"]} value={style} onChange={setStyle} multi/><Q n="4" text="How many times do you want to work out each week?"/><ChipGroup options={["1–2 Days/Week","3–4 Days/Week","5+ Days/Week"]} value={days} onChange={setDays}/><Q n="5" text="Where do you usually work out?" sub="(Select one)"/><ChipGroup options={["Full Gym","Home","Outdoors","Mix of both"]} value={location} onChange={setLocation}/><Q n="6" text="What equipment do you have access to?" sub="(Select all that apply)"/><ChipGroup options={["Dumbbells","Barbell & Plates","Pull-up Bar","Resistance Bands","Kettlebells","Bench","Cable Machine","No Equipment"]} value={equip} onChange={setEquip} multi/><Q n="7" text="How much time can you dedicate to fitness daily?"/><ChipGroup options={["15–30 minutes","30–45 minutes","45–60 minutes","60+ minutes"]} value={time} onChange={setTime}/><div style={{marginTop:28}}><CTA label="CONTINUE" onClick={()=>{ setUser(u=>({...u, fitnessLevel:level||u.fitnessLevel, workoutTime:time, workoutLocation:location, workoutStyle:style, equipment:equip, daysPerWeek:parseInt(days)||u.daysPerWeek })); onContinue(); }}/></div></div></Shell>;
 }
 function NutritionScreen({ onContinue, onBack }) {
   const[want,setWant]=useState("");const[nutGoal,setNutGoal]=useState("");const[track,setTrack]=useState("");const[diet,setDiet]=useState([]);const[meals,setMeals]=useState("");
@@ -2279,7 +2324,7 @@ function ChallengeScreen({ onContinue, onBack }) {
   return (
     <Shell bg="https://images.unsplash.com/photo-1604328698692-f76ea9498e76?w=800&q=80"
            overlay="linear-gradient(180deg,rgba(0,0,0,0.6) 0%,rgba(0,0,0,0.88) 100%)">
-      <NavBar title="Challenges" step={4} total={6} onBack={onBack} onSkip={onContinue}/>
+      <NavBar title="Challenges" step={4} total={4} onBack={onBack} onSkip={onContinue}/>
       <div style={{ flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"0 32px 40px",textAlign:"center" }}>
         <div style={{ width:80,height:80,borderRadius:"50%",background:"rgba(0,163,255,0.12)",border:"2px solid rgba(0,163,255,0.35)",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:28 }}>
           <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.6">
@@ -2485,7 +2530,15 @@ function PricingScreen({ onContinue, onBack }) {
 
 function ReadyScreen({ onFinish }) {
   const[v,setV]=useState(false);useEffect(()=>{const t=setTimeout(()=>setV(true),100);return()=>clearTimeout(t);},[]);
-  return <Shell bg="https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=800&q=80" overlay="linear-gradient(180deg,rgba(0,0,0,0.5) 0%,rgba(0,0,0,0.6) 40%,rgba(0,0,0,0.94) 100%)"><div style={{ flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"0 32px",textAlign:"center" }}><div style={{ width:100,height:100,borderRadius:"50%",background:"rgba(0,163,255,0.15)",border:`2.5px solid ${PRIMARY}`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 28px",boxShadow:`0 0 50px rgba(0,163,255,0.4)`,opacity:v?1:0,transform:v?"scale(1)":"scale(0.6)",transition:"all 0.5s cubic-bezier(0.34,1.56,0.64,1)" }}><VTRXLogo size={44}/></div><div style={{ opacity:v?1:0,transform:v?"translateY(0)":"translateY(20px)",transition:"all 0.5s ease 0.25s" }}><div style={{ fontFamily:FONT,fontWeight:900,fontSize:26,color:"#fff",marginBottom:10,lineHeight:1.2 }}>Your Profile is Ready!</div><div style={{ fontFamily:FONT,fontSize:14,color:"rgba(255,255,255,0.65)",lineHeight:1.65,marginBottom:32 }}>VTRX has built your personalised training plan, meal of the day, and first workout — all based on your answers.</div></div><div style={{ width:"100%",background:"rgba(0,163,255,0.12)",border:"1.5px solid rgba(0,163,255,0.4)",borderRadius:20,padding:"20px 22px",marginBottom:28,opacity:v?1:0,transform:v?"translateY(0)":"translateY(20px)",transition:"all 0.5s ease 0.4s" }}><p style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:PRIMARY,letterSpacing:2,marginBottom:14 }}>YOUR FIRST WORKOUT IS READY</p><div style={{ display:"flex",alignItems:"center",gap:14 }}><div style={{ width:52,height:52,borderRadius:12,background:"rgba(0,163,255,0.2)",display:"flex",alignItems:"center",justifyContent:"center" }}><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#00A3FF" strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg></div><div style={{textAlign:"left"}}><p style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:"#fff",margin:"0 0 3px" }}>Beginner Full Body</p><p style={{ fontFamily:FONT,fontSize:12,color:"rgba(255,255,255,0.6)",margin:0 }}>25 min · Home · Strength</p></div></div></div><div style={{ width:"100%",opacity:v?1:0,transition:"opacity 0.5s ease 0.55s" }}><CTA label="LET'S GO" onClick={onFinish}/></div><p style={{ fontFamily:FONT,fontSize:12,color:"rgba(255,255,255,0.4)",marginTop:16 }}>Day 1 streak starts now</p></div></Shell>;
+  const { user } = useUser();
+  const level    = user.fitnessLevel || user.level || "Beginner";
+  const time     = user.workoutTime  || "25 min";
+  const location = user.workoutLocation || "Home";
+  const style    = Array.isArray(user.workoutStyle) ? (user.workoutStyle[0] || "Strength") : (user.workoutStyle || "Strength");
+  const timeDisplay = time.includes("min") ? time : time + " min";
+  const styleList   = Array.isArray(user.workoutStyle) && user.workoutStyle.length > 0 ? user.workoutStyle[0] : "Full Body";
+  const workoutName = level + " " + styleList;
+  return <Shell bg="https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=800&q=80" overlay="linear-gradient(180deg,rgba(0,0,0,0.5) 0%,rgba(0,0,0,0.6) 40%,rgba(0,0,0,0.94) 100%)"><div style={{ flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"0 32px",textAlign:"center" }}><div style={{ width:100,height:100,borderRadius:"50%",background:"rgba(0,163,255,0.15)",border:`2.5px solid ${PRIMARY}`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 28px",boxShadow:`0 0 50px rgba(0,163,255,0.4)`,opacity:v?1:0,transform:v?"scale(1)":"scale(0.6)",transition:"all 0.5s cubic-bezier(0.34,1.56,0.64,1)" }}><VTRXLogo size={44}/></div><div style={{ opacity:v?1:0,transform:v?"translateY(0)":"translateY(20px)",transition:"all 0.5s ease 0.25s" }}><div style={{ fontFamily:FONT,fontWeight:900,fontSize:26,color:"#fff",marginBottom:10,lineHeight:1.2 }}>Your Profile is Ready!</div><div style={{ fontFamily:FONT,fontSize:14,color:"rgba(255,255,255,0.65)",lineHeight:1.65,marginBottom:32 }}>VTRX has built your personalised training plan, meal of the day, and first workout — all based on your answers.</div></div><div style={{ width:"100%",background:"rgba(0,163,255,0.12)",border:"1.5px solid rgba(0,163,255,0.4)",borderRadius:20,padding:"20px 22px",marginBottom:28,opacity:v?1:0,transform:v?"translateY(0)":"translateY(20px)",transition:"all 0.5s ease 0.4s" }}><p style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:PRIMARY,letterSpacing:2,marginBottom:14 }}>YOUR FIRST WORKOUT IS READY</p><div style={{ display:"flex",alignItems:"center",gap:14 }}><div style={{ width:52,height:52,borderRadius:12,background:"rgba(0,163,255,0.2)",display:"flex",alignItems:"center",justifyContent:"center" }}><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#00A3FF" strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg></div><div style={{textAlign:"left"}}><p style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:"#fff",margin:"0 0 3px" }}>{workoutName}</p><p style={{ fontFamily:FONT,fontSize:12,color:"rgba(255,255,255,0.6)",margin:0 }}>{timeDisplay} · {location} · {style}</p></div></div></div><div style={{ width:"100%",opacity:v?1:0,transition:"opacity 0.5s ease 0.55s" }}><CTA label="LET'S GO" onClick={onFinish}/></div><p style={{ fontFamily:FONT,fontSize:12,color:"rgba(255,255,255,0.4)",marginTop:16 }}>Day 1 streak starts now</p></div></Shell>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3727,7 +3780,15 @@ function NotificationsPage({ onBack, onMarkAllRead, unreadIds, onRead }) {
             <div key={n.id} onClick={() => onRead(n.id)}
               style={{ background: isUnread ? PRIMARY : "#fff", borderRadius:18, padding:"16px 18px", marginBottom:12, display:"flex", gap:14, alignItems:"flex-start", cursor:"pointer", animation:`fadeUp 0.3s ease ${i*0.05}s both`, transition:"background 0.2s" }}>
               {/* Icon */}
-              <div style={{ width:44, height:44, borderRadius:"50%", background: isUnread ? "rgba(255,255,255,0.2)" : "#374151", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, flexShrink:0 }}>{n.icon}</div>
+              <div style={{ width:44, height:44, borderRadius:"50%", background: isUnread ? n.iconBg||PRIMARY : "#1a1a1a", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                {n.iconKey==="workout"   && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>}
+                {n.iconKey==="goal"      && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>}
+                {n.iconKey==="meal"      && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>}
+                {n.iconKey==="streak"    && <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>}
+                {n.iconKey==="challenge" && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>}
+                {n.iconKey==="premium"   && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.77 5.82 21 7 14.14l-5-4.87 6.91-1.01z"/></svg>}
+                {!n.iconKey && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>}
+              </div>
               {/* Body */}
               <div style={{ flex:1 }}>
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:4 }}>
@@ -4444,7 +4505,7 @@ function AccountSettingsPage({ onBack }) {
               <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff",marginBottom:8 }}>Log out of VTRX?</div>
               <div style={{ fontFamily:FONT,fontSize:14,color:"#888" }}>You can log back in anytime.</div>
             </div>
-            <button onClick={()=>{ setSubPage(null); }} style={{ width:"100%",padding:"16px 0",borderRadius:50,background:"#EF4444",border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1.5,cursor:"pointer",marginBottom:10 }}>LOG OUT</button>
+            <button onClick={()=>{ setSubPage(null); onLogout&&onLogout(); }} style={{ width:"100%",padding:"16px 0",borderRadius:50,background:"#EF4444",border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1.5,cursor:"pointer",marginBottom:10 }}>LOG OUT</button>
             <button onClick={()=>setSubPage(null)} style={{ width:"100%",padding:"14px 0",borderRadius:50,background:"transparent",border:`1px solid ${BORDER}`,fontFamily:FONT,fontWeight:600,fontSize:13,color:"#888",cursor:"pointer" }}>Cancel</button>
           </div>
         </>
@@ -4986,20 +5047,9 @@ function ProfilePage({ onBack, onLogout, streakDay=1, workoutsTotal=0 }) {
         <ProfileRow label="Support"              sub="Help center and contact support"            onPress={()=>setSubPage("support")}
           icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.8"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>}/>
 
-        {showLogout && (
-          <div onClick={()=>setShowLogout(false)} style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:200,display:"flex",alignItems:"flex-end" }}>
-            <div onClick={e=>e.stopPropagation()} style={{ width:"100%",background:CARD,borderRadius:"24px 24px 0 0",padding:"28px 24px 40px",border:`1px solid ${BORDER}` }}>
-              <div style={{ fontFamily:FONT,fontWeight:800,fontSize:18,color:"#fff",textAlign:"center",marginBottom:8 }}>Log Out?</div>
-              <div style={{ fontFamily:FONT,fontSize:13,color:"#888",textAlign:"center",marginBottom:24 }}>You will need to log back in to access your account.</div>
-              <button onClick={()=>setShowLogout(false)} style={{ width:"100%",padding:"13px 0",borderRadius:50,background:"transparent",border:`1px solid ${BORDER}`,fontFamily:FONT,fontWeight:600,fontSize:13,color:"#888",cursor:"pointer" }}>Cancel</button>
-              <button onClick={()=>{ setShowLogout(false); onLogout&&onLogout(); }} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:"#EF4444",border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1.5,cursor:"pointer",marginBottom:10 }}>LOG OUT</button>
-            </div>
-          </div>
-        )}
 
-        <button onClick={()=>setShowLogout(true)} style={{ width:"100%",padding:"16px 0",borderRadius:18,background:"#1c0a0a",border:"1px solid #EF444433",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#EF4444",letterSpacing:2,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,marginTop:8 }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-        </button>
+
+
 
       </div>
       {/* Sub-page overlays — ProfilePage stays mounted preserving scroll */}
@@ -5410,8 +5460,13 @@ function Ring({ pct }) {
           strokeLinecap="round" style={{ transition:"stroke-dashoffset 1.2s ease" }}/>
       </svg>
       <div style={{ position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center" }}>
-        <div style={{ fontFamily:FONT,fontWeight:900,fontSize:16,color:PRIMARY,lineHeight:1 }}>{Math.round(pct)}%</div>
-        <div style={{ fontFamily:FONT,fontWeight:600,fontSize:8,color:"#888",letterSpacing:1 }}>DONE</div>
+        {pct === 0
+          ? <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#555",letterSpacing:1 }}>START</div>
+          : <>
+              <div style={{ fontFamily:FONT,fontWeight:900,fontSize:16,color:PRIMARY,lineHeight:1 }}>{Math.round(pct)}%</div>
+              <div style={{ fontFamily:FONT,fontWeight:600,fontSize:8,color:"#888",letterSpacing:1 }}>DONE</div>
+            </>
+        }
       </div>
     </div>
   );
@@ -5533,7 +5588,7 @@ function getTailoredMealOptions(user) {
 }
 
 
-function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, streakDay=1, energyKey, onMoodSelect }) {
+function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, streakDay=1, energyKey, onMoodSelect, weeklyWorkoutDays=0, weeklyAvgCal=null, weeklyAvgMin=null }) {
   const { dark } = useTheme();
   const { user, profileImg, isPremium } = useUser();
   const [trialEndedDismissed, setTrialEndedDismissed] = useState(false);
@@ -5543,7 +5598,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
   const [showNotifs, setShowNotifs]   = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [unreadIds, setUnreadIds]     = useState([1,2,3]);
-  const [workoutDone, setWorkoutDone] = useState(false);
+  const [workoutDone,      setWorkoutDone]      = useState(false);
   const [freezeUsed,  setFreezeUsed]  = useState(()=>{
     try {
       const saved = JSON.parse(localStorage.getItem("vtrx_freeze")||"{}");
@@ -5580,7 +5635,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
   };
 
   const daysPerWeek = (userProfile && userProfile.daysPerWeek) || 5;
-  const workoutDays = 4;
+  const workoutDays = weeklyWorkoutDays;
   const dayOfYear   = Math.floor((new Date() - new Date(new Date().getFullYear(),0,0)) / 86400000);
   const quote       = QUOTES[dayOfYear % QUOTES.length];
   const meal        = MEALS[mealIdx % MEALS.length];
@@ -5690,12 +5745,19 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
         <div onClick={()=>onNavigate("fitnessStats")} style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"16px 18px",marginBottom:13,animation:"fadeUp 0.4s ease 0.1s both",cursor:"pointer" }}>
           <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16 }}>
             <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#fff" }}>Weekly Stats</div>
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#FF6B35" strokeWidth="2.5"><polyline points="22 7 13.5 15.5 8.5 10.5 1 18"/><polyline points="15 7 22 7 22 14"/></svg>
+            {workoutDays === 0
+                  ? <svg width="19" height="4" viewBox="0 0 19 4" fill="none" stroke="#555" strokeWidth="2.5"><line x1="0" y1="2" x2="19" y2="2"/></svg>
+                  : <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#FF6B35" strokeWidth="2.5"><polyline points="22 7 13.5 15.5 8.5 10.5 1 18"/><polyline points="15 7 22 7 22 14"/></svg>
+                }
           </div>
           <div style={{ display:"flex",alignItems:"center",gap:14 }}>
             <Ring pct={pct}/>
             <div style={{ display:"flex",flex:1,justifyContent:"space-around",alignItems:"center" }}>
-              {[{v:`${workoutDays}/${daysPerWeek}`,l:"Workout Days",c:"#FF6B35"},{v:Math.round(workoutDays*310),l:"Avg Calories",c:"#EF4444"},{v:60,l:"Avg Minutes",c:"#22C55E"}].map((s,i)=>(
+              {[
+                {v:`${workoutDays}/${daysPerWeek}`,l:"Workout Days",c:"#FF6B35"},
+                {v:weeklyAvgCal!==null?weeklyAvgCal:"—",l:"Avg Calories",c:"#EF4444"},
+                {v:weeklyAvgMin!==null?weeklyAvgMin:"—",l:"Avg Minutes",c:"#22C55E"},
+              ].map((s,i)=>(
                 <div key={i} style={{ textAlign:"center" }}>
                   <div style={{ fontFamily:FONT,fontWeight:900,fontSize:28,color:s.c,lineHeight:1 }}>{s.v}</div>
                   <div style={{ fontFamily:FONT,fontWeight:600,fontSize:9,color:"#aaa",letterSpacing:1.2,marginTop:4,textTransform:"uppercase" }}>{s.l}</div>
@@ -5841,7 +5903,8 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
 
 
 
-function EmailVerifyScreen({ email, onVerified, onBack }) {
+function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
+  const email = emailProp || (typeof localStorage !== "undefined" ? localStorage.getItem("vtrx_pending_email") || "" : "");
   const [code,    setCode]    = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [error,   setError]   = React.useState("");
@@ -5941,6 +6004,19 @@ function VTRXAppInner() {
   const [innerPage, setInnerPage] = useState(null);
   const [selectedExercise, setSelectedExercise] = useState(null);
   const [workoutDone, setWorkoutDone] = useState(false);
+  const [weeklyWorkoutDays,setWeeklyWorkoutDays]= useState(0);
+  const [weeklyAvgCal,     setWeeklyAvgCal]     = useState(null);
+  const [weeklyAvgMin,     setWeeklyAvgMin]     = useState(null);
+  const [workoutElapsed,   setWorkoutElapsed]   = useState(0);
+  const [workoutStarted,   setWorkoutStarted]   = useState(false);
+  const workoutTimerRef = useRef(null);
+
+  useEffect(()=>{
+    const active = (innerPage==="workoutDetail"||innerPage==="exerciseDetail") && workoutStarted && !workoutDone;
+    if (active) { workoutTimerRef.current = setInterval(()=>setWorkoutElapsed(t=>t+1),1000); }
+    else { clearInterval(workoutTimerRef.current); }
+    return ()=>clearInterval(workoutTimerRef.current);
+  }, [innerPage, workoutStarted, workoutDone]);
   const [showComplete, setShowComplete] = useState(false);
   const [mealIdx, setMealIdx] = useState(0);
   const [streakDay, setStreakDay] = useState(7);
@@ -6088,7 +6164,7 @@ function VTRXAppInner() {
   if (phase==="emailVerify") return (
     <EmailVerifyScreen
       email={pendingEmail}
-      onVerified={()=>{ setPhase("preferences"); setScreen(0); }}
+      onVerified={()=>{ setPhase("preferences"); setScreen(2); }}
       onBack={()=>setPhase("login")}
     />
   );
@@ -6101,7 +6177,7 @@ function VTRXAppInner() {
 
   if (phase==="preferences") {
     const SCREENS = [
-      <SignUpScreen              key={0} onContinue={goNext} onBack={()=>setPhase("onboarding")}/>,
+      <SignUpScreen              key={0} onContinue={(email)=>{ if(email){ setPendingEmail(email); setPhase("emailVerify"); } else goNext(); }} onBack={()=>setPhase("onboarding")}/>,
       <EmailVerificationScreen   key={1} onContinue={goNext} onBack={goPrev}/>,
       <BodyScreen                key={2} onContinue={goNext} onBack={goPrev}/>,
       <WorkoutScreen             key={3} onContinue={goNext} onBack={goPrev}/>,
@@ -6143,6 +6219,12 @@ function VTRXAppInner() {
   };
 
   const goBack = () => {
+    // Reset timer when leaving workout
+    if (innerPage === "workoutDetail") {
+      clearInterval(workoutTimerRef.current);
+      setWorkoutStarted(false);
+      setWorkoutElapsed(0);
+    }
     setInnerPage(null);
     setSelectedExercise(null);
     requestAnimationFrame(()=>{
@@ -6160,10 +6242,23 @@ function VTRXAppInner() {
   if (innerPage==="notifications") return <NotificationsPage onBack={goBack}/>;
   if (innerPage==="profile") return <ProfilePage onBack={goBack} onLogout={handleLogout} streakDay={streakDay} workoutsTotal={workoutsTotal}/>;
   if (innerPage==="workoutDetail") return <WorkoutDetailPage workout={WEEKLY_WORKOUTS[TODAY_IDX % WEEKLY_WORKOUTS.length]} onBack={goBack}
-    onComplete={async ()=>{
+    elapsed={workoutElapsed} started={workoutStarted}
+    onStart={()=>setWorkoutStarted(true)}
+    onComplete={async (elapsedSeconds=0)=>{
       setWorkoutDone(true);
       setStreakDay(s=>s+1);
       setWorkoutsTotal(t=>t+1);
+      // Update weekly stats
+      const mins = Math.max(1, Math.round(elapsedSeconds / 60));
+      setWeeklyWorkoutDays(d=>d+1);
+      setWeeklyAvgCal(prev=>{
+        const prevTotal = prev !== null ? prev * weeklyWorkoutDays : 0;
+        return Math.round((prevTotal + 300) / (weeklyWorkoutDays + 1));
+      });
+      setWeeklyAvgMin(prev=>{
+        const prevTotal = prev !== null ? prev * weeklyWorkoutDays : 0;
+        return Math.round((prevTotal + mins) / (weeklyWorkoutDays + 1));
+      });
       const w = WEEKLY_WORKOUTS[TODAY_IDX % WEEKLY_WORKOUTS.length];
       try {
         await apiCall("/workouts/log", {
@@ -6195,7 +6290,10 @@ function VTRXAppInner() {
       <div style={{ flex:1,position:"relative",overflow:"hidden" }}>
         {activeTab===0&&!innerPage&&(
           <Dashboard
-            userProfile={{daysPerWeek:5}}
+            userProfile={{daysPerWeek: user?.daysPerWeek || 5}}
+            weeklyWorkoutDays={weeklyWorkoutDays}
+            weeklyAvgCal={weeklyAvgCal}
+            weeklyAvgMin={weeklyAvgMin}
             scrollRef={dashScrollRef}
             mealIdx={mealIdx}
             setMealIdx={setMealIdx}
