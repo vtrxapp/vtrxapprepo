@@ -1,8 +1,4 @@
 import React, { useState, useEffect, useRef, createContext, useContext } from "react";
-import ReactDOM from "react-dom/client";
-
-
-
 
 // ── API Configuration ─────────────────────────────────────────────────────────
 const API_URL = "";
@@ -63,10 +59,10 @@ const clearAuth = () => {
 };
 
 const getAuthToken = () => {
-  try { return typeof localStorage !== "undefined" ? localStorage.getItem("vtrx_token") : null; } catch { return null; }
+  try { return typeof localStorage !== "undefined" ? localStorage.getItem("vtrx_token") : null; } catch(_e){ return null; }
 };
 const getCachedUser = () => {
-  try { return JSON.parse(localStorage.getItem("vtrx_user") || "null"); } catch { return null; }
+  try { return JSON.parse(localStorage.getItem("vtrx_user") || "null"); } catch(_e){ return null; }
 };
 
 const getStoredUser = () => {
@@ -74,7 +70,7 @@ const getStoredUser = () => {
     if (typeof localStorage === "undefined") return null;
     const u = localStorage.getItem("vtrx_user");
     return u ? JSON.parse(u) : null;
-  } catch { return null; }
+  } catch(_e){ return null; }
 };
 
 const UserCtx = createContext(null);
@@ -382,7 +378,7 @@ const WEEKS_DATA = [
   { label:"Apr 13 – 19",    days:[{day:"Mon",cal:380,type:"strength"},{day:"Tue",cal:290,type:"cardio"},{day:"Wed",cal:0,type:"rest"},{day:"Thu",cal:410,type:"strength"},{day:"Fri",cal:350,type:"hiit"},{day:"Sat",cal:300,type:"cardio"},{day:"Sun",cal:0,type:"rest"}], bestDays:[{day:"Thursday",type:"Strength",cal:410},{day:"Monday",type:"Strength",cal:380}], improvement:"8%" },
 ];
 
-function FitnessStatsPage({ onBack }) {
+function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
   const { isPremium, setIsPremium } = useUser();
   const statsScrollRef = useScrollPos("fitness-stats");
   const [week, setWeek]     = useState(0); // 0 = current week, cannot go below 0
@@ -407,10 +403,28 @@ function FitnessStatsPage({ onBack }) {
     touchStartX.current = null;
   };
 
-  const w = WEEKS_DATA[week];
+  // Patch today's workout into current week if logged
+  const patchedWeeksData = WEEKS_DATA.map((wk, wi) => {
+    if (wi !== 0) return wk; // only patch current week
+    const today = new Date();
+    const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    const todayName = dayNames[today.getDay()];
+    const patchedDays = wk.days.map(d => {
+      if (d.day !== todayName) return d;
+      // Find any workout logged today
+      const todayLog = loggedWorkouts.find(lw => {
+        const wd = new Date(lw.date);
+        return wd.toDateString() === today.toDateString();
+      });
+      if (!todayLog) return d;
+      return { ...d, cal: todayLog.cal || 300, type: todayLog.type || "strength" };
+    });
+    return { ...wk, days: patchedDays };
+  });
+  const w = patchedWeeksData[week];
   const calDays  = w.days.filter(d => d.cal > 0);
   const maxCal   = Math.max(...w.days.map(d => d.cal), 1);
-  const minCal   = Math.min(...calDays.map(d => d.cal));
+  const minCal   = calDays.length ? Math.min(...calDays.map(d => d.cal)) : 0;
   const totalCal = calDays.reduce((s,d) => s + d.cal, 0);
   const avgCal   = calDays.length ? Math.round(totalCal / calDays.length) : 0;
 
@@ -680,23 +694,44 @@ function NutritionPage({ meal, onBack }) {
 
 
 // -- WorkoutCompleteScreen
-function WorkoutCompleteScreen({ workout, onDone, onViewAI, streakDay }) {
-  const [show, setShow] = useState(false);
+function WorkoutCompleteScreen({ workoutName, date, time, calories, durationMins, exercises, streakDay, onViewAI, onDone }) {
+  const [show,    setShow]    = useState(false);
+  const [confetti, setConfetti] = useState([]);
   const { isPremium } = useUser();
-  useEffect(() => { const t = setTimeout(() => setShow(true), 80); return () => clearTimeout(t); }, []);
-  const stats = [
-    { label:"Exercises", value: workout ? workout.exercises : 0, color:"#00A3FF" },
-    { label:"Calories",  value: workout ? workout.cal : 0, color:"#EF4444" },
-    { label:"Duration",  value: (workout ? workout.mins : 0) + " min", color:"#22C55E" },
-  ];
+
+  useEffect(()=>{
+    const t = setTimeout(()=>setShow(true), 80);
+    // Generate confetti pieces
+    setConfetti(Array.from({length:20}, (_,i)=>({
+      id: i,
+      top:   (5  + Math.random() * 85) + "%",
+      left:  (Math.random() * 100)     + "%",
+      size:  5 + Math.random() * 8,
+      color: ["#00A3FF","#22C55E","#F59E0B","#EF4444","#8B5CF6","#FF6B35"][i%6],
+      round: Math.random() > 0.5,
+      delay: Math.random() * 0.5,
+    })));
+    return ()=>clearTimeout(t);
+  }, []);
+
   const milestones = [3,7,14,30];
   const isMilestone = milestones.includes(streakDay);
+  const stats = [
+    { label:"Calories",  value: calories,             unit:"kcal", color:"#EF4444" },
+    { label:"Duration",  value: durationMins,         unit:"min",  color:"#22C55E" },
+    { label:"Exercises", value: exercises,             unit:"done", color:"#00A3FF" },
+  ];
+
   return (
-    <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:28,zIndex:200 }}>
-      {show && Array.from({length:16}).map((_,i)=>(
-        <div key={i} style={{ position:"absolute",top:(5+Math.random()*55)+"%",left:(Math.random()*100)+"%",width:6+Math.random()*6,height:6+Math.random()*6,borderRadius:Math.random()>0.5?"50%":"2px",background:["#00A3FF","#22C55E","#F59E0B","#EF4444","#8B5CF6"][i%5],opacity:0.7 }}/>
+    <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"28px 24px",zIndex:200,overflowY:"auto" }}>
+
+      {/* Confetti */}
+      {show && confetti.map(p=>(
+        <div key={p.id} style={{ position:"absolute",top:p.top,left:p.left,width:p.size,height:p.size,borderRadius:p.round?"50%":"2px",background:p.color,opacity:0.75,animation:`confettiFall ${0.8+p.delay}s ease-out both`,animationDelay:p.delay+"s",pointerEvents:"none" }}/>
       ))}
-      <div style={{ width:90,height:90,borderRadius:"50%",background:"rgba(0,163,255,0.12)",border:"2px solid rgba(0,163,255,0.4)",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:24 }}>
+
+      {/* Trophy icon */}
+      <div style={{ width:90,height:90,borderRadius:"50%",background:"rgba(0,163,255,0.12)",border:"2px solid rgba(0,163,255,0.4)",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:20,animation:show?"bounceIn 0.5s ease both":"none" }}>
         <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#00A3FF" strokeWidth="1.5">
           <path d="M6 9H4.5a2.5 2.5 0 010-5H6"/><path d="M18 9h1.5a2.5 2.5 0 000-5H18"/>
           <path d="M4 22h16"/>
@@ -705,31 +740,52 @@ function WorkoutCompleteScreen({ workout, onDone, onViewAI, streakDay }) {
           <path d="M18 2H6v7a6 6 0 0012 0V2z"/>
         </svg>
       </div>
-      <div style={{ fontFamily:FONT,fontWeight:900,fontSize:26,color:"#fff",marginBottom:8,textAlign:"center",lineHeight:1.2 }}>
+
+      {/* Title */}
+      <div style={{ fontFamily:FONT,fontWeight:900,fontSize:26,color:"#fff",marginBottom:6,textAlign:"center",lineHeight:1.2 }}>
         {isMilestone ? "Day "+streakDay+" Streak!" : "Workout Complete!"}
       </div>
-      {isMilestone && (
-        <div style={{ background:"rgba(0,163,255,0.1)",border:"1px solid rgba(0,163,255,0.3)",borderRadius:14,padding:"10px 20px",marginBottom:14,textAlign:"center" }}>
+      <div style={{ fontFamily:FONT,fontWeight:600,fontSize:13,color:"#555",marginBottom:4,textAlign:"center" }}>
+        {workoutName}
+      </div>
+      <div style={{ fontFamily:FONT,fontSize:12,color:"#444",marginBottom:16,textAlign:"center" }}>
+        {date}{time ? " · " + time : ""}
+      </div>
+
+      {/* Milestone banner */}
+      {isMilestone&&(
+        <div style={{ background:"rgba(0,163,255,0.1)",border:"1px solid rgba(0,163,255,0.3)",borderRadius:14,padding:"10px 20px",marginBottom:16,textAlign:"center",width:"100%" }}>
           <div style={{ fontFamily:FONT,fontWeight:700,fontSize:12,color:PRIMARY }}>
             {streakDay===3?"Building momentum. Keep going.":streakDay===7?"One full week. Real habits form here.":streakDay===14?"Two weeks in. This is who you are now.":"30 days. Top 6% of all users."}
           </div>
         </div>
       )}
-      <div style={{ fontFamily:FONT,fontSize:13,color:"#888",marginBottom:28,textAlign:"center" }}>
-        {isMilestone?"Your streak is protected.":"Great work. Every session counts."}
-      </div>
-      <div style={{ display:"flex",gap:10,marginBottom:28,width:"100%" }}>
+
+      {/* Stats row */}
+      <div style={{ display:"flex",gap:10,marginBottom:24,width:"100%" }}>
         {stats.map((s,i)=>(
-          <div key={i} style={{ flex:1,background:CARD,borderRadius:16,border:"1px solid "+BORDER,padding:"14px 8px",textAlign:"center" }}>
-            <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:s.color,marginBottom:4 }}>{s.value}</div>
-            <div style={{ fontFamily:FONT,fontSize:10,color:"#666",letterSpacing:0.5 }}>{s.label.toUpperCase()}</div>
+          <div key={i} style={{ flex:1,background:CARD,borderRadius:16,border:`1px solid ${BORDER}`,padding:"16px 8px",textAlign:"center" }}>
+            <div style={{ fontFamily:FONT,fontWeight:900,fontSize:24,color:s.color,marginBottom:2,lineHeight:1 }}>{s.value}</div>
+            <div style={{ fontFamily:FONT,fontSize:9,color:"#666",letterSpacing:0.8,marginBottom:2 }}>{s.unit.toUpperCase()}</div>
+            <div style={{ fontFamily:FONT,fontSize:10,color:"#555",letterSpacing:0.5 }}>{s.label.toUpperCase()}</div>
           </div>
         ))}
       </div>
-      <button onClick={onViewAI} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff",cursor:"pointer",marginBottom:12,boxShadow:"0 4px 24px rgba(0,163,255,0.4)" }}>
-        {isPremium?"View AI Analysis":"View AI Analysis (Preview)"}
+
+      {/* AI notification info */}
+      <div style={{ background:"rgba(109,40,217,0.1)",border:"1px solid rgba(109,40,217,0.3)",borderRadius:14,padding:"12px 16px",marginBottom:20,width:"100%",display:"flex",alignItems:"center",gap:12 }}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" strokeWidth="1.8" style={{flexShrink:0}}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        <div>
+          <div style={{ fontFamily:FONT,fontWeight:700,fontSize:12,color:"#8B5CF6" }}>AI Summary Processing</div>
+          <div style={{ fontFamily:FONT,fontSize:11,color:"#555",marginTop:2 }}>You'll be notified via the bell when your analysis is ready.</div>
+        </div>
+      </div>
+
+      {/* Buttons */}
+      <button onClick={onViewAI} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",marginBottom:12,boxShadow:`0 4px 24px ${PRIMARY}44`,letterSpacing:1 }}>
+        {isPremium ? "VIEW AI ANALYSIS" : "PREVIEW AI ANALYSIS"}
       </button>
-      <button onClick={onDone} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:"transparent",border:"1.5px solid "+BORDER,fontFamily:FONT,fontWeight:700,fontSize:14,color:"#888",cursor:"pointer" }}>
+      <button onClick={onDone} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:"transparent",border:`1.5px solid ${BORDER}`,fontFamily:FONT,fontWeight:700,fontSize:14,color:"#888",cursor:"pointer" }}>
         Back to Home
       </button>
     </div>
@@ -750,9 +806,8 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onExercise, completedE
   const [completedEx, setCompletedEx] = useState([]);
 
   // Auto-start timer when component first mounts
-  useEffect(()=>{
-    if (!started && onStart) onStart();
-  }, []);
+  // Don't auto-start — wait for user to tap START WORKOUT button
+  // Timer is started explicitly via the start button
 
   const fmt = (s) => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
   const toggleEx = (i) => setCompletedEx(p => p.includes(i) ? p.filter(x=>x!==i) : [...p,i]);
@@ -773,7 +828,7 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onExercise, completedE
           {started && (
             <div style={{ display:"flex",alignItems:"center",gap:8,justifyContent:"center",marginTop:4 }}>
               <div style={{ fontFamily:FONT,fontWeight:900,fontSize:22,color:PRIMARY,letterSpacing:3,transition:"color 0.2s" }}>{fmt(elapsed)}</div>
-              {paused && <span style={{ fontFamily:FONT,fontSize:10,color:"#888888",letterSpacing:1 }}>PAUSED</span>}
+              
             </div>
           )}
         </div>
@@ -781,11 +836,8 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onExercise, completedE
         {/* Pause/Play button — only when started */}
         {started && !allDone ? (
           <button onClick={()=>setPaused(p=>!p)}
-            style={{ width:42,height:42,borderRadius:"50%",background:paused?`${PRIMARY}22`:CARD,border:`2px solid ${paused?PRIMARY:BORDER}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.2s" }}>
-            {paused
-              ? <svg width="16" height="16" viewBox="0 0 24 24" fill={PRIMARY}><polygon points="5 3 19 12 5 21 5 3"/></svg>
-              : <svg width="16" height="16" viewBox="0 0 24 24" fill="#aaa"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-            }
+            style={{ width:42,height:42,borderRadius:"50%",background:CARD,border:`2px solid #333`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.2s" }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill={PRIMARY}><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
           </button>
         ) : (
           <div style={{ width:42,height:42,borderRadius:"50%",background:PRIMARY,display:"flex",alignItems:"center",justifyContent:"center" }}>
@@ -1951,7 +2003,7 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
   );
 }
 
-function SignUpScreen({ onContinue, onBack }) {
+function SignUpScreen({ onContinue, onBack, onLogin }) {
   const [f, setF]         = useState({ name:"", username:"", email:"", password:"", confirm:"" });
   const [errors,    setErrors]    = useState({});
   const [submitted, setSubmitted] = useState(false);
@@ -2313,6 +2365,7 @@ function WorkoutTypeIcon({ type }) {
   return <svg {...s}><circle cx="12" cy="12" r="10"/></svg>;
 }
 function WorkoutScreen({ onContinue, onBack }) {
+  const { user, setUser } = useUser();
   const[goal,setGoal]=useState("");const[level,setLevel]=useState("");const[style,setStyle]=useState([]);const[days,setDays]=useState("");const[time,setTime]=useState("");const[location,setLocation]=useState("");const[equip,setEquip]=useState([]);
   return <Shell bg="https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=800&q=80" overlay="linear-gradient(180deg,rgba(0,0,0,0.55) 0%,rgba(0,0,0,0.55) 30%,rgba(0,0,0,0.85) 100%)"><NavBar title="Customize Workout" step={2} total={4} onBack={onBack} onSkip={onContinue}/><div style={{ flex:1,overflowY:"auto",padding:"0 24px 24px" }}><Q n="1" text="What is your primary goal?" sub="(Select one)"/><ChipGroup options={["Build Muscle","Lose Weight","Stay Active","Improve Endurance","Get Toned"]} value={goal} onChange={setGoal}/><Q n="2" text="What is your experience level?" sub="(Select one)"/><ChipGroup options={["Beginner","Intermediate","Advanced","Professional"]} value={level} onChange={setLevel}/><Q n="3" text="What is your preferred workout style?" sub="(Pick 1–3)"/><ChipGroup options={["Strength Training","Cardio","HIIT","Bodyweight","Functional Fitness"]} value={style} onChange={setStyle} multi/><Q n="4" text="How many times do you want to work out each week?"/><ChipGroup options={["1–2 Days/Week","3–4 Days/Week","5+ Days/Week"]} value={days} onChange={setDays}/><Q n="5" text="Where do you usually work out?" sub="(Select one)"/><ChipGroup options={["Full Gym","Home","Outdoors","Mix of both"]} value={location} onChange={setLocation}/><Q n="6" text="What equipment do you have access to?" sub="(Select all that apply)"/><ChipGroup options={["Dumbbells","Barbell & Plates","Pull-up Bar","Resistance Bands","Kettlebells","Bench","Cable Machine","No Equipment"]} value={equip} onChange={setEquip} multi/><Q n="7" text="How much time can you dedicate to fitness daily?"/><ChipGroup options={["15–30 minutes","30–45 minutes","45–60 minutes","60+ minutes"]} value={time} onChange={setTime}/><div style={{marginTop:28}}><CTA label="CONTINUE" onClick={()=>{ setUser(u=>({...u, fitnessLevel:level||u.fitnessLevel, workoutTime:time, workoutLocation:location, workoutStyle:style, equipment:equip, daysPerWeek:parseInt(days)||u.daysPerWeek })); onContinue(); }}/></div></div></Shell>;
 }
@@ -2740,7 +2793,7 @@ function VideoThumbSmall({ img }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // PAGE 1: CALENDAR VIEW
 // ─────────────────────────────────────────────────────────────────────────────
-function CalendarPage({ onBack }) {
+function CalendarPage({ onBack, loggedWorkouts=[] }) {
   const { dark } = useTheme();
   const calScrollRef = useScrollPos("calendar");
   const T = dark ? DARK : LIGHT;
@@ -2781,7 +2834,17 @@ function CalendarPage({ onBack }) {
   const dayData = selectedDay ? DAY_STATS[selectedDay] : null;
 
   // Monthly averages
-  const monthlyWorkouts = Object.keys(CAL_DATA).length;
+  // Merge real logged workouts into calendar for current month
+  const now = new Date();
+  const liveCalData = {...CAL_DATA};
+  loggedWorkouts.forEach(lw => {
+    const d = new Date(lw.date);
+    if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) {
+      liveCalData[d.getDate()] = lw.type || "strength";
+    }
+  });
+
+  const monthlyWorkouts = Object.keys(liveCalData).length;
   const totalCal = Object.values(DAY_STATS).reduce((s,d)=>s+d.cal,0);
   const avgCal = Math.round(totalCal / monthlyWorkouts);
   const restDays = daysInMonth - monthlyWorkouts;
@@ -2834,7 +2897,7 @@ function CalendarPage({ onBack }) {
           <div style={{ display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:"6px 2px" }}>
             {cells.map((day,i)=>{
               if(!day) return <div key={i}/>;
-              const type = CAL_DATA[day];
+              const type = liveCalData[day];
               const color = type ? TYPE_COLOR[type] : null;
               const isSelected = selectedDay === day;
               return (
@@ -3570,7 +3633,7 @@ function WeightsHub({ onLogout=null, onNavigate=null }){
 
       </div>
       {/* Sub-page overlays — WeightsHub stays mounted preserving scroll + state */}
-      {subPage === "calendar"  && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><CalendarPage        onBack={goBack}/></div>}
+      {subPage === "calendar"  && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><CalendarPage        onBack={goBack} loggedWorkouts={loggedWorkouts}/></div>}
       {subPage === "history"   && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><WorkoutHistoryPage  onBack={goBack}/></div>}
       {subPage === "records"   && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><PersonalRecordsPage onBack={goBack}/></div>}
       {subPage === "customize" && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><CustomizePage       onBack={goBack}/></div>}
@@ -4897,7 +4960,7 @@ function getProgress(req, stats) {
 
 function useAchievements(stats) {
   const [seenIds, setSeenIds] = React.useState(() => {
-    try { return JSON.parse(localStorage.getItem("vtrx_seen_achievements")||"[]"); } catch { return []; }
+    try { return JSON.parse(localStorage.getItem("vtrx_seen_achievements")||"[]"); } catch(_e){ return []; }
   });
 
   const earned = ACHIEVEMENTS.filter(a => getProgress(a.req, stats) >= a.req.n);
@@ -4906,7 +4969,7 @@ function useAchievements(stats) {
   const markSeen = () => {
     const allIds = earned.map(a=>a.id);
     setSeenIds(allIds);
-    try { localStorage.setItem("vtrx_seen_achievements", JSON.stringify(allIds)); } catch{}
+    try { localStorage.setItem("vtrx_seen_achievements", JSON.stringify(allIds)); } catch(_e){}
   };
 
   return { earned, newlyEarned, markSeen, getProgress };
@@ -5404,7 +5467,7 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
                 const res = await apiCall("/payments/create-checkout",{method:"POST",body:JSON.stringify({plan:"monthly"})});
                 if (res?.data?.url) window.location.href = res.data.url;
                 else setIsPremium(true); // demo fallback
-              } catch { setIsPremium(true); }
+              } catch(_e){ setIsPremium(true); }
             }}/>
         )}
 
@@ -5603,7 +5666,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
     try {
       const saved = JSON.parse(localStorage.getItem("vtrx_freeze")||"{}");
       return saved.date === new Date().toISOString().slice(0,10) ? saved.used : false;
-    } catch { return false; }
+    } catch(_e){ return false; }
   });
   const [showFreezeSheet, setShowFreezeSheet] = useState(false);
 
@@ -5624,13 +5687,13 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
           return p.includes(achId) ? p : [...p, achId];
         });
       }
-    } catch{}
+    } catch(_e){}
   }, [streakDay]);
   const freezesAvailable = isPremium ? (freezeUsed ? 0 : 1) : 0;
 
   const activateFreeze = () => {
     setFreezeUsed(true);
-    try { localStorage.setItem("vtrx_freeze", JSON.stringify({ used:true, date:new Date().toISOString().slice(0,10) })); } catch{}
+    try { localStorage.setItem("vtrx_freeze", JSON.stringify({ used:true, date:new Date().toISOString().slice(0,10) })); } catch(_e){}
     setShowFreezeSheet(false);
   };
 
@@ -5929,7 +5992,7 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
       await apiCall("/auth/resend-code", { method:"POST", body:JSON.stringify({ email }) });
       setResent(true);
       setTimeout(()=>setResent(false), 4000);
-    } catch {}
+    } catch(_e){}
   };
 
   return (
@@ -5960,14 +6023,12 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
         {resent ? "Code resent!" : "Resend code"}
       </button>
       <button onClick={onBack} style={{ background:"none",border:"none",fontFamily:FONT,fontSize:13,color:"#555",cursor:"pointer" }}>
-        Back to login
       </button>
     </div>
   );
 }
-
-
 function VTRXAppInner() {
+
   const { user, profileImg, isPremium, setIsPremium } = useUser();
 
   // ── Phase / onboarding state ──────────────────────────────────────────────
@@ -5994,7 +6055,7 @@ function VTRXAppInner() {
             equipment:    user.equipment,
           }),
         });
-      } catch {}
+      } catch(_e){}
     }
     setPhase("dashboard");
   };
@@ -6004,6 +6065,8 @@ function VTRXAppInner() {
   const [innerPage, setInnerPage] = useState(null);
   const [selectedExercise, setSelectedExercise] = useState(null);
   const [workoutDone, setWorkoutDone] = useState(false);
+  const [lastWorkoutStats, setLastWorkoutStats] = useState({ calories:0, duration:0, exercises:0, name:"", date:"" });
+  const [loggedWorkouts,   setLoggedWorkouts]   = useState([]);
   const [weeklyWorkoutDays,setWeeklyWorkoutDays]= useState(0);
   const [weeklyAvgCal,     setWeeklyAvgCal]     = useState(null);
   const [weeklyAvgMin,     setWeeklyAvgMin]     = useState(null);
@@ -6026,7 +6089,7 @@ function VTRXAppInner() {
       const saved = JSON.parse(localStorage.getItem("vtrx_mood")||"{}");
       const today = new Date().toISOString().slice(0,10);
       return saved.date===today ? saved.key : null; // null = show MoodSheet
-    } catch { return null; }
+    } catch(_e){ return null; }
   });
   const [notifCount,    setNotifCount]    = useState(0);
   const [liveUser,      setLiveUser]      = useState(null);
@@ -6099,7 +6162,7 @@ function VTRXAppInner() {
             localStorage.setItem("vtrx_user", JSON.stringify(meData.data.user));
           }
         }
-      } catch {}
+      } catch(_e){}
     };
     if (phase === "dashboard") loadData();
   }, [phase]);
@@ -6177,7 +6240,7 @@ function VTRXAppInner() {
 
   if (phase==="preferences") {
     const SCREENS = [
-      <SignUpScreen              key={0} onContinue={(email)=>{ if(email){ setPendingEmail(email); setPhase("emailVerify"); } else goNext(); }} onBack={()=>setPhase("onboarding")}/>,
+      <SignUpScreen              key={0} onContinue={(email)=>{ if(email){ setPendingEmail(email); setPhase("emailVerify"); } else goNext(); }} onBack={()=>setPhase("onboarding")} onLogin={()=>setPhase("login")}/>,
       <EmailVerificationScreen   key={1} onContinue={goNext} onBack={goPrev}/>,
       <BodyScreen                key={2} onContinue={goNext} onBack={goPrev}/>,
       <WorkoutScreen             key={3} onContinue={goNext} onBack={goPrev}/>,
@@ -6198,7 +6261,7 @@ function VTRXAppInner() {
         method: "POST",
         body:   JSON.stringify({ cognitoAccessToken: cognitoToken }),
       });
-    } catch {} finally {
+    } catch(_e){} finally {
       clearAuth();
     }
     setPhase("onboarding");
@@ -6238,7 +6301,7 @@ function VTRXAppInner() {
   // Inner pages
   if (innerPage==="aiSummary")     return <AISummaryPage energyKey={energyKey} workoutDone={workoutDone} onBack={goBack}/>;
   if (innerPage==="nutrition")     return <NutritionPage meal={MEALS[mealIdx % MEALS.length]} onBack={goBack}/>;
-  if (innerPage==="fitnessStats")  return <FitnessStatsPage onBack={goBack}/>;
+  if (innerPage==="fitnessStats")  return <FitnessStatsPage onBack={goBack} loggedWorkouts={loggedWorkouts}/>;
   if (innerPage==="notifications") return <NotificationsPage onBack={goBack}/>;
   if (innerPage==="profile") return <ProfilePage onBack={goBack} onLogout={handleLogout} streakDay={streakDay} workoutsTotal={workoutsTotal}/>;
   if (innerPage==="workoutDetail") return <WorkoutDetailPage workout={WEEKLY_WORKOUTS[TODAY_IDX % WEEKLY_WORKOUTS.length]} onBack={goBack}
@@ -6275,8 +6338,32 @@ function VTRXAppInner() {
         // Refresh streak from backend
         const me = await apiCall("/users/profile");
         if (me?.data?.user?.streakDays) setStreakDay(me.data.user.streakDays);
-      } catch {}
-      navigate("aiSummary");
+      } catch(_e){}
+      // Show workout complete screen instead of going straight to AI
+      const today = new Date();
+      const dateStr = today.toLocaleDateString("en-GB", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
+      const timeStr = today.toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit" });
+      const newLog = {
+        date:     today,
+        type:     (w.type||"strength").toLowerCase(),
+        cal:      300,
+        duration: Math.max(1, Math.round(elapsedSeconds / 60)),
+        name:     w.name || "Workout",
+      };
+      setLoggedWorkouts(prev => [...prev, newLog]);
+      setLastWorkoutStats({
+        calories: 300,
+        duration: Math.max(1, Math.round(elapsedSeconds / 60)),
+        exercises: w.exercises ? (Array.isArray(w.exercises) ? w.exercises.length : w.exercises) : 3,
+        name: w.name || "Workout",
+        date: dateStr,
+        time: timeStr,
+      });
+      setWorkoutStarted(false);
+      setWorkoutElapsed(0);
+      setShowComplete(true);
+      setInnerPage(null);
+      setActiveTab(0);
     }}
     onExercise={(ex)=>{ setSelectedExercise(ex); setInnerPage("exerciseDetail"); }}/>;
   if (innerPage==="exerciseDetail"&&selectedExercise) return <ExercisePage exercise={selectedExercise} onBack={()=>setInnerPage("workoutDetail")} onComplete={()=>setInnerPage("workoutDetail")}/>;
@@ -6284,7 +6371,19 @@ function VTRXAppInner() {
   return (
     <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column",overflow:"hidden" }}>
       {/* Workout Complete overlay */}
-      {showComplete&&<WorkoutCompleteScreen onClose={()=>setShowComplete(false)} onViewSummary={()=>{ setShowComplete(false); navigate("aiSummary"); }} exercises={WEEKLY_WORKOUTS[0].exercises?.length||3} calories={WEEKLY_WORKOUTS[0].cal} duration={WEEKLY_WORKOUTS[0].duration}/>}
+      {showComplete&&(
+        <WorkoutCompleteScreen
+          workoutName={lastWorkoutStats.name}
+          date={lastWorkoutStats.date}
+          time={lastWorkoutStats.time}
+          calories={lastWorkoutStats.calories}
+          durationMins={lastWorkoutStats.duration}
+          exercises={lastWorkoutStats.exercises}
+          streakDay={streakDay}
+          onViewAI={()=>{ setShowComplete(false); navigate("aiSummary"); }}
+          onDone={()=>{ setShowComplete(false); }}
+        />
+      )}
 
       {/* Main content area */}
       <div style={{ flex:1,position:"relative",overflow:"hidden" }}>
@@ -6301,12 +6400,12 @@ function VTRXAppInner() {
             energyKey={energyKey}
             onMoodSelect={(key)=>{
               setEnergyKey(key);
-              try { localStorage.setItem("vtrx_mood", JSON.stringify({key, date:new Date().toISOString().slice(0,10)})); } catch{}
+              try { localStorage.setItem("vtrx_mood", JSON.stringify({key, date:new Date().toISOString().slice(0,10)})); } catch(_e){}
               if (!DEMO_MODE && getAuthToken()) {
                 apiCall("/users/mood", { method:"POST", body:JSON.stringify({ mood:key }) }).catch(()=>{});
               }
             }}
-            onNavigate={(page)=>{ if(page==="workoutDetail"){ setWorkoutDone(false); } navigate(page); }}
+            onNavigate={(page)=>{ if(page==="workoutDetail"){ setWorkoutDone(false); setWorkoutStarted(false); setWorkoutElapsed(0); } navigate(page); }}
           />
         )}
         {activeTab===1&&!innerPage&&(
@@ -6337,11 +6436,12 @@ function VTRXAppInner() {
       )}
     </div>
   );
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
+
+}
 // ── ROOT APP ──────────────────────────────────────────────────────────────────
-// ──────────────────────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 function VTRXApp() {
   const [user, setUser] = useState({ name:"Nhamo M", age:"28", gender:"Male", weight:"82", height:"180", goal:"Build Muscle", level:"Intermediate", days:5 });
   const [profileImg, setProfileImg] = useState(null);
@@ -6353,9 +6453,4 @@ function VTRXApp() {
   );
 }
 
-(function() {
-  var root = document.getElementById("root");
-  if (!root) { root = document.createElement("div"); root.id = "root"; document.body.appendChild(root); }
-  ReactDOM.createRoot(root).render(React.createElement(VTRXApp));
-})();
 export default VTRXApp;
