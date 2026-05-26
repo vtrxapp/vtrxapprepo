@@ -2835,7 +2835,7 @@ function CalendarPage({ onBack, loggedWorkouts=[] }) {
 
   // Monthly averages
   // Merge real logged workouts into calendar for current month
-  const now = new Date();
+    // (using existing now variable)
   const liveCalData = {...CAL_DATA};
   loggedWorkouts.forEach(lw => {
     const d = new Date(lw.date);
