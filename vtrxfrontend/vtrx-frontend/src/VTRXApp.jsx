@@ -917,7 +917,7 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onExercise, completedE
       {/* Bottom CTA */}
       <div style={{ position:"absolute",bottom:0,left:0,right:0,padding:"12px 16px 28px",background:BG,borderTop:`1px solid ${BORDER}` }}>
         {!started ? (
-          <button onClick={()=>setStarted(true)} style={{ width:"100%",padding:"16px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:2,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,boxShadow:`0 4px 28px ${PRIMARY}55` }}>
+          <button onClick={()=>{ if(onStart) onStart(); }} style={{ width:"100%",padding:"16px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:2,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,boxShadow:`0 4px 28px ${PRIMARY}55` }}>
             <svg width="13" height="13" viewBox="0 0 13 13" fill="white"><polygon points="0,0 13,6.5 0,13"/></svg>
             START WORKOUT
           </button>
@@ -1310,12 +1310,15 @@ function AISummaryPage({ energyKey, onBack }) {
   const [viewed, setViewed]     = useState(false);
   const [freeUsed, setFreeUsed] = useState(false);
   const [showLock, setShowLock] = useState(false); // track if first view
+  const [upgrading, setUpgrading] = useState(false);
   const scrollRef               = useRef(null);
   const lvl = ENERGY_LEVELS.find(l => l.key === energyKey) || ENERGY_LEVELS[2];
 
   // Typewriter for first view
-  const AI_FULL = `Great effort today! Based on your mood check-in (${lvl.label.toLowerCase()}), I adapted your session to a moderate-intensity upper body focus — and you crushed it!\n\nYour heart rate stayed in the optimal fat-burning zone for 78% of the session. Recovery time was well-managed between sets, which is smart given your energy levels today.`;
-  const [twText, setTwText]   = useState(viewed ? AI_FULL : "");
+  const AI_FULL = `Great effort today! Based on your mood check-in (${lvl.label.toLowerCase()}), I adapted your session intensity. Your form held strong through all sets — consistency like this compounds over time.`;
+  const AI_PREVIEW = "Great effort today! Based on your mood check-in, I adapted your session intensity.";
+  const AI_TEXT = isPremium ? AI_FULL : AI_PREVIEW;
+  const [twText, setTwText]   = useState(viewed ? AI_TEXT : "");
   const [twDone, setTwDone]   = useState(viewed);
 
   useEffect(() => {
@@ -1324,8 +1327,8 @@ function AISummaryPage({ energyKey, onBack }) {
     let i = 0;
     const interval = setInterval(() => {
       i++;
-      setTwText(AI_FULL.slice(0, i));
-      if (i >= AI_FULL.length) { clearInterval(interval); setTwDone(true); }
+      setTwText(AI_TEXT.slice(0, i));
+      if (i >= AI_TEXT.length) { clearInterval(interval); setTwDone(true); }
     }, 18);
     return () => clearInterval(interval);
   }, []);
@@ -1362,6 +1365,15 @@ function AISummaryPage({ energyKey, onBack }) {
     { key:"good",    label:"Good",    color:"#22C55E" },
     { key:"pumped",  label:"Pumped",  color:PRIMARY   },
   ];
+
+  const handleUpgrade = async () => {
+    setUpgrading(true);
+    try {
+      const r = await apiCall("/payments/create-checkout", { method:"POST", body:JSON.stringify({ plan:"monthly" }) });
+      if (r.data?.url) { window.location.href = r.data.url; return; }
+    } catch(_e){}
+    setUpgrading(false);
+  };
 
   const cardBg = dark ? "linear-gradient(145deg,#0a0f1e,#141b35)" : "#ffffff";
   const cardBorder = dark ? `1.5px solid ${PRIMARY}33` : `1.5px solid ${PRIMARY}44`;
@@ -1406,7 +1418,18 @@ function AISummaryPage({ energyKey, onBack }) {
         <div style={{ padding:"12px 16px 0" }}>
           <div style={{ display:"flex",gap:0,background:CARD,borderRadius:12,padding:4,border:`1px solid ${BORDER}` }}>
             {[["summary","AI Summary"],["breakdown","Breakdown"],["exercises","Exercises"]].map(([k,lbl])=>(
-              <button key={k} onClick={()=>{ const locked=!isPremium&&freeUsed&&(k==="breakdown"||k==="exercises"); if(locked){setShowLock(true);return;} if(!isPremium&&(k==="breakdown"||k==="exercises"))setFreeUsed(true); setTab(k); }} style={{ flex:1,padding:"9px 0",borderRadius:10,border:"none",background:tab===k?(dark?"#2a2a2a":"#e8e8e8"):"transparent",fontFamily:FONT,fontWeight:tab===k?700:500,fontSize:12,color:tab===k?"#ffffff":"#888888",cursor:"pointer",transition:"all 0.2s",letterSpacing:0.3 }}>{lbl}</button>
+              <button key={k} onClick={()=>setTab(k)}
+                style={{ flex:1,padding:"8px 0",borderRadius:10,border:"none",
+                         background:tab===k?PRIMARY:"transparent",
+                         fontFamily:FONT,fontWeight:700,fontSize:12,
+                         color:tab===k?"#fff":"#888",cursor:"pointer",
+                         display:"flex",alignItems:"center",justifyContent:"center",gap:4,
+                         transition:"all 0.2s" }}>
+                {lbl}
+                {!isPremium&&(k==="breakdown"||k==="exercises")&&(
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                )}
+              </button>
             ))}
           </div>
         </div>
@@ -1512,142 +1535,151 @@ function AISummaryPage({ energyKey, onBack }) {
         {/* ════ TAB: BREAKDOWN ════ */}
         {tab==="breakdown" && (
           <div style={{ animation:"fadeUp 0.35s ease both" }}>
-            <div style={{ background:dark?"linear-gradient(145deg,#0a0f1e,#141b35)":CARD,borderRadius:20,border:cardBorder,padding:"22px 18px",marginBottom:14,textAlign:"center" }}>
-              <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888888",letterSpacing:2,marginBottom:10 }}>OVERALL SESSION SCORE</div>
-              <div style={{ position:"relative",width:110,height:110,margin:"0 auto 14px" }}>
-                <svg width="110" height="110" style={{ transform:"rotate(-90deg)" }}>
-                  <circle cx="55" cy="55" r="46" fill="none" stroke={dark?"#1a1a2e":"#e5e5e5"} strokeWidth="10"/>
-                  <circle cx="55" cy="55" r="46" fill="none" stroke={PRIMARY} strokeWidth="10"
-                    strokeDasharray={`${2*Math.PI*46}`}
-                    strokeDashoffset={`${2*Math.PI*46*(1-83/100)}`}
-                    strokeLinecap="round" style={{ transition:"stroke-dashoffset 1.4s ease" }}/>
-                </svg>
-                <div style={{ position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center" }}>
-                  <div style={{ fontFamily:FONT,fontWeight:900,fontSize:28,color:PRIMARY,lineHeight:1 }}>83</div>
-                  <div style={{ fontFamily:FONT,fontSize:10,color:"#888888",letterSpacing:1,marginTop:2 }}>/ 100</div>
+            {!isPremium ? (
+              <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"32px 20px",textAlign:"center",margin:"8px 0" }}>
+                <div style={{ width:64,height:64,borderRadius:"50%",background:"rgba(245,158,11,0.12)",border:"1.5px solid rgba(245,158,11,0.3)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px" }}>
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
                 </div>
+                <div style={{ fontFamily:FONT,fontWeight:900,fontSize:18,color:"#fff",marginBottom:8 }}>Performance Breakdown</div>
+                <div style={{ fontFamily:FONT,fontSize:13,color:"#888",lineHeight:1.6,marginBottom:20 }}>Unlock your full performance score, muscle group breakdown, intensity metrics and heart rate zones with VTRX Pro.</div>
+                <button onClick={handleUpgrade} disabled={upgrading} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:upgrading?"#333":"linear-gradient(135deg,#F59E0B,#D97706)",border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:upgrading?"not-allowed":"pointer",letterSpacing:1,boxShadow:upgrading?"none":"0 4px 20px rgba(245,158,11,0.35)",transition:"all 0.2s" }}>{upgrading?"Redirecting...":"UPGRADE TO PRO"}</button>
               </div>
-              <div style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:"#22C55E",marginBottom:4 }}>Excellent</div>
-              <div style={{ fontFamily:FONT,fontSize:12,color:"#888888" }}>Top 22% of all your sessions this month</div>
-            </div>
+            ) : (
+              <div>
+                {/* Overall score circle */}
+                <div style={{ background:dark?"linear-gradient(145deg,#0a0f1e,#141b35)":CARD,borderRadius:20,border:cardBorder,padding:"22px 18px",marginBottom:14,textAlign:"center" }}>
+                  <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888888",letterSpacing:2,marginBottom:10 }}>OVERALL SESSION SCORE</div>
+                  <div style={{ position:"relative",width:110,height:110,margin:"0 auto 14px" }}>
+                    <svg width="110" height="110" style={{ transform:"rotate(-90deg)" }}>
+                      <circle cx="55" cy="55" r="46" fill="none" stroke={dark?"#1a1a2e":"#e5e5e5"} strokeWidth="10"/>
+                      <circle cx="55" cy="55" r="46" fill="none" stroke={PRIMARY} strokeWidth="10"
+                        strokeDasharray={`${2*Math.PI*46}`}
+                        strokeDashoffset={`${2*Math.PI*46*(1-83/100)}`}
+                        strokeLinecap="round" style={{ transition:"stroke-dashoffset 1.4s ease" }}/>
+                    </svg>
+                    <div style={{ position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center" }}>
+                      <div style={{ fontFamily:FONT,fontWeight:900,fontSize:28,color:PRIMARY,lineHeight:1 }}>83</div>
+                      <div style={{ fontFamily:FONT,fontSize:10,color:"#888888",letterSpacing:1,marginTop:2 }}>/ 100</div>
+                    </div>
+                  </div>
+                  <div style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:"#22C55E",marginBottom:4 }}>Excellent</div>
+                  <div style={{ fontFamily:FONT,fontSize:12,color:"#888888" }}>Top 22% of all your sessions this month</div>
+                </div>
 
-            <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"18px",marginBottom:14 }}>
-              <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:20 }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="#22C55E"><rect x="1" y="4" width="4" height="17" rx="1"/><rect x="7" y="9" width="4" height="12" rx="1"/><rect x="13" y="6" width="4" height="15" rx="1"/><rect x="19" y="2" width="4" height="19" rx="1"/></svg>
-                <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#ffffff" }}>Performance Breakdown</div>
-              </div>
-              {perf.map((p,i)=>(
-                <div key={i} style={{ marginBottom:i<perf.length-1?20:0 }}>
-                  <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:7 }}>
-                    <div style={{ display:"flex",alignItems:"center",gap:8 }}>
-                      <PerfIcon type={p.iconPath} color={p.color}/>
-                      <div>
-                        <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#ffffff" }}>{p.label}</div>
-                        <div style={{ fontFamily:FONT,fontSize:11,color:"#888888",marginTop:1 }}>{p.detail}</div>
+                {/* Performance bars */}
+                <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"18px",marginBottom:14 }}>
+                  <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:20 }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="#22C55E"><rect x="1" y="4" width="4" height="17" rx="1"/><rect x="7" y="9" width="4" height="12" rx="1"/><rect x="13" y="6" width="4" height="15" rx="1"/><rect x="19" y="2" width="4" height="19" rx="1"/></svg>
+                    <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#ffffff" }}>Performance Breakdown</div>
+                  </div>
+                  {perf.map((p,i)=>(
+                    <div key={i} style={{ marginBottom:i<perf.length-1?20:0 }}>
+                      <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:7 }}>
+                        <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+                          <PerfIcon type={p.iconPath} color={p.color}/>
+                          <div>
+                            <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#ffffff" }}>{p.label}</div>
+                            <div style={{ fontFamily:FONT,fontSize:11,color:"#888888",marginTop:1 }}>{p.detail}</div>
+                          </div>
+                        </div>
+                        <div style={{ textAlign:"right",flexShrink:0,marginLeft:10 }}>
+                          <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:p.color }}>{p.pct}%</div>
+                          {p.weight!=="—"&&<div style={{ fontFamily:FONT,fontSize:10,color:"#888888",marginTop:1 }}>{p.weight}</div>}
+                        </div>
+                      </div>
+                      <div style={{ height:8,background:dark?"#1a1a1a":"#e5e5e5",borderRadius:8,overflow:"hidden" }}>
+                        <div style={{ height:"100%",width:`${barWidths[p.key]||0}%`,background:p.color,borderRadius:8,transition:"width 1.1s cubic-bezier(0.4,0,0.2,1)" }}/>
                       </div>
                     </div>
-                    <div style={{ textAlign:"right",flexShrink:0,marginLeft:10 }}>
-                      <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:p.color }}>{p.pct}%</div>
-                      {p.weight!=="—"&&<div style={{ fontFamily:FONT,fontSize:10,color:"#888888",marginTop:1 }}>{p.weight}</div>}
-                    </div>
-                  </div>
-                  <div style={{ height:8,background:dark?"#1a1a1a":"#e5e5e5",borderRadius:8,overflow:"hidden" }}>
-                    <div style={{ height:"100%",width:`${barWidths[p.key]||0}%`,background:p.color,borderRadius:8,transition:"width 1.1s cubic-bezier(0.4,0,0.2,1)" }}/>
-                  </div>
+                  ))}
                 </div>
-              ))}
-            </div>
 
-            <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"18px" }}>
-              <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888888",letterSpacing:1,marginBottom:14 }}>VS LAST SESSION</div>
-              {[{label:"Calories Burned",val:"+12%"},{label:"Sets Completed",val:"+2"},{label:"Avg Heart Rate",val:"-4 BPM"},{label:"Session Score",val:"+8 pts"}].map((c,i,arr)=>(
-                <div key={i} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",paddingBottom:i<arr.length-1?12:0,borderBottom:i<arr.length-1?`1px solid ${BORDER}`:0,marginBottom:i<arr.length-1?12:0 }}>
-                  <span style={{ fontFamily:FONT,fontSize:14,color:"#888888" }}>{c.label}</span>
-                  <span style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#22C55E" }}>↑ {c.val}</span>
+                {/* VS Last Session */}
+                <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"18px" }}>
+                  <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888888",letterSpacing:1,marginBottom:14 }}>VS LAST SESSION</div>
+                  {[{label:"Calories Burned",val:"+12%"},{label:"Sets Completed",val:"+2"},{label:"Avg Heart Rate",val:"-4 BPM"},{label:"Session Score",val:"+8 pts"}].map((s,i,arr)=>(
+                    <div key={i} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",paddingBottom:i<arr.length-1?12:0,borderBottom:i<arr.length-1?`1px solid ${BORDER}`:"none",marginBottom:i<arr.length-1?12:0 }}>
+                      <span style={{ fontFamily:FONT,fontSize:14,color:"#888888" }}>{s.label}</span>
+                      <span style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#22C55E" }}>↑ {s.val}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
           </div>
         )}
 
-        {/* ════ TAB: EXERCISES ════ */}
         {tab==="exercises" && (
           <div style={{ animation:"fadeUp 0.35s ease both" }}>
-            <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"18px",marginBottom:14 }}>
-              <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18 }}>
-                <div style={{ display:"flex",alignItems:"center",gap:10 }}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={"#ffffff"} strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>
-                  <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#ffffff" }}>Exercises Completed</div>
+            {!isPremium ? (
+              <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"32px 20px",textAlign:"center",margin:"8px 0" }}>
+                <div style={{ width:64,height:64,borderRadius:"50%",background:"rgba(245,158,11,0.12)",border:"1.5px solid rgba(245,158,11,0.3)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px" }}>
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
                 </div>
-                <div style={{ background:"#22C55E22",border:"1px solid #22C55E44",borderRadius:20,padding:"4px 12px" }}>
-                  <span style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#22C55E" }}>5/5</span>
-                </div>
+                <div style={{ fontFamily:FONT,fontWeight:900,fontSize:18,color:"#fff",marginBottom:8 }}>Exercises Completed</div>
+                <div style={{ fontFamily:FONT,fontSize:13,color:"#888",lineHeight:1.6,marginBottom:20 }}>See every exercise, set, rep count and personal records from this session with VTRX Pro.</div>
+                <button onClick={handleUpgrade} disabled={upgrading} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:upgrading?"#333":"linear-gradient(135deg,#F59E0B,#D97706)",border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:upgrading?"not-allowed":"pointer",letterSpacing:1,boxShadow:upgrading?"none":"0 4px 20px rgba(245,158,11,0.35)",transition:"all 0.2s" }}>{upgrading?"Redirecting...":"UPGRADE TO PRO"}</button>
               </div>
-              {exercises.map((ex,i)=>(
-                <div key={i} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",paddingBottom:i<exercises.length-1?16:0,borderBottom:i<exercises.length-1?`1px solid ${BORDER}`:0,marginBottom:i<exercises.length-1?16:0,animation:`fadeUp 0.3s ease ${i*0.07}s both` }}>
-                  <div>
-                    <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:3 }}>
-                      <div style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:"#ffffff" }}>{ex.name}</div>
-                      {ex.pr&&<div style={{ background:"#EAB30822",border:"1px solid #EAB30844",borderRadius:8,padding:"2px 8px" }}><span style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:"#EAB308",letterSpacing:1 }}>PR</span></div>}
+            ) : (
+              <div>
+                <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"18px",marginBottom:14 }}>
+                  <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18 }}>
+                    <div style={{ display:"flex",alignItems:"center",gap:10 }}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>
+                      <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#ffffff" }}>Exercises Completed</div>
                     </div>
-                    <div style={{ fontFamily:FONT,fontSize:12,color:"#888888" }}>{ex.detail}</div>
+                    <div style={{ background:"#22C55E22",border:"1px solid #22C55E44",borderRadius:20,padding:"4px 12px" }}>
+                      <span style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#22C55E" }}>5/5</span>
+                    </div>
                   </div>
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="9 12 11.5 14.5 15.5 9.5"/></svg>
+                  {exercises.map((ex,i)=>(
+                    <div key={i} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",paddingBottom:i<exercises.length-1?16:0,borderBottom:i<exercises.length-1?`1px solid ${BORDER}`:"none",marginBottom:i<exercises.length-1?16:0,animation:`fadeUp 0.3s ease ${i*0.07}s both` }}>
+                      <div>
+                        <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:3 }}>
+                          <div style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:"#ffffff" }}>{ex.name}</div>
+                          {ex.pr&&<div style={{ background:"#EAB30822",border:"1px solid #EAB30844",borderRadius:8,padding:"2px 8px" }}><span style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:"#EAB308",letterSpacing:1 }}>PR</span></div>}
+                        </div>
+                        <div style={{ fontFamily:FONT,fontSize:12,color:"#888888" }}>{ex.detail}</div>
+                      </div>
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="9 12 11.5 14.5 15.5 9.5"/></svg>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-
-            <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"18px",marginBottom:14 }}>
-              <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888888",letterSpacing:1,marginBottom:14 }}>TOTAL SESSION VOLUME</div>
-              <div style={{ display:"flex",justifyContent:"space-around" }}>
-                {[{val:"18",lbl:"Total Sets",c:PRIMARY},{val:"156",lbl:"Total Reps",c:"#22C55E"},{val:"1,890kg",lbl:"Total Load",c:"#F97316"}].map((s,i)=>(
-                  <div key={i} style={{ textAlign:"center" }}>
-                    <div style={{ fontFamily:FONT,fontWeight:900,fontSize:26,color:s.c,lineHeight:1,marginBottom:4 }}>{s.val}</div>
-                    <div style={{ fontFamily:FONT,fontSize:11,color:"#888888" }}>{s.lbl}</div>
+                <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"18px",marginBottom:14 }}>
+                  <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888888",letterSpacing:1,marginBottom:14 }}>TOTAL SESSION VOLUME</div>
+                  <div style={{ display:"flex",justifyContent:"space-around" }}>
+                    {[{val:"18",lbl:"Total Sets",c:PRIMARY},{val:"156",lbl:"Total Reps",c:"#22C55E"},{val:"1,890kg",lbl:"Total Load",c:"#F97316"}].map((s,i)=>(
+                      <div key={i} style={{ textAlign:"center" }}>
+                        <div style={{ fontFamily:FONT,fontWeight:900,fontSize:26,color:s.c,lineHeight:1,marginBottom:4 }}>{s.val}</div>
+                        <div style={{ fontFamily:FONT,fontSize:11,color:"#888888" }}>{s.lbl}</div>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                </div>
+                <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"18px" }}>
+                  <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888888",letterSpacing:1,marginBottom:16 }}>MUSCLES TRAINED</div>
+                  {[{name:"Chest",pct:85,c:"#EF4444"},{name:"Triceps",pct:75,c:"#F97316"},{name:"Shoulders",pct:60,c:"#EAB308"},{name:"Back",pct:40,c:PRIMARY},{name:"Core",pct:25,c:"#22C55E"}].map((m,i)=>(
+                    <div key={i} style={{ marginBottom:i<4?14:0 }}>
+                      <div style={{ display:"flex",justifyContent:"space-between",marginBottom:6 }}>
+                        <span style={{ fontFamily:FONT,fontSize:14,color:"#888888" }}>{m.name}</span>
+                        <span style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:m.c }}>{m.pct}%</span>
+                      </div>
+                      <div style={{ height:8,background:dark?"#1a1a1a":"#e5e5e5",borderRadius:8,overflow:"hidden" }}>
+                        <div style={{ height:"100%",width:`${barWidths.cr?m.pct:0}%`,background:m.c,borderRadius:8,transition:`width ${1+i*0.1}s ease` }}/>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-
-            <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"18px" }}>
-              <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888888",letterSpacing:1,marginBottom:16 }}>MUSCLES TRAINED</div>
-              {[{name:"Chest",pct:85,c:"#EF4444"},{name:"Triceps",pct:75,c:"#F97316"},{name:"Shoulders",pct:60,c:"#EAB308"},{name:"Back",pct:40,c:PRIMARY},{name:"Core",pct:25,c:"#22C55E"}].map((m,i)=>(
-                <div key={i} style={{ marginBottom:i<4?14:0 }}>
-                  <div style={{ display:"flex",justifyContent:"space-between",marginBottom:6 }}>
-                    <span style={{ fontFamily:FONT,fontSize:14,color:"#888888" }}>{m.name}</span>
-                    <span style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:m.c }}>{m.pct}%</span>
-                  </div>
-                  <div style={{ height:8,background:dark?"#1a1a1a":"#e5e5e5",borderRadius:8,overflow:"hidden" }}>
-                    <div style={{ height:"100%",width:`${barWidths.cr?m.pct:0}%`,background:m.c,borderRadius:8,transition:`width ${1+i*0.1}s ease` }}/>
-                  </div>
-                </div>
-              ))}
-            </div>
+            )}
           </div>
         )}
+
       </div>
-      {showLock&&(
-        <>
-          <div onClick={()=>setShowLock(false)} style={{ position:"absolute",inset:0,background:"rgba(0,0,0,0.82)",zIndex:60 }}/>
-          <div style={{ position:"absolute",bottom:0,left:0,right:0,background:CARD,borderRadius:"24px 24px 0 0",padding:"28px 24px 44px",zIndex:61,border:`1px solid ${BORDER}`,borderBottom:"none" }}>
-            <div style={{ textAlign:"center",marginBottom:22 }}>
-              <div style={{ width:56,height:56,borderRadius:"50%",background:`${PRIMARY}18`,border:`1px solid ${PRIMARY}44`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px" }}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-              </div>
-              <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff",marginBottom:8 }}>Premium Feature</div>
-              <div style={{ fontFamily:FONT,fontSize:13.5,color:"#888",lineHeight:1.65 }}>Full breakdown and exercise analysis are unlimited with Premium, or free once per week.</div>
-            </div>
-            <button onClick={()=>setShowLock(false)} style={{ width:"100%",padding:"16px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1.5,cursor:"pointer",marginBottom:10 }}>UPGRADE TO PREMIUM</button>
-            <button onClick={()=>{ setFreeUsed(true); setShowLock(false); setTab("breakdown"); }} style={{ width:"100%",padding:"14px 0",borderRadius:50,background:"transparent",border:`1px solid ${BORDER}`,fontFamily:FONT,fontWeight:600,fontSize:13,color:"#888",cursor:"pointer" }}>Use Free Weekly Preview</button>
-          </div>
-        </>
-      )}
     </div>
   );
 }
 
-// ── ONBOARDING ───────────────────────────────────────────────────────────────
-// ─────────────────────────────────────────────────────────────────────────────
 function ProgDots({ total, current }) {
   return (
     <div style={{ display:"flex",gap:8,justifyContent:"center" }}>
@@ -3445,7 +3477,7 @@ function CustomizePage({ onBack }) {
 }
 
 
-function WeightsHub({ onLogout=null, onNavigate=null }){
+function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
   const { dark } = useTheme();
   const T = dark ? DARK : LIGHT;
   const [subPage, setSubPage] = useState(null);
@@ -3841,24 +3873,29 @@ function NotificationsPage({ onBack, onMarkAllRead, unreadIds, onRead }) {
           const isUnread = unreadIds.includes(n.id);
           return (
             <div key={n.id} onClick={() => onRead(n.id)}
-              style={{ background: isUnread ? PRIMARY : "#fff", borderRadius:18, padding:"16px 18px", marginBottom:12, display:"flex", gap:14, alignItems:"flex-start", cursor:"pointer", animation:`fadeUp 0.3s ease ${i*0.05}s both`, transition:"background 0.2s" }}>
+              style={{ background: "#fff", borderRadius:18, padding:"16px 18px", marginBottom:12, display:"flex", gap:14, alignItems:"flex-start", cursor:"pointer", animation:`fadeUp 0.3s ease ${i*0.05}s both`, transition:"background 0.2s" }}>
               {/* Icon */}
-              <div style={{ width:44, height:44, borderRadius:"50%", background: isUnread ? n.iconBg||PRIMARY : "#1a1a1a", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-                {n.iconKey==="workout"   && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>}
-                {n.iconKey==="goal"      && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>}
-                {n.iconKey==="meal"      && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>}
-                {n.iconKey==="streak"    && <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>}
-                {n.iconKey==="challenge" && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>}
-                {n.iconKey==="premium"   && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.77 5.82 21 7 14.14l-5-4.87 6.91-1.01z"/></svg>}
-                {!n.iconKey && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>}
+              <div style={{ width:44, height:44, borderRadius:"50%", background: isUnread ? "#1a1a1a" : n.iconBg||"#1a1a1a", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                {n.iconKey==="workout"   && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>}
+                {n.iconKey==="goal"      && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#34D399" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>}
+                {n.iconKey==="meal"      && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FBBF24" strokeWidth="2"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>}
+                {n.iconKey==="streak"    && <svg width="20" height="20" viewBox="0 0 24 24" fill="#F87171"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>}
+                {n.iconKey==="challenge" && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>}
+                {n.iconKey==="premium"   && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FCD34D" strokeWidth="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.77 5.82 21 7 14.14l-5-4.87 6.91-1.01z"/></svg>}
+                {n.iconKey==="nutrition" && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4ADE80" strokeWidth="2"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>}
+                {n.iconKey==="steps"     && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22D3EE" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>}
+                {n.iconKey==="sleep"     && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#818CF8" strokeWidth="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>}
+                {n.iconKey==="water"     && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38BDF8" strokeWidth="2"><path d="M12 2.69l5.66 5.66a8 8 0 11-11.31 0z"/></svg>}
+                {n.iconKey==="rest"      && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F472B6" strokeWidth="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>}
+                {!n.iconKey && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>}
               </div>
               {/* Body */}
               <div style={{ flex:1 }}>
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:4 }}>
-                  <div style={{ fontFamily:FONT, fontWeight:800, fontSize:15, color: isUnread ? "#fff" : "#111" }}>{n.title}</div>
-                  <div style={{ fontFamily:FONT, fontSize:12, color: isUnread ? "rgba(255,255,255,0.75)" : "#aaa", marginLeft:8, whiteSpace:"nowrap", flexShrink:0 }}>{n.time}</div>
+                  <div style={{ fontFamily:FONT, fontWeight:800, fontSize:15, color: "#111" }}>{n.title}</div>
+                  <div style={{ fontFamily:FONT, fontSize:12, color: "#aaa", marginLeft:8, whiteSpace:"nowrap", flexShrink:0 }}>{n.time}</div>
                 </div>
-                <div style={{ fontFamily:FONT, fontSize:13, color: isUnread ? "rgba(255,255,255,0.88)" : "#666", lineHeight:1.55 }}>{n.body}</div>
+                <div style={{ fontFamily:FONT, fontSize:13, color: "#666", lineHeight:1.55 }}>{n.body}</div>
               </div>
             </div>
           );
@@ -3947,67 +3984,134 @@ function DetailFieldIcon({ type }) {
 }
 function PersonalDetailsPage({ onBack }) {
   const { user, setUser } = useUser();
-  const [name,  setName]  = useState(user.name);
-  const [age,   setAge]   = useState(user.age);
-  const [gender,setGender]= useState(user.gender);
-  const [weight,setWeight]= useState(user.weight);
-  const [height,setHeight]= useState(user.height);
-  const [unit,  setUnit]  = useState("kg/cm");
-  const [saved, setSaved] = useState(false);
+  const [name,       setName]       = useState(user.name || "");
+  const [dob,        setDob]        = useState(user.dob || user.age || "");
+  const [gender,     setGender]     = useState(user.gender || "");
+  const [weight,     setWeight]     = useState(user.weight || "");
+  const [height,     setHeight]     = useState(user.height || "");
+  const [weightUnit, setWeightUnit] = useState("lbs");
+  const [heightUnit, setHeightUnit] = useState("ft");
+  const [saved,      setSaved]      = useState(false);
 
-  const save = async () => {
-    setUser(u=>({...u,name,age,gender,weight,height}));
-    setSaved(true);
-    setTimeout(()=>setSaved(false),2200);
-    if (!DEMO_MODE && getAuthToken()) {
-      apiCall('/users/profile',{ method:'PUT', body:JSON.stringify({ name, gender, weight, height }) }).catch(()=>{});
+  // Weight unit conversion
+  const switchWeightUnit = (u) => {
+    const v = parseFloat(weight);
+    if (!isNaN(v)) {
+      if (u === "kg"  && weightUnit === "lbs") setWeight((v * 0.453592).toFixed(1));
+      if (u === "lbs" && weightUnit === "kg")  setWeight((v * 2.20462).toFixed(1));
+    }
+    setWeightUnit(u);
+  };
+
+  // Height unit conversion
+  const switchHeightUnit = (u) => {
+    if (u === "cm" && heightUnit === "ft") {
+      const parts = height.split("'");
+      const ft = parseFloat(parts[0]) || 0;
+      const ins = parseFloat(parts[1]) || 0;
+      setHeight(Math.round((ft * 30.48) + (ins * 2.54)).toString());
+    } else if (u === "ft" && heightUnit === "cm") {
+      const cm = parseFloat(height) || 0;
+      const totalIn = cm / 2.54;
+      const ft = Math.floor(totalIn / 12);
+      const ins = Math.round(totalIn % 12);
+      setHeight(ft + "'" + ins);
+    }
+    setHeightUnit(u);
+  };
+
+  // Auto-format height in ft (insert apostrophe after feet digit)
+  const handleHeightChange = (val) => {
+    if (heightUnit === "ft") {
+      const digits = val.replace(/[^0-9]/g, "");
+      if (digits.length === 0) { setHeight(""); return; }
+      if (digits.length === 1) { setHeight(digits); return; }
+      const ft = digits[0];
+      const ins = digits.slice(1, 3);
+      setHeight(ft + "'" + ins);
+    } else {
+      setHeight(val.replace(/[^0-9.]/g, ""));
     }
   };
 
+  const save = async () => {
+    setUser(u=>({...u, name, dob, gender, weight, height}));
+    setSaved(true);
+    setTimeout(()=>setSaved(false), 2200);
+    if (!DEMO_MODE && getAuthToken()) {
+      apiCall("/users/profile", { method:"PUT", body:JSON.stringify({ name, gender, weight, height }) }).catch(_e=>{});
+    }
+  };
+
+  const UnitToggle = ({ units, current, onChange }) => (
+    <div style={{ display:"flex",background:"#1a1a1a",borderRadius:20,padding:3,marginBottom:10 }}>
+      {units.map(u=>(
+        <button key={u} onClick={()=>onChange(u)}
+          style={{ flex:1,padding:"5px 12px",borderRadius:16,border:"none",
+                   background:current===u?PRIMARY:"transparent",
+                   fontFamily:FONT,fontWeight:600,fontSize:11,
+                   color:current===u?"#fff":"#555",cursor:"pointer",transition:"all 0.2s" }}>{u}</button>
+      ))}
+    </div>
+  );
+
   return (
     <SubShell title="PERSONAL DETAILS" onBack={onBack}>
+      {/* Name, DOB, Gender */}
       <div style={{ background:"#ffffff",borderRadius:20,border:"1px solid #e8e8e8",padding:"20px",marginBottom:14 }}>
         <DarkInput label="FULL NAME" value={name} onChange={setName}/>
-        <DarkInput label="AGE" value={age} onChange={setAge} type="number"/>
+        <DarkInput label="DATE OF BIRTH" value={dob} onChange={setDob} placeholder="DD/MM/YYYY"/>
         <div style={{ marginBottom:16 }}>
           <div style={{ fontFamily:FONT,fontWeight:600,fontSize:12,color:"#888888",letterSpacing:0.5,marginBottom:8 }}>GENDER</div>
           <div style={{ display:"flex",gap:8 }}>
             {["Male","Female","Other","N/A"].map(g=>(
-              <button key={g} onClick={()=>setGender(g)} style={{ flex:1,padding:"11px 0",borderRadius:12,border:`1.5px solid ${gender===g?PRIMARY:BORDER}`,background:gender===g?`${PRIMARY}18`:"transparent",fontFamily:FONT,fontWeight:600,fontSize:12,color:gender===g?PRIMARY:"#555",cursor:"pointer",transition:"all 0.2s" }}>{g}</button>
+              <button key={g} onClick={()=>setGender(g)}
+                style={{ flex:1,padding:"11px 0",borderRadius:12,border:`1.5px solid ${gender===g?PRIMARY:BORDER}`,
+                         background:gender===g?`${PRIMARY}18`:"transparent",fontFamily:FONT,fontWeight:600,
+                         fontSize:12,color:gender===g?PRIMARY:"#555",cursor:"pointer",transition:"all 0.2s" }}>{g}</button>
             ))}
           </div>
         </div>
       </div>
 
+      {/* Body Stats */}
       <div style={{ background:"#ffffff",borderRadius:20,border:"1px solid #e8e8e8",padding:"20px",marginBottom:14 }}>
-        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14 }}>
-          <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#888888",letterSpacing:0.5 }}>BODY STATS</div>
-          <div style={{ display:"flex",background:"#1a1a1a",borderRadius:20,padding:3 }}>
-            {["kg/cm","lbs/in"].map(u=>(
-              <button key={u} onClick={()=>setUnit(u)} style={{ padding:"5px 12px",borderRadius:16,border:"none",background:unit===u?PRIMARY:"transparent",fontFamily:FONT,fontWeight:600,fontSize:11,color:unit===u?"#fff":"#555",cursor:"pointer",transition:"all 0.2s" }}>{u}</button>
-            ))}
+        <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#888888",letterSpacing:0.5,marginBottom:14 }}>BODY STATS</div>
+
+        {/* Weight */}
+        <div style={{ marginBottom:14 }}>
+          <div style={{ fontFamily:FONT,fontWeight:600,fontSize:11,color:"#888888",marginBottom:6 }}>WEIGHT</div>
+          <UnitToggle units={["lbs","kg"]} current={weightUnit} onChange={switchWeightUnit}/>
+          <div style={{ background:"#1e1e1e",border:`1.5px solid ${BORDER}`,borderRadius:12,padding:"12px 14px",display:"flex",alignItems:"center",gap:8 }}>
+            <DetailFieldIcon type="scale"/>
+            <input value={weight} onChange={e=>setWeight(e.target.value.replace(/[^0-9.]/g,""))}
+              inputMode="decimal" placeholder={weightUnit==="lbs"?"e.g. 165":"e.g. 75"}
+              style={{ flex:1,background:"none",border:"none",fontFamily:FONT,fontSize:16,fontWeight:700,color:"#fff",outline:"none",width:"100%" }}/>
+            <span style={{ fontFamily:FONT,fontSize:13,color:"#555" }}>{weightUnit}</span>
           </div>
         </div>
-        <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12 }}>
-          {[{lbl:`WEIGHT (${unit.split("/")[0].toUpperCase()})`,val:weight,set:setWeight,ico:"scale"},
-            {lbl:`HEIGHT (${unit.split("/")[1].toUpperCase()})`,val:height,set:setHeight,ico:"ruler"}].map(f=>(
-            <div key={f.lbl}>
-              <div style={{ fontFamily:FONT,fontWeight:600,fontSize:11,color:"#888888",marginBottom:6 }}>{f.lbl}</div>
-              <div style={{ background:"#1e1e1e",border:`1.5px solid ${BORDER}`,borderRadius:12,padding:"12px 14px",display:"flex",alignItems:"center",gap:8 }}>
-                <DetailFieldIcon type={f.ico}/>
-                <input type="number" value={f.val} onChange={e=>f.set(e.target.value)}
-                  style={{ flex:1,background:"none",border:"none",fontFamily:FONT,fontSize:16,fontWeight:700,color:"#fff",outline:"none",width:"100%" }}/>
-              </div>
-            </div>
-          ))}
+
+        {/* Height */}
+        <div>
+          <div style={{ fontFamily:FONT,fontWeight:600,fontSize:11,color:"#888888",marginBottom:6 }}>
+            HEIGHT{heightUnit==="ft" ? " — feet then inches (e.g. 5'9)" : ""}
+          </div>
+          <UnitToggle units={["ft","cm"]} current={heightUnit} onChange={switchHeightUnit}/>
+          <div style={{ background:"#1e1e1e",border:`1.5px solid ${BORDER}`,borderRadius:12,padding:"12px 14px",display:"flex",alignItems:"center",gap:8 }}>
+            <DetailFieldIcon type="ruler"/>
+            <input value={height} onChange={e=>handleHeightChange(e.target.value)}
+              inputMode="numeric" placeholder={heightUnit==="ft"?"5'9":"178"}
+              style={{ flex:1,background:"none",border:"none",fontFamily:FONT,fontSize:16,fontWeight:700,color:"#fff",outline:"none",width:"100%" }}/>
+            <span style={{ fontFamily:FONT,fontSize:13,color:"#555" }}>{heightUnit}</span>
+          </div>
         </div>
       </div>
+
       <SaveBtn onClick={save} saved={saved}/>
     </SubShell>
   );
 }
 
-// ─ Fitness Goal ───────────────────────────────────────────────────────────────
 
 function GoalIcon({ type }) {
   const s = { width:22, height:22, viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:"2" };
@@ -4210,11 +4314,11 @@ function BillingHistoryPage({ onBack }) {
         {bills.map((b,i)=>(
           <div key={i} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 0",borderBottom:i<bills.length-1?`1px solid ${BORDER}`:"none" }}>
             <div>
-              <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#fff",marginBottom:3 }}>{b.desc}</div>
+              <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#111111",marginBottom:3 }}>{b.desc}</div>
               <div style={{ fontFamily:FONT,fontSize:12,color:"#888888" }}>{b.date}</div>
             </div>
             <div style={{ textAlign:"right" }}>
-              <div style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff",marginBottom:4 }}>{b.amount}</div>
+              <div style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:"#111111",marginBottom:4 }}>{b.amount}</div>
               <div style={{ background:"#22C55E18",border:"1px solid #22C55E44",borderRadius:20,padding:"2px 10px",display:"inline-block" }}>
                 <span style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:"#22C55E",letterSpacing:0.5 }}>{b.status}</span>
               </div>
@@ -4281,7 +4385,7 @@ function UpgradePlanPage({ onBack }) {
             <div style={{ width:20,height:20,borderRadius:"50%",background:`${PRIMARY}20`,border:`1px solid ${PRIMARY}55`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
               <svg width="10" height="8" viewBox="0 0 10 8" fill="none" stroke={PRIMARY} strokeWidth="2"><polyline points="1,4 3.5,7 9,1"/></svg>
             </div>
-            <span style={{ fontFamily:FONT,fontSize:14,color:"rgba(255,255,255,0.8)" }}>{f}</span>
+            <span style={{ fontFamily:FONT,fontSize:14,color:"#333333" }}>{f}</span>
           </div>
         ))}
       </div>
@@ -4407,14 +4511,6 @@ function AccountSettingsPage({ onBack }) {
   const [subPage, setSubPage] = useState(null);
   const toggleApp = k => setApps(p=>({...p,[k]:!p[k]}));
 
-  if (subPage==="personal")    return <PersonalDetailsPage      onBack={()=>setSubPage(null)}/>;
-  if (subPage==="goal")        return <FitnessGoalPage          onBack={()=>setSubPage(null)}/>;
-  if (subPage==="email")       return <ChangeEmailPage          onBack={()=>setSubPage(null)}/>;
-  if (subPage==="password")    return <ChangePasswordPage       onBack={()=>setSubPage(null)}/>;
-  if (subPage==="payment")     return <PaymentMethodPage        onBack={()=>setSubPage(null)}/>;
-  if (subPage==="billing")     return <BillingHistoryPage       onBack={()=>setSubPage(null)}/>;
-  if (subPage==="upgrade")     return <UpgradePlanPage          onBack={()=>setSubPage(null)}/>;
-  if (subPage==="cancel")      return <CancelSubscriptionPage   onBack={()=>setSubPage(null)}/>;
 
   const SectionTitle = ({ label }) => (
     <div style={{ fontFamily:FONT,fontWeight:800,fontSize:18,color:"#fff",margin:"24px 0 14px" }}>{label}</div>
@@ -4573,6 +4669,15 @@ function AccountSettingsPage({ onBack }) {
           </div>
         </>
       )}
+      {/* Sub-page overlays — AccountSettingsPage stays mounted preserving scroll */}
+      {subPage==="personal"  && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><PersonalDetailsPage    onBack={()=>setSubPage(null)}/></div>}
+      {subPage==="goal"      && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><FitnessGoalPage         onBack={()=>setSubPage(null)}/></div>}
+      {subPage==="email"     && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><ChangeEmailPage         onBack={()=>setSubPage(null)}/></div>}
+      {subPage==="password"  && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><ChangePasswordPage      onBack={()=>setSubPage(null)}/></div>}
+      {subPage==="payment"   && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><PaymentMethodPage       onBack={()=>setSubPage(null)}/></div>}
+      {subPage==="billing"   && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><BillingHistoryPage      onBack={()=>setSubPage(null)}/></div>}
+      {subPage==="upgrade"   && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><UpgradePlanPage         onBack={()=>setSubPage(null)}/></div>}
+      {subPage==="cancel"    && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><CancelSubscriptionPage  onBack={()=>setSubPage(null)}/></div>}
     </div>
   );
 }
@@ -5261,6 +5366,7 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
   const [selectedRecipe, setSelectedRecipe] = useState(null);
   const [saveMsg, setSaveMsg]         = useState("");
   const [swapTarget, setSwapTarget]   = useState(null);
+  const [bannerOpen, setBannerOpen]   = useState(true); // AI banner collapsed state
   const [checkedGrocery, setCheckedGrocery] = useState([]);
   const [selectedDay, setSelectedDay] = useState(new Date().getDay()===0?6:new Date().getDay()-1);
   // mealSwaps[day][slotIdx] = option index (overrides WEEKLY_MEAL_PLAN default)
@@ -5339,40 +5445,56 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
       <div ref={scrollRef} style={{ flex:1,overflowY:"auto",padding:"0 16px 80px" }}>
         {subTab===0 && (
           <div>
-            {/* AI suggestion banner */}
-            <div style={{ background:`${PRIMARY}12`,border:`1px solid ${PRIMARY}30`,borderRadius:16,padding:"14px 16px",marginBottom:14 }}>
-              <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:6 }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>
-                <span style={{ fontFamily:FONT,fontWeight:800,fontSize:13,color:"#fff" }}>{isPremium ? aiSug.title : isPremium ? aiSug.title : "AI Coach — 1 Free Summary This Week"}</span>
+            {/* AI suggestion banner - collapsible */}
+            <div style={{ background:`${PRIMARY}12`,border:`1px solid ${PRIMARY}30`,borderRadius:16,marginBottom:12,overflow:"hidden",transition:"all 0.3s ease" }}>
+              {/* Banner header - always visible, tap to toggle */}
+              <div onClick={()=>setBannerOpen(b=>!b)}
+                style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 14px",cursor:"pointer" }}>
+                <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                  <span style={{ fontFamily:FONT,fontWeight:800,fontSize:13,color:"#fff" }}>{isPremium ? aiSug.title : "Max Effort Nutrition"}</span>
+                </div>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2"
+                  style={{ transform:bannerOpen?"rotate(180deg)":"rotate(0deg)",transition:"transform 0.3s ease" }}>
+                  <polyline points="6 9 12 15 18 9"/>
+                </svg>
               </div>
-              <div style={{ fontFamily:FONT,fontSize:12,color:"#aaa",lineHeight:1.55,marginBottom:10 }}>
-                {isPremium
-                  ? aiSug.tip
-                  : "You get 1 basic AI summary per week on the free plan. Start your free trial for full AI coaching after every session."}
-              </div>
-              {!isPremium && (
-                <button onClick={()=>{}} style={{ background:"none",border:`1px solid ${PRIMARY}`,borderRadius:50,padding:"8px 18px",fontFamily:FONT,fontWeight:700,fontSize:12,color:PRIMARY,cursor:"pointer",letterSpacing:0.5,marginBottom:8 }}>
-                  START FREE TRIAL →
-                </button>
-              )}
-              <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
-                {isPremium && aiSug.rec.map(ri=>(
-                  <div key={ri} onClick={()=>setSelectedRecipe(ri)}
-                    style={{ display:"flex",alignItems:"center",gap:12,borderRadius:14,overflow:"hidden",cursor:"pointer",background:"#ffffff",border:"1px solid #e8e8e8",padding:"8px 10px 8px 8px" }}>
-                    <div style={{ width:56,height:56,borderRadius:10,overflow:"hidden",flexShrink:0 }}><img src={RECIPES[ri].img} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/></div>
-                    <div style={{ flex:1 }}>
-                      <div style={{ fontFamily:FONT,fontSize:13,fontWeight:700,color:"#111",lineHeight:1.3,marginBottom:3 }}>{RECIPES[ri].name}</div>
-                      <div style={{ display:"flex",gap:8,alignItems:"center" }}><span style={{ fontFamily:FONT,fontSize:12,color:"#EF4444",fontWeight:600 }}>{RECIPES[ri].cal} cal</span><span style={{ fontFamily:FONT,fontSize:12,color:PRIMARY,fontWeight:600 }}>{RECIPES[ri].protein}g protein</span></div>
-                    </div>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#bbb" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+              {/* Collapsible content */}
+              {bannerOpen && (
+                <div style={{ padding:"0 14px 14px" }}>
+                  <div style={{ fontFamily:FONT,fontSize:12,color:"#aaa",lineHeight:1.55,marginBottom:10 }}>
+                    {isPremium
+                      ? aiSug.tip
+                      : "You get 1 basic AI summary per week on the free plan. Start your free trial for full AI coaching."}
                   </div>
-                ))}
-              </div>
+                  {!isPremium && (
+                    <button onClick={()=>{}} style={{ background:"none",border:`1px solid ${PRIMARY}`,borderRadius:20,padding:"6px 14px",fontFamily:FONT,fontWeight:700,fontSize:11,color:PRIMARY,cursor:"pointer",letterSpacing:0.5 }}>
+                      START FREE TRIAL →
+                    </button>
+                  )}
+                  <div style={{ display:"flex",flexDirection:"column",gap:8,marginTop:isPremium?0:10 }}>
+                    {isPremium && aiSug.rec.map(ri=>(
+                      <div key={ri} onClick={()=>setSelectedRecipe(ri)}
+                        style={{ display:"flex",alignItems:"center",gap:12,borderRadius:14,overflow:"hidden",cursor:"pointer",background:"rgba(255,255,255,0.06)",padding:"8px" }}>
+                        <div style={{ width:56,height:56,borderRadius:10,overflow:"hidden",flexShrink:0 }}><img src={RECIPES[ri]?.img} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/></div>
+                        <div style={{ flex:1 }}>
+                          <div style={{ fontFamily:FONT,fontSize:13,fontWeight:700,color:"#fff",lineHeight:1.3,marginBottom:3 }}>{RECIPES[ri]?.name}</div>
+                          <div style={{ display:"flex",gap:8,alignItems:"center" }}>
+                            <span style={{ fontFamily:FONT,fontSize:11,color:"#888" }}>{RECIPES[ri]?.cal} cal</span>
+                            <span style={{ fontFamily:FONT,fontSize:11,color:"#888" }}>{RECIPES[ri]?.time}</span>
+                          </div>
+                        </div>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#bbb" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             {/* Search */}
             <div style={{ position:"relative",marginBottom:12 }}>
               <svg style={{ position:"absolute",left:12,top:"50%",transform:"translateY(-50%)" }} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search recipes..." style={{ width:"100%",background:CARD,border:`1px solid ${BORDER}`,borderRadius:12,padding:"10px 12px 10px 36px",fontFamily:FONT,fontSize:13,color:"#fff",outline:"none",boxSizing:"border-box" }}/>
+              <input value={search} onChange={e=>{ setSearch(e.target.value); if(e.target.value.length>0) setBannerOpen(false); }} placeholder="Search recipes..." style={{ width:"100%",background:CARD,border:`1px solid ${BORDER}`,borderRadius:12,padding:"10px 12px 10px 36px",fontFamily:FONT,fontSize:13,color:"#fff",outline:"none",boxSizing:"border-box" }}/>
             </div>
             {/* Filters */}
             <div style={{ display:"flex",gap:8,overflowX:"auto",marginBottom:14,paddingBottom:4 }}>
