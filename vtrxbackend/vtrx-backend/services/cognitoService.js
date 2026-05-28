@@ -23,6 +23,7 @@ const {
   GetUserCommand,
   AdminGetUserCommand,
   AdminDeleteUserCommand,
+  ResendConfirmationCodeCommand,
 } = require('@aws-sdk/client-cognito-identity-provider');
 
 const crypto = require('crypto');
@@ -172,6 +173,20 @@ const getCognitoUser = async ({ accessToken }) => {
   };
 };
 
+
+// ── Resend Verification Code ──────────────────────────────────────────────────
+// Resends the 6-digit email verification code (NOT a password reset)
+const resendConfirmationCode = async ({ email }) => {
+  const command = new ResendConfirmationCodeCommand({
+    ClientId:   CLIENT_ID,
+    Username:   email,
+    SecretHash: getSecretHash(email),
+  });
+  await cognitoClient.send(command);
+  logger.info(`Cognito resend confirmation: ${email}`);
+  return true;
+};
+
 module.exports = {
   signUp,
   confirmSignUp,
@@ -180,4 +195,8 @@ module.exports = {
   confirmForgotPassword,
   signOut,
   getCognitoUser,
+  resendConfirmationCode,
 };
+
+// ── Resend Verification Code ──────────────────────────────────────────────────
+// Resends the email verification code (different from forgot password)
