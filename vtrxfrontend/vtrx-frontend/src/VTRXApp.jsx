@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, createContext, useContext } from "react";
 
 // ── API Configuration ─────────────────────────────────────────────────────────
-const API_URL = "";
+const API_URL = typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL : "";
 
 // When no real backend URL is set, all API calls silently succeed (demo/preview mode)
 const DEMO_MODE = !API_URL;
@@ -2341,7 +2341,7 @@ function BodyScreen({ onContinue, onBack }) {
         {/* Date of Birth */}
         <div style={{ marginBottom:22 }}>
           <span style={lbl}>DATE OF BIRTH</span>
-          <input value={dob} onChange={e=>setDob(e.target.value)}
+          <input value={dob}
             placeholder="DD/MM/YYYY" inputMode="numeric"
             onFocus={e=>{ if(!dob) setDob(""); }}
             onChange={e=>{
