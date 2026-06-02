@@ -13,7 +13,7 @@
 
 const jwt     = require('jsonwebtoken');
 const prisma  = require('../config/database');
-const cognito = require('../services/cognitoService');
+const cognito = require('../services/clerkService');
 const logger  = require('../utils/logger');
 const { validationResult } = require('express-validator');
 
