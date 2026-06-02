@@ -22,7 +22,7 @@ datasource db {
 // Stores your app users. cognitoId links to AWS Cognito (the real auth system).
 model User {
   id              String    @id @default(uuid())
-  cognitoId       String    @unique  // AWS Cognito user ID
+  clerkId         String    @unique  // AWS Cognito user ID
   email           String    @unique
   username        String    @unique
   name            String?
