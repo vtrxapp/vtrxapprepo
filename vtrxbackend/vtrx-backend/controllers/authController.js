@@ -38,14 +38,14 @@ const signup = async (req, res) => {
 
   try {
     // Step 1: Create user in AWS Cognito (handles password hashing)
-    const { cognitoUserId, emailVerification } = await cognito.signUp({
+    const { clerkUserId, emailVerification } = await cognito.signUp({
       email, password, username, name,
     });
 
     // Step 2: Create user record in our PostgreSQL database
     const user = await prisma.user.create({
       data: {
-        cognitoId: cognitoUserId,
+        cognitoId: clerkUserId,
         email:     email.toLowerCase(),
         username:  username.toLowerCase(),
         name:      name || username,
