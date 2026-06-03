@@ -50,10 +50,7 @@ const signUp = async ({ email, password, username, name }) => {
 
     const emailId = user.email_addresses?.[0]?.id;
     if (emailId) {
-      try {
-        await clerkAPI('POST', `/email_addresses/${emailId}/prepare_verification`, { strategy: 'email_code' });
-        logger.info(`Verification email sent to: ${email}`);
-      } catch(e) {
+       catch(e) {
         logger.warn('Verification email send failed:', JSON.stringify(e));
       }
     }
