@@ -83,7 +83,7 @@ if (emailId) {
   }
 }
 
-    return { clerkUserId: user.id, emailVerification: !!emailId, };
+    return { clerkUserId: user.id, emailVerification: false };
   } catch (err) {
     logger.error('Clerk signUp error:', JSON.stringify(err));
     const code = err?.errors?.[0]?.code || '';
