@@ -4,6 +4,10 @@ const logger = require('../utils/logger');
 
 const CLERK_SECRET = process.env.CLERK_SECRET_KEY;
 
+logger.info(
+  `CLERK_SECRET_KEY loaded: ${!!process.env.CLERK_SECRET_KEY}`
+);
+
 // Helper: Clerk REST API call
 const clerkAPI = (method, path, body) => new Promise((resolve, reject) => {
   const data = body ? JSON.stringify(body) : null;
@@ -23,8 +27,15 @@ const clerkAPI = (method, path, body) => new Promise((resolve, reject) => {
     res.on('end', () => {
       try {
         const parsed = JSON.parse(raw);
-        if (res.statusCode >= 400) reject(parsed);
-        else resolve(parsed);
+        logger.info(
+  `Clerk API ${method} ${path} -> ${res.statusCode}: ${raw}`
+);
+
+if (res.statusCode >= 400) {
+  reject(parsed);
+} else {
+  resolve(parsed);
+}
       } catch(_e) { reject(new Error(raw)); }
     });
   });
@@ -48,14 +59,31 @@ const signUp = async ({ email, password, username, name }) => {
 
     logger.info(`Clerk signUp: ${email} | id: ${user.id}`);
 
-    const emailId = user.email_addresses?.[0]?.id;
-    if (emailId) {
-       catch(e) {
-        logger.warn('Verification email send failed:', JSON.stringify(e));
-      }
-    }
+   const emailId = user.email_addresses?.[0]?.id;
 
-    return { clerkUserId: user.id, emailVerification: true };
+if (emailId) {
+  try {
+    const verificationResponse = await clerkAPI(
+      'POST',
+      `/email_addresses/${emailId}/prepare_verification`,
+      {
+        strategy: 'email_code',
+      }
+    );
+
+    logger.info(
+      `Verification email triggered for ${email}: ${JSON.stringify(
+        verificationResponse
+      )}`
+    );
+  } catch (e) {
+    logger.warn(
+      `Verification email send failed for ${email}: ${JSON.stringify(e)}`
+    );
+  }
+}
+
+    return { clerkUserId: user.id, emailVerification: !!emailId, };
   } catch (err) {
     logger.error('Clerk signUp error:', JSON.stringify(err));
     const code = err?.errors?.[0]?.code || '';
@@ -126,8 +154,12 @@ const resendConfirmationCode = async ({ email }) => {
       logger.info(`Clerk resendCode success: ${email}`);
     }
   } catch (err) {
-    logger.error('Clerk resendCode error:', JSON.stringify(err));
-    throw new Error(err?.errors?.[0]?.message || 'Resend failed');
+    logger.error(
+  'Clerk resendCode error:',
+  JSON.stringify(err, null, 2)
+);
+
+throw err;
   }
 };
 
