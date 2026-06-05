@@ -1,186 +1,86 @@
-// services/clerkService.js — Clerk Authentication using REST API directly
-const https = require('https');
+// services/clerkService.js — Clerk Authentication using official SDK (improved verification)
+const { clerkClient } = require('@clerk/clerk-sdk-node');
 const logger = require('../utils/logger');
 
+const clerk = clerkClient;
+
 const CLERK_SECRET = process.env.CLERK_SECRET_KEY;
+logger.info(`CLERK_SECRET_KEY loaded: ${!!CLERK_SECRET}`);
 
-logger.info(
-  `CLERK_SECRET_KEY loaded: ${!!process.env.CLERK_SECRET_KEY}`
-);
-
-// Helper: Clerk REST API call
-const clerkAPI = (method, path, body) => new Promise((resolve, reject) => {
-  const data = body ? JSON.stringify(body) : null;
-  const options = {
-    hostname: 'api.clerk.com',
-    path:     '/v1' + path,
-    method,
-    headers: {
-      'Authorization':  `Bearer ${CLERK_SECRET}`,
-      'Content-Type':   'application/json',
-      ...(data ? { 'Content-Length': Buffer.byteLength(data) } : {}),
-    },
-  };
-  const req = https.request(options, res => {
-    let raw = '';
-    res.on('data', c => raw += c);
-    res.on('end', () => {
-      try {
-        const parsed = JSON.parse(raw);
-        logger.info(
-  `Clerk API ${method} ${path} -> ${res.statusCode}: ${raw}`
-);
-
-if (res.statusCode >= 400) {
-  reject(parsed);
-} else {
-  resolve(parsed);
-}
-      } catch(_e) { reject(new Error(raw)); }
-    });
-  });
-  req.on('error', reject);
-  if (data) req.write(data);
-  req.end();
-});
-
+// ==================== SIGN UP ====================
 const signUp = async ({ email, password, username, name }) => {
-  try {
-    const cleanUsername = (username || email.split('@')[0])
-      .toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 15);
+  try {
+    const cleanUsername = (username || email.split('@')[0])
+      .toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 15);
 
-    const user = await clerkAPI('POST', '/users', {
-      email_address: [email],
-      password,
-      username: cleanUsername,
-      first_name: name ? name.split(' ')[0] : cleanUsername,
-      last_name:  name ? name.split(' ').slice(1).join(' ') : '',
-    });
+    const user = await clerk.users.createUser({
+      emailAddress: [email],
+      password,
+      username: cleanUsername,
+      firstName: name ? name.split(' ')[0] : cleanUsername,
+      lastName: name ? name.split(' ').slice(1).join(' ') : '',
+    });
 
-    logger.info(`Clerk signUp: ${email} | id: ${user.id}`);
+    logger.info(`Clerk signUp: ${email} | id: ${user.id}`);
 
-   const emailId = user.email_addresses?.[0]?.id;
+    const emailAddr = user.emailAddresses?.[0];
+    if (emailAddr && emailAddr.verification?.status !== 'verified') {
+      try {
+        await clerk.emailAddresses.prepareVerification({
+          emailAddressId: emailAddr.id,
+          strategy: 'email_code',
+        });
+        logger.info(`Verification email triggered for ${email}`);
+      } catch (e) {
+        logger.warn(`Verification email send failed for ${email}: ${JSON.stringify(e)}`);
+      }
+    }
 
-if (emailId) {
-  try {
-    const verificationResponse = await clerkAPI(
-      'POST',
-      `/email_addresses/${emailId}/prepare_verification`,
-      {
-        strategy: 'email_code',
-      }
-    );
-
-    logger.info(
-      `Verification email triggered for ${email}: ${JSON.stringify(
-        verificationResponse
-      )}`
-    );
-  } catch (e) {
-    logger.warn(
-      `Verification email send failed for ${email}: ${JSON.stringify(e)}`
-    );
-  }
-}
-
-    return { clerkUserId: user.id, emailVerification: false };
-  } catch (err) {
-    logger.error('Clerk signUp error:', JSON.stringify(err));
-    const code = err?.errors?.[0]?.code || '';
-    if (code === 'form_identifier_exists') {
-      const e = new Error('Account already exists.'); e.name = 'UsernameExistsException'; throw e;
-    }
-    throw new Error(err?.errors?.[0]?.message || 'Signup failed');
-  }
+    return { clerkUserId: user.id, emailVerification: false };
+  } catch (err) {
+    logger.error('Clerk signUp error:', JSON.stringify(err));
+    const code = err?.errors?.[0]?.code || '';
+    if (code === 'form_identifier_exists' || code === 'identifier_already_exists') {
+      const e = new Error('Account already exists.'); 
+      e.name = 'UsernameExistsException'; 
+      throw e;
+    }
+    throw new Error(err?.errors?.[0]?.longMessage || err?.errors?.[0]?.message || 'Signup failed');
+  }
 };
 
+// ==================== CONFIRM SIGN UP ====================
 const confirmSignUp = async ({ email, code }) => {
-  try {
-    logger.info(`confirmSignUp called with email: ${email} code: ${code}`);
-    const search = await clerkAPI('GET', `/users?email_address=${encodeURIComponent(email)}`);
-    const users = search.data || search;
-    if (!users?.length) { const e = new Error('User not found.'); e.name = 'UserNotFoundException'; throw e; }
-    const user = users[0];
-    const emailAddr = user.email_addresses?.find(e => e.email_address === email);
-    if (!emailAddr) { const e = new Error('Email not found.'); e.name = 'UserNotFoundException'; throw e; }
+  try {
+    logger.info(`confirmSignUp called with email: ${email} code: ${code}`);
 
+    const { data: users } = await clerk.users.getUserList({ emailAddress: [email] });
+    
+    if (!users?.length) {
+      const e = new Error('User not found.'); 
+      e.name = 'UserNotFoundException'; 
+      throw e;
+    }
 
-logger.info(`Attempting verification for emailAddr.id: ${emailAddr.id} with code: ${code}`);
-    await clerkAPI('POST', `/email_addresses/${emailAddr.id}/attempt_verification`, { code: String(code) });
-    logger.info(`Clerk confirmSignUp success: ${email}`);
-  } catch (err) {
-    logger.error('Clerk confirmSignUp error:', JSON.stringify(err));
-    const errCode = err?.errors?.[0]?.code || err?.message || '';
-    if (errCode.includes('incorrect') || errCode.includes('invalid') || errCode.includes('mismatch')) {
-      const e = new Error('Invalid verification code.'); e.name = 'CodeMismatchException'; throw e;
-    }
-    if (errCode.includes('expired')) {
-      const e = new Error('Code expired. Please request a new one.'); e.name = 'ExpiredCodeException'; throw e;
-    }
-    throw new Error(err?.errors?.[0]?.message || 'Verification failed');
-  }
-};
+    const user = users[0];
+    const emailAddr = user.emailAddresses?.find(e => e.emailAddress === email);
 
-const login = async ({ email, password }) => {
-  try {
-    const search = await clerkAPI('GET', `/users?email_address=${encodeURIComponent(email)}`);
-    const users = search.data || search;
-    if (!users?.length) { const e = new Error('No account found.'); e.name = 'UserNotFoundException'; throw e; }
-    const user = users[0];
+    if (!emailAddr) {
+      const e = new Error('Email not found.'); 
+      e.name = 'UserNotFoundException'; 
+      throw e;
+    }
 
-    const emailAddr = user.email_addresses?.find(e => e.email_address === email);
-    if (emailAddr?.verification?.status !== 'verified') {
-      const e = new Error('Please verify your email before logging in. Check your inbox.');
-      e.name = 'UserNotConfirmedException'; throw e;
-    }
+    logger.info(`Attempting verification for emailAddr.id: ${emailAddr.id} with code: ${code}`);
 
-    const result = await clerkAPI('POST', `/users/${user.id}/verify_password`, { password });
-    if (!result?.verified) { const e = new Error('Incorrect email or password.'); e.name = 'NotAuthorizedException'; throw e; }
+    await clerk.emailAddresses.attemptVerification({
+      emailAddressId: emailAddr.id,
+      code: String(code),
+    });
 
-    return { accessToken: user.id };
-  } catch (err) {
-    if (err.name) throw err;
-    logger.error('Clerk login error:', JSON.stringify(err));
-    throw new Error(err?.errors?.[0]?.message || 'Login failed');
-  }
-};
+    logger.info(`Clerk confirmSignUp success: ${email}`);
+  } catch (err) {
+    logger.error('Clerk confirmSignUp error:', JSON.stringify(err));
+    const errCode = err?.errors?.[0]?.code || err?.message || '';
 
-const resendConfirmationCode = async ({ email }) => {
-  try {
-    const search = await clerkAPI('GET', `/users?email_address=${encodeURIComponent(email)}`);
-    const users = search.data || search;
-    if (!users?.length) { const e = new Error('User not found.'); e.name = 'UserNotFoundException'; throw e; }
-    const user = users[0];
-    const emailAddr = user.email_addresses?.find(e => e.email_address === email);
-    if (emailAddr) {
-      await clerkAPI('POST', `/email_addresses/${emailAddr.id}/prepare_verification`, { strategy: 'email_code' });
-      logger.info(`Clerk resendCode success: ${email}`);
-    }
-  } catch (err) {
-    logger.error(
-  'Clerk resendCode error:',
-  JSON.stringify(err, null, 2)
-);
-
-throw err;
-  }
-};
-
-const forgotPassword = async ({ email }) => { logger.info(`Clerk forgotPassword: ${email}`); };
-
-const confirmForgotPassword = async ({ email, code, newPassword }) => {
-  try {
-    const search = await clerkAPI('GET', `/users?email_address=${encodeURIComponent(email)}`);
-    const users = search.data || search;
-    if (!users?.length) throw new Error('UserNotFoundException');
-    await clerkAPI('PATCH', `/users/${users[0].id}`, { password: newPassword });
-  } catch (err) { logger.error('Clerk resetPassword error:', JSON.stringify(err)); throw err; }
-};
-
-const signOut = async ({ accessToken }) => {
-  try {
-    if (accessToken) await clerkAPI('DELETE', `/sessions/${accessToken}/revoke`, {});
-  } catch(_e) {}
-};
-
-module.exports = { signUp, confirmSignUp, login, resendConfirmationCode, forgotPassword, confirmForgotPassword, signOut };
+    if (errCode.includes('incorrect') || errCode
