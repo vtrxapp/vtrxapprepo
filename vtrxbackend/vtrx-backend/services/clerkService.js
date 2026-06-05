@@ -105,8 +105,8 @@ const confirmSignUp = async ({ email, code }) => {
     if (!emailAddr) { const e = new Error('Email not found.'); e.name = 'UserNotFoundException'; throw e; }
 
 
-
-    await clerkAPI('POST', `/email_addresses/${emailAddr.id}/attempt_verification`, { code });
+logger.info(`Attempting verification for emailAddr.id: ${emailAddr.id} with code: ${code}`);
+    await clerkAPI('POST', `/email_addresses/${emailAddr.id}/attempt_verification`, { code: String(code) });
     logger.info(`Clerk confirmSignUp success: ${email}`);
   } catch (err) {
     logger.error('Clerk confirmSignUp error:', JSON.stringify(err));
