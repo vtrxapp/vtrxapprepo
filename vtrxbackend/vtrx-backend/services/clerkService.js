@@ -86,56 +86,70 @@ const signUp = async ({ email, password, username, name }) => {
 // ==================== CONFIRM SIGN UP ====================
 const confirmSignUp = async ({ email, code }) => {
   try {
-    logger.info(`confirmSignUp called with email: ${email} code: ${code}`);
+    logger.info(`confirmSignUp START | email: ${email} | code: ${code}`);
 
-    await new Promise(resolve => setTimeout(resolve, 1200)); // Give Clerk time
+    // Give Clerk time to propagate
+    await new Promise(r => setTimeout(r, 1500));
 
     const search = await clerkAPI('GET', `/users?email_address=${encodeURIComponent(email)}`);
-    logger.info(`User search response: ${JSON.stringify(search).substring(0, 500)}...`);
+    logger.info(`GET /users response: ${JSON.stringify(search).slice(0, 600)}...`);
 
-    const users = search.data || search || [];
-    if (!users?.length) throw new Error('User not found.');
+    const users = search?.data || search || [];
+    if (!users.length) {
+      throw new Error('User not found');
+    }
 
     const user = users[0];
     const emailAddr = user.email_addresses?.find(e => e.email_address === email);
 
-    if (!emailAddr) throw new Error('Email not found.');
+    if (!emailAddr) {
+      throw new Error('Email address record not found');
+    }
 
-    logger.info(`Attempting verification - Email ID: ${emailAddr.id}`);
+    logger.info(`Attempting verification on ID: ${emailAddr.id}`);
 
-    await clerkAPI('POST', `/email_addresses/${emailAddr.id}/attempt_verification`, { 
-      code: String(code) 
-    });
+    const verificationResult = await clerkAPI(
+      'POST', 
+      `/email_addresses/${emailAddr.id}/attempt_verification`, 
+      { code: String(code) }
+    );
 
-    logger.info(`✅ Verification SUCCESS for ${email}`);
+    logger.info(`✅ Verification SUCCESS: ${JSON.stringify(verificationResult)}`);
     return { success: true };
 
   } catch (err) {
-    // === BETTER ERROR LOGGING ===
-    logger.error('Clerk confirmSignUp FULL ERROR:', JSON.stringify(err, null, 2));
+    logger.error('=== CLERK VERIFY ERROR FULL ===');
+    logger.error(JSON.stringify(err, null, 2));
 
-    const firstError = err?.errors?.[0] || {};
-    const code = firstError.code || '';
-    const message = firstError.longMessage || firstError.message || err.message || '';
+    // Extract Clerk error
+    let errorMessage = 'Verification failed';
+    
+    if (err && typeof err === 'object') {
+      if (err.errors && err.errors[0]) {
+        const e = err.errors[0];
+        errorMessage = e.longMessage || e.message || JSON.stringify(e);
+        logger.error(`Clerk Error Code: ${e.code} | Message: ${errorMessage}`);
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+    }
 
-    logger.error(`Clerk Error Code: ${code} | Message: ${message}`);
-
-    if (code === 'verification_failed' || 
-        message.toLowerCase().includes('incorrect') || 
-        message.toLowerCase().includes('invalid')) {
-      const e = new Error('Invalid verification code. Please try again.');
+    // Specific handling
+    const msgLower = errorMessage.toLowerCase();
+    if (msgLower.includes('incorrect') || msgLower.includes('invalid') || msgLower.includes('verification_failed')) {
+      const e = new Error('Invalid verification code. Please check your email and try again.');
       e.name = 'CodeMismatchException';
       throw e;
     }
 
-    if (code === 'expired' || message.toLowerCase().includes('expired')) {
-      const e = new Error('Code has expired. Please request a new one.');
+    if (msgLower.includes('expired')) {
+      const e = new Error('Verification code has expired. Please request a new one.');
       e.name = 'ExpiredCodeException';
       throw e;
     }
 
     // Final fallback
-    const finalError = new Error(message || 'Verification failed');
+    const finalError = new Error(errorMessage);
     finalError.name = 'VerificationFailedException';
     throw finalError;
   }
