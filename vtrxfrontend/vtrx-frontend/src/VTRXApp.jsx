@@ -2059,32 +2059,43 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
   };
 
   const handle = async () => {
-    setSubmitted(true);
-    const errs = {};
-    if (!f.name.trim())                       errs.name     = "Full name is required.";
-    if (!f.username.trim())                   errs.username = "Username is required.";
-    if (!f.email.trim())                      errs.email    = "Email is required.";
-    else if (!emailRegex.test(f.email.trim())) errs.email   = "Please enter a valid email (e.g. you@example.com).";
-    if (f.password.length < 8)                errs.password = "Password must be at least 8 characters.";
-    if (f.password !== f.confirm)             errs.confirm  = "Passwords do not match.";
-    if (Object.keys(errs).length) { setErrors(errs); return; }
-    setErrors({}); setLoading(true);
-    try {
-      await apiCall("/auth/signup", {
-        method: "POST",
-        body:   JSON.stringify({
-          name:     f.name.trim(),
-          username: f.username.trim().toLowerCase(),
-          email:    f.email.trim().toLowerCase(),
-          password: f.password,
-        }),
-      });
-      if (typeof localStorage !== "undefined") localStorage.setItem("vtrx_pending_email", f.email.trim().toLowerCase());
-      onContinue(f.email.trim().toLowerCase());
-    } catch (e) {
-      setErrors({ general: e.message || "Signup failed. Please check your details and try again." });
-    } finally { setLoading(false); }
-  };
+  setSubmitted(true);
+  const errs = {};
+  if (!f.name.trim())                       errs.name     = "Full name is required.";
+  if (!f.username.trim())                   errs.username = "Username is required.";
+  if (!f.email.trim())                      errs.email    = "Email is required.";
+  else if (!emailRegex.test(f.email.trim())) errs.email   = "Please enter a valid email.";
+  if (f.password.length < 8)                errs.password = "Password must be at least 8 characters.";
+  if (f.password !== f.confirm)             errs.confirm  = "Passwords do not match.";
+  if (Object.keys(errs).length) { setErrors(errs); return; }
+  setErrors({}); setLoading(true);
+
+  try {
+    const data = await apiCall("/auth/signup", {
+      method: "POST",
+      body:   JSON.stringify({
+        name:     f.name.trim(),
+        username: f.username.trim().toLowerCase(),
+        email:    f.email.trim().toLowerCase(),
+        password: f.password,
+      }),
+    });
+
+    // ✅ NEW: Store verificationId for the next step
+    if (data.success && data.data?.verificationId) {
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("pendingVerificationId", data.data.verificationId);
+        localStorage.setItem("pendingEmail", f.email.trim().toLowerCase());
+      }
+    }
+
+    onContinue(f.email.trim().toLowerCase());
+  } catch (e) {
+    setErrors({ general: e.message || "Signup failed. Please try again." });
+  } finally { 
+    setLoading(false); 
+  }
+};
 
   const fields = [
     { key:"name",     icon:"user",  placeholder:"Full name",        type:"text"     },
@@ -2179,15 +2190,40 @@ function EmailVerificationScreen({ onContinue, onBack }) {
   }, []);
 
   const verify = async () => {
-    if (code.length !== 6) { setErr("Please enter the 6-digit code."); return; }
-    setErr(""); setLoading(true);
-    try {
-      await apiCall("/auth/confirm-email", { method:"POST", body:JSON.stringify({ email, code:code.trim() }) });
-      onContinue();
-    } catch (e) {
-      setErr(e.message || "Invalid code. Please try again.");
-    } finally { setLoading(false); }
-  };
+  if (code.length !== 6) { 
+    setErr("Please enter the 6-digit code."); 
+    return; 
+  }
+  setErr(""); 
+  setLoading(true);
+
+  const verificationId = typeof localStorage !== "undefined" 
+    ? localStorage.getItem("pendingVerificationId") 
+    : null;
+
+  try {
+    await apiCall("/auth/confirm-email", { 
+      method:"POST", 
+      body:JSON.stringify({ 
+        email, 
+        code: code.trim(),
+        verificationId   // ← This is the fix
+      }) 
+    });
+
+    // Clean up
+    if (typeof localStorage !== "undefined") {
+      localStorage.removeItem("pendingVerificationId");
+      localStorage.removeItem("pendingEmail");
+    }
+
+    onContinue();
+  } catch (e) {
+    setErr(e.message || "Invalid code. Please try again.");
+  } finally { 
+    setLoading(false); 
+  }
+};
 
   const resend = async () => {
     if (!email) { setErr("No email found — please go back and sign up."); return; }
