@@ -28,7 +28,6 @@ const signToken = (userId) => {
 
 // ── POST /api/auth/signup ─────────────────────────────────────────────────────
 const signup = async (req, res) => {
-  // Validate request body
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ success: false, errors: errors.array() });
@@ -37,28 +36,30 @@ const signup = async (req, res) => {
   const { email, password, username, name, gender, age } = req.body;
 
   try {
-    // Step 1: Create user in AWS Cognito (handles password hashing)
-    const { clerkUserId, emailVerification } = await cognito.signUp({
-      email, password, username, name,
-    });
+    // Step 1: Create user in Clerk
+    const { 
+      clerkUserId, 
+      emailVerification,
+      verificationId   // ← New
+    } = await cognito.signUp({ email, password, username, name });
 
-    // Step 2: Create user record in our PostgreSQL database
+    // Step 2: Create user in database
     const user = await prisma.user.create({
       data: {
         cognitoId: clerkUserId,
-        email:     email.toLowerCase(),
-        username:  username.toLowerCase(),
-        name:      name || username,
+        email: email.toLowerCase(),
+        username: username.toLowerCase(),
+        name: name || username,
         gender,
-        age:       age ? parseInt(age) : null,
+        age: age ? parseInt(age) : null,
       },
     });
 
-    // Step 3: Create a free subscription record for this user
+    // Step 3: Free subscription
     await prisma.subscription.create({
       data: {
         userId: user.id,
-        plan:   'free',
+        plan: 'free',
         status: 'active',
       },
     });
@@ -67,23 +68,17 @@ const signup = async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: emailVerification
-        ? 'Account created! Please check your email to verify your account.'
-        : 'Account created successfully.',
+      message: 'Account created! Please check your email to verify your account.',
       data: {
-        userId:            user.id,
-        email:             user.email,
+        userId: user.id,
+        email: user.email,
         emailVerification,
+        verificationId,        // ← Return this to frontend
       },
     });
-
   } catch (error) {
-    // Handle Cognito-specific errors with friendly messages
     if (error.name === 'UsernameExistsException') {
       return res.status(409).json({ success: false, message: 'An account with this email already exists.' });
-    }
-    if (error.name === 'InvalidPasswordException') {
-      return res.status(400).json({ success: false, message: 'Password must be at least 8 characters with uppercase, lowercase and numbers.' });
     }
     logger.error('Signup error:', error);
     res.status(500).json({ success: false, message: 'Signup failed. Please try again.' });
@@ -92,19 +87,34 @@ const signup = async (req, res) => {
 
 // ── POST /api/auth/confirm-email ──────────────────────────────────────────────
 const confirmEmail = async (req, res) => {
-  const { email, code } = req.body;
+  const { email, code, verificationId } = req.body;   // ← Added verificationId
 
   try {
-    await cognito.confirmSignUp({ email, code });
-    res.json({ success: true, message: 'Email confirmed! You can now log in.' });
+    logger.info(`confirmEmail called with verificationId: ${verificationId || 'none'}`);
+
+    await cognito.confirmSignUp({ 
+      email, 
+      code, 
+      verificationId     // ← Pass to service
+    });
+
+    res.json({ 
+      success: true, 
+      message: 'Email confirmed! You can now log in.' 
+    });
   } catch (error) {
+    logger.error('Confirm email error:', error);
+
     if (error.name === 'CodeMismatchException') {
       return res.status(400).json({ success: false, message: 'Invalid verification code.' });
     }
     if (error.name === 'ExpiredCodeException') {
       return res.status(400).json({ success: false, message: 'Code expired — request a new one.' });
     }
-    logger.error('Confirm email error:', error);
+    if (error.name === 'VerificationFailedException') {
+      return res.status(400).json({ success: false, message: error.message || 'Verification failed.' });
+    }
+
     res.status(500).json({ success: false, message: 'Verification failed.' });
   }
 };
