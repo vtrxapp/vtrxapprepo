@@ -84,72 +84,64 @@ const signUp = async ({ email, password, username, name }) => {
 };
 
 // ==================== CONFIRM SIGN UP ====================
-// ==================== CONFIRM SIGN UP ====================
 const confirmSignUp = async ({ email, code }) => {
   try {
     logger.info(`confirmSignUp called with email: ${email} code: ${code}`);
 
-    // Small delay to help with Clerk propagation
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 1200)); // Give Clerk time
 
     const search = await clerkAPI('GET', `/users?email_address=${encodeURIComponent(email)}`);
-    logger.info(`User search response status: 200 | users found: ${search?.data?.length || search?.length || 0}`);
+    logger.info(`User search response: ${JSON.stringify(search).substring(0, 500)}...`);
 
     const users = search.data || search || [];
-    if (!users?.length) {
-      const e = new Error('User not found.');
-      e.name = 'UserNotFoundException';
-      throw e;
-    }
+    if (!users?.length) throw new Error('User not found.');
 
     const user = users[0];
     const emailAddr = user.email_addresses?.find(e => e.email_address === email);
 
-    if (!emailAddr) {
-      logger.error('Email address not found in user object');
-      const e = new Error('Email not found.');
-      e.name = 'UserNotFoundException';
-      throw e;
-    }
+    if (!emailAddr) throw new Error('Email not found.');
 
-    logger.info(`Attempting verification for email ID: ${emailAddr.id} | Status: ${emailAddr.verification?.status}`);
+    logger.info(`Attempting verification - Email ID: ${emailAddr.id}`);
 
     await clerkAPI('POST', `/email_addresses/${emailAddr.id}/attempt_verification`, { 
       code: String(code) 
     });
 
-    logger.info(`Clerk confirmSignUp SUCCESS for ${email}`);
+    logger.info(`✅ Verification SUCCESS for ${email}`);
     return { success: true };
 
   } catch (err) {
-    logger.error('Clerk confirmSignUp error FULL:', JSON.stringify(err, null, 2));
+    // === BETTER ERROR LOGGING ===
+    logger.error('Clerk confirmSignUp FULL ERROR:', JSON.stringify(err, null, 2));
 
-    const errors = err?.errors || [];
-    const firstError = errors[0] || {};
-    const errCode = firstError.code || err?.message || '';
-    const errMessage = firstError.longMessage || firstError.message || err?.message || '';
+    const firstError = err?.errors?.[0] || {};
+    const code = firstError.code || '';
+    const message = firstError.longMessage || firstError.message || err.message || '';
 
-    logger.error(`Clerk Error Code: ${errCode} | Message: ${errMessage}`);
+    logger.error(`Clerk Error Code: ${code} | Message: ${message}`);
 
-    if (errCode === 'verification_failed' || errCode.includes('incorrect') || 
-        errMessage.toLowerCase().includes('invalid') || errMessage.toLowerCase().includes('mismatch')) {
-      const e = new Error('Invalid verification code. Please check and try again.');
+    if (code === 'verification_failed' || 
+        message.toLowerCase().includes('incorrect') || 
+        message.toLowerCase().includes('invalid')) {
+      const e = new Error('Invalid verification code. Please try again.');
       e.name = 'CodeMismatchException';
       throw e;
     }
 
-    if (errCode === 'expired' || errMessage.toLowerCase().includes('expired')) {
-      const e = new Error('Code expired. Please request a new one.');
+    if (code === 'expired' || message.toLowerCase().includes('expired')) {
+      const e = new Error('Code has expired. Please request a new one.');
       e.name = 'ExpiredCodeException';
       throw e;
     }
 
-    // Default fallback
-    const finalError = new Error(errMessage || 'Verification failed');
+    // Final fallback
+    const finalError = new Error(message || 'Verification failed');
     finalError.name = 'VerificationFailedException';
     throw finalError;
   }
 };
+
+   
 
 // Keep other functions as before (or update similarly if needed)
 const login = async ({ email, password }) => { /* your original login */ };
