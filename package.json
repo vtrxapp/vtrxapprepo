@@ -1,7 +1,4 @@
 {
-  "dependencies": {
-    "@clerk/clerk-sdk-node": "^4.12.12"
-  },
   "devDependencies": {
     "@types/node": "^25.9.1"
   }
