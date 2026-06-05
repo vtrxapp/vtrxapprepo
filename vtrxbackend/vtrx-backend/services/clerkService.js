@@ -96,12 +96,15 @@ if (emailId) {
 
 const confirmSignUp = async ({ email, code }) => {
   try {
+    logger.info(`confirmSignUp called with email: ${email} code: ${code}`);
     const search = await clerkAPI('GET', `/users?email_address=${encodeURIComponent(email)}`);
     const users = search.data || search;
     if (!users?.length) { const e = new Error('User not found.'); e.name = 'UserNotFoundException'; throw e; }
     const user = users[0];
     const emailAddr = user.email_addresses?.find(e => e.email_address === email);
     if (!emailAddr) { const e = new Error('Email not found.'); e.name = 'UserNotFoundException'; throw e; }
+
+
 
     await clerkAPI('POST', `/email_addresses/${emailAddr.id}/attempt_verification`, { code });
     logger.info(`Clerk confirmSignUp success: ${email}`);
