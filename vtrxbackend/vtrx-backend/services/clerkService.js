@@ -1,4 +1,4 @@
-// services/clerkService.js — Clerk Authentication using official SDK (improved verification)
+// services/clerkService.js — Clerk Authentication using official SDK (fixed)
 const { clerkClient } = require('@clerk/clerk-sdk-node');
 const logger = require('../utils/logger');
 
@@ -54,8 +54,10 @@ const confirmSignUp = async ({ email, code }) => {
   try {
     logger.info(`confirmSignUp called with email: ${email} code: ${code}`);
 
-    const { data: users } = await clerk.users.getUserList({ emailAddress: [email] });
-    
+    // Safer user lookup - fixed to prevent "is missing" error
+    const usersResponse = await clerk.users.getUserList({ emailAddress: email });
+    const users = usersResponse.data || usersResponse;
+
     if (!users?.length) {
       const e = new Error('User not found.'); 
       e.name = 'UserNotFoundException'; 
@@ -83,4 +85,116 @@ const confirmSignUp = async ({ email, code }) => {
     logger.error('Clerk confirmSignUp error:', JSON.stringify(err));
     const errCode = err?.errors?.[0]?.code || err?.message || '';
 
-    if (errCode.includes('incorrect') || errCode
+    if (errCode.includes('incorrect') || errCode.includes('invalid') || errCode.includes('mismatch')) {
+      const e = new Error('Invalid verification code.'); 
+      e.name = 'CodeMismatchException'; 
+      throw e;
+    }
+    if (errCode.includes('expired')) {
+      const e = new Error('Code expired. Please request a new one.'); 
+      e.name = 'ExpiredCodeException'; 
+      throw e;
+    }
+    throw new Error(err?.errors?.[0]?.longMessage || err?.errors?.[0]?.message || 'Verification failed');
+  }
+};
+
+// ==================== LOGIN ====================
+const login = async ({ email, password }) => {
+  try {
+    const usersResponse = await clerk.users.getUserList({ emailAddress: email });
+    const users = usersResponse.data || usersResponse;
+
+    if (!users?.length) {
+      const e = new Error('No account found.'); 
+      e.name = 'UserNotFoundException'; 
+      throw e;
+    }
+
+    const user = users[0];
+    const emailAddr = user.emailAddresses?.find(e => e.emailAddress === email);
+
+    if (emailAddr?.verification?.status !== 'verified') {
+      const e = new Error('Please verify your email before logging in. Check your inbox.');
+      e.name = 'UserNotConfirmedException'; 
+      throw e;
+    }
+
+    const result = await clerk.users.verifyPassword({ userId: user.id, password });
+    if (!result?.verified) {
+      const e = new Error('Incorrect email or password.'); 
+      e.name = 'NotAuthorizedException'; 
+      throw e;
+    }
+
+    return { accessToken: user.id };
+  } catch (err) {
+    if (err.name) throw err;
+    logger.error('Clerk login error:', JSON.stringify(err));
+    throw new Error(err?.errors?.[0]?.longMessage || 'Login failed');
+  }
+};
+
+// ==================== RESEND CODE ====================
+const resendConfirmationCode = async ({ email }) => {
+  try {
+    const usersResponse = await clerk.users.getUserList({ emailAddress: email });
+    const users = usersResponse.data || usersResponse;
+
+    if (!users?.length) {
+      const e = new Error('User not found.'); 
+      e.name = 'UserNotFoundException'; 
+      throw e;
+    }
+
+    const user = users[0];
+    const emailAddr = user.emailAddresses?.find(e => e.emailAddress === email);
+
+    if (emailAddr) {
+      await clerk.emailAddresses.prepareVerification({
+        emailAddressId: emailAddr.id,
+        strategy: 'email_code',
+      });
+      logger.info(`Clerk resendCode success: ${email}`);
+    }
+  } catch (err) {
+    logger.error('Clerk resendCode error:', JSON.stringify(err, null, 2));
+    throw err;
+  }
+};
+
+// ==================== OTHER FUNCTIONS ====================
+const forgotPassword = async ({ email }) => { 
+  logger.info(`Clerk forgotPassword: ${email}`); 
+};
+
+const confirmForgotPassword = async ({ email, code, newPassword }) => {
+  try {
+    const usersResponse = await clerk.users.getUserList({ emailAddress: email });
+    const users = usersResponse.data || usersResponse;
+    if (!users?.length) throw new Error('UserNotFoundException');
+    
+    await clerk.users.updateUser(users[0].id, { password: newPassword });
+  } catch (err) { 
+    logger.error('Clerk resetPassword error:', JSON.stringify(err)); 
+    throw err; 
+  }
+};
+
+const signOut = async ({ accessToken }) => {
+  try {
+    if (accessToken) {
+      await clerk.sessions.revokeSession(accessToken);
+    }
+  } catch(_e) {}
+};
+
+module.exports = { 
+  signUp, 
+  confirmSignUp, 
+  login, 
+  resendConfirmationCode, 
+  forgotPassword, 
+  confirmForgotPassword, 
+  signOut 
+};
