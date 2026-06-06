@@ -6326,7 +6326,7 @@ function VTRXAppInner() {
   if (phase==="preferences") {
     const SCREENS = [
       <SignUpScreen              key={0} onContinue={(email)=>{ if(email){ setPendingEmail(email); setPhase("emailVerify"); } else goNext(); }} onBack={()=>setPhase("onboarding")} onLogin={()=>setPhase("login")}/>,
-      <EmailVerificationScreen   key={1} onContinue={goNext} onBack={goPrev}/>,
+      <EmailVerifyScreen   key={1} onContinue={goNext} onBack={goPrev}/>,
       <BodyScreen                key={2} onContinue={goNext} onBack={goPrev}/>,
       <WorkoutScreen             key={3} onContinue={goNext} onBack={goPrev}/>,
       <NutritionScreen           key={4} onContinue={goNext} onBack={goPrev}/>,
