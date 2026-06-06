@@ -2186,7 +2186,7 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
     ? localStorage.getItem("vtrx_verification_id") || "" 
     : "";
 
-    const verify = async () => {
+  const verify = async () => {
     if (code.length !== 6) { 
       setError("Please enter the full 6-digit code"); 
       return; 
@@ -2198,6 +2198,7 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
 
     setLoading(true); 
     setError("");
+    
     try {
       const response = await apiCall("/auth/confirm-email", {
         method: "POST",
@@ -2208,18 +2209,18 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
         }),
       });
 
-      // Only proceed if backend explicitly says success
-      if (response?.success === true) {
+      // Only proceed if backend returns success
+      if (response && response.success === true) {
         if (typeof localStorage !== "undefined") {
           localStorage.removeItem("vtrx_verification_id");
         }
         onVerified();
       } else {
-        throw new Error("Verification failed");
+        throw new Error(response?.message || "Invalid code");
       }
     } catch (e) {
       console.error("Verification failed:", e);
-      setError(e.message || "Invalid or expired code. Please check and try again.");
+      setError(e.message || "Invalid or expired code. Please try again.");
     } finally { 
       setLoading(false); 
     }
@@ -2229,10 +2230,10 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
     try {
       await apiCall("/auth/resend-code", { method:"POST", body:JSON.stringify({ email }) });
       setResent(true);
-      setError("New code sent!");
-      setTimeout(()=> { setResent(false); setError(""); }, 3000);
+      setError("New code has been sent to your email.");
+      setTimeout(() => { setResent(false); setError(""); }, 4000);
     } catch(_e){
-      setError("Could not resend code. Try again.");
+      setError("Failed to resend code. Please try again.");
     }
   };
 
@@ -2256,8 +2257,11 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
 
       {error && <div style={{ fontFamily:FONT,fontSize:13,color:"#EF4444",marginBottom:16,textAlign:"center",fontWeight:600 }}>{error}</div>}
 
-      <button onClick={verify} disabled={loading || code.length !== 6} 
-        style={{ width:"100%",padding:"16px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1.5,cursor:loading?"not-allowed":"pointer",opacity:loading||code.length!==6?0.7:1,marginBottom:16,boxShadow:`0 4px 24px ${PRIMARY}44` }}>
+      <button 
+        onClick={verify} 
+        disabled={loading || code.length !== 6} 
+        style={{ width:"100%",padding:"16px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1.5,cursor:loading?"not-allowed":"pointer",opacity:loading||code.length!==6?0.7:1,marginBottom:16,boxShadow:`0 4px 24px ${PRIMARY}44` }}
+      >
         {loading ? "VERIFYING..." : "VERIFY EMAIL"}
       </button>
 
