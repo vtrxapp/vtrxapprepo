@@ -2177,40 +2177,39 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
 
 function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
   const email = emailProp || (typeof localStorage !== "undefined" ? localStorage.getItem("vtrx_pending_email") || "" : "");
-  const [code,    setCode]    = React.useState("");
+  const [code, setCode] = React.useState("");
   const [loading, setLoading] = React.useState(false);
-  const [error,   setError]   = React.useState("");
-  const [resent,  setResent]  = React.useState(false);
+  const [error, setError] = React.useState("");
+  const [resent, setResent] = React.useState(false);
 
   const verificationId = typeof localStorage !== "undefined" 
     ? localStorage.getItem("vtrx_verification_id") || "" 
     : "";
 
   const verify = async () => {
-    if (code.length !== 6) { 
-      setError("Please enter the full 6-digit code"); 
-      return; 
+    if (code.length !== 6) {
+      setError("Please enter the full 6-digit code");
+      return;
     }
     if (!verificationId) {
-      setError("Session expired. Please go back and sign up again.");
+      setError("Session expired. Please sign up again.");
       return;
     }
 
-    setLoading(true); 
+    setLoading(true);
     setError("");
-    
+
     try {
+      console.log("Sending verification:", { email, code, verificationId }); // for debugging
+
       const response = await apiCall("/auth/confirm-email", {
         method: "POST",
-        body: JSON.stringify({ 
-          email, 
-          code: code.trim(),
-          verificationId 
-        }),
+        body: JSON.stringify({ email, code: code.trim(), verificationId }),
       });
 
-      // Only proceed if backend returns success
-      if (response && response.success === true) {
+      console.log("Backend response:", response); // for debugging
+
+      if (response?.success === true) {
         if (typeof localStorage !== "undefined") {
           localStorage.removeItem("vtrx_verification_id");
         }
@@ -2219,12 +2218,14 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
         throw new Error(response?.message || "Invalid code");
       }
     } catch (e) {
-      console.error("Verification failed:", e);
+      console.error("Verification error:", e);
       setError(e.message || "Invalid or expired code. Please try again.");
-    } finally { 
-      setLoading(false); 
+    } finally {
+      setLoading(false);
     }
   };
+
+  // ... rest of the component (resend + return JSX) remains the same
 
   const resend = async () => {
     try {
