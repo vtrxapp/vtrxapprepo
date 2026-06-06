@@ -6112,68 +6112,6 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
 }
 
 
-
-function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
-  const email = emailProp || (typeof localStorage !== "undefined" ? localStorage.getItem("vtrx_pending_email") || "" : "");
-  const [code,    setCode]    = React.useState("");
-  const [loading, setLoading] = React.useState(false);
-  const [error,   setError]   = React.useState("");
-  const [resent,  setResent]  = React.useState(false);
-
-  const verify = async () => {
-    if (code.length !== 6) { setError("Please enter the 6-digit code"); return; }
-    setLoading(true); setError("");
-    try {
-      await apiCall("/auth/confirm-email", {
-        method: "POST",
-        body: JSON.stringify({ email, code: code.trim() }),
-      });
-      onVerified();
-    } catch (e) {
-      setError(e.message || "Invalid code. Please try again.");
-    } finally { setLoading(false); }
-  };
-
-  const resend = async () => {
-    try {
-      await apiCall("/auth/resend-code", { method:"POST", body:JSON.stringify({ email }) });
-      setResent(true);
-      setTimeout(()=>setResent(false), 4000);
-    } catch(_e){}
-  };
-
-  return (
-    <div style={{ position:"absolute",inset:0,background:"#0a0a0a",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"0 32px" }}>
-      <VTRXLogo size={28}/>
-      <div style={{ fontFamily:FONT,fontWeight:900,fontSize:22,color:"#fff",marginTop:20,marginBottom:8,textAlign:"center" }}>Check your email</div>
-      <div style={{ fontFamily:FONT,fontSize:14,color:"#666",textAlign:"center",lineHeight:1.6,marginBottom:32 }}>
-        We sent a 6-digit code to<br/>
-        <span style={{ color:PRIMARY,fontWeight:700 }}>{email}</span>
-      </div>
-
-      <input
-        value={code}
-        onChange={e=>setCode(e.target.value.replace(/[^0-9]/g,"").slice(0,6))}
-        placeholder="000000"
-        inputMode="numeric"
-        maxLength={6}
-        style={{ width:"100%",background:"rgba(255,255,255,0.06)",border:`2px solid ${code.length===6?PRIMARY:BORDER}`,borderRadius:16,padding:"18px 0",fontFamily:FONT,fontWeight:800,fontSize:28,color:"#fff",outline:"none",textAlign:"center",letterSpacing:12,marginBottom:8,boxSizing:"border-box",transition:"border-color 0.2s" }}
-      />
-
-      {error && <div style={{ fontFamily:FONT,fontSize:12,color:"#EF4444",marginBottom:12,textAlign:"center" }}>{error}</div>}
-
-      <button onClick={verify} disabled={loading} style={{ width:"100%",padding:"16px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1.5,cursor:loading?"not-allowed":"pointer",opacity:loading?0.7:1,marginBottom:16,boxShadow:`0 4px 24px ${PRIMARY}44` }}>
-        {loading ? "VERIFYING..." : "VERIFY EMAIL"}
-      </button>
-
-      <button onClick={resend} style={{ background:"none",border:"none",fontFamily:FONT,fontSize:13,color:resent?"#22C55E":PRIMARY,cursor:"pointer",marginBottom:12 }}>
-        {resent ? "Code resent!" : "Resend code"}
-      </button>
-      <button onClick={onBack} style={{ background:"none",border:"none",fontFamily:FONT,fontSize:13,color:"#555",cursor:"pointer" }}>
-      </button>
-    </div>
-  );
-}
 function VTRXAppInner() {
 
   const { user, profileImg, isPremium, setIsPremium } = useUser();
