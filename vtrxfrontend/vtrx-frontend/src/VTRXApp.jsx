@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, createContext, useContext } from "r
 const API_URL = typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL : "";
 
 // When no real backend URL is set, all API calls silently succeed (demo/preview mode)
-const DEMO_MODE = !API_URL;
+const DEMO_MODE = false;
 
 // ── API Helper ────────────────────────────────────────────────────────────────
 const apiCall = async (endpoint, options = {}) => {
@@ -2186,7 +2186,7 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
     ? localStorage.getItem("vtrx_verification_id") || "" 
     : "";
 
-  const verify = async () => {
+    const verify = async () => {
     if (code.length !== 6) { 
       setError("Please enter the full 6-digit code"); 
       return; 
@@ -2199,7 +2199,7 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
     setLoading(true); 
     setError("");
     try {
-      await apiCall("/auth/confirm-email", {
+      const response = await apiCall("/auth/confirm-email", {
         method: "POST",
         body: JSON.stringify({ 
           email, 
@@ -2208,14 +2208,18 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
         }),
       });
 
-      // Success
-      if (typeof localStorage !== "undefined") {
-        localStorage.removeItem("vtrx_verification_id");
+      // Only proceed if backend explicitly says success
+      if (response?.success === true) {
+        if (typeof localStorage !== "undefined") {
+          localStorage.removeItem("vtrx_verification_id");
+        }
+        onVerified();
+      } else {
+        throw new Error("Verification failed");
       }
-      onVerified();
     } catch (e) {
       console.error("Verification failed:", e);
-      setError(e.message || "Invalid or expired code. Please try again.");
+      setError(e.message || "Invalid or expired code. Please check and try again.");
     } finally { 
       setLoading(false); 
     }
