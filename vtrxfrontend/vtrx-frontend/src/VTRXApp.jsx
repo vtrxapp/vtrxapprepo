@@ -2181,19 +2181,18 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
   const [loading, setLoading] = React.useState(false);
   const [error,   setError]   = React.useState("");
   const [resent,  setResent]  = React.useState(false);
-  
-  // ←←← NEW: Get verificationId from signup response
+
   const verificationId = typeof localStorage !== "undefined" 
     ? localStorage.getItem("vtrx_verification_id") || "" 
     : "";
 
   const verify = async () => {
     if (code.length !== 6) { 
-      setError("Please enter the 6-digit code"); 
+      setError("Please enter the full 6-digit code"); 
       return; 
     }
     if (!verificationId) {
-      setError("Verification session expired. Please go back and sign up again.");
+      setError("Session expired. Please go back and sign up again.");
       return;
     }
 
@@ -2205,16 +2204,18 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
         body: JSON.stringify({ 
           email, 
           code: code.trim(),
-          verificationId   // ←←← THIS WAS MISSING
+          verificationId 
         }),
       });
-      // Clear stored verificationId after success
+
+      // Success
       if (typeof localStorage !== "undefined") {
         localStorage.removeItem("vtrx_verification_id");
       }
       onVerified();
     } catch (e) {
-      setError(e.message || "Invalid code. Please try again.");
+      console.error("Verification failed:", e);
+      setError(e.message || "Invalid or expired code. Please try again.");
     } finally { 
       setLoading(false); 
     }
@@ -2224,8 +2225,11 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
     try {
       await apiCall("/auth/resend-code", { method:"POST", body:JSON.stringify({ email }) });
       setResent(true);
-      setTimeout(()=>setResent(false), 4000);
-    } catch(_e){}
+      setError("New code sent!");
+      setTimeout(()=> { setResent(false); setError(""); }, 3000);
+    } catch(_e){
+      setError("Could not resend code. Try again.");
+    }
   };
 
   return (
@@ -2246,9 +2250,10 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
         style={{ width:"100%",background:"rgba(255,255,255,0.06)",border:`2px solid ${code.length===6?PRIMARY:BORDER}`,borderRadius:16,padding:"18px 0",fontFamily:FONT,fontWeight:800,fontSize:28,color:"#fff",outline:"none",textAlign:"center",letterSpacing:12,marginBottom:8,boxSizing:"border-box",transition:"border-color 0.2s" }}
       />
 
-      {error && <div style={{ fontFamily:FONT,fontSize:12,color:"#EF4444",marginBottom:12,textAlign:"center" }}>{error}</div>}
+      {error && <div style={{ fontFamily:FONT,fontSize:13,color:"#EF4444",marginBottom:16,textAlign:"center",fontWeight:600 }}>{error}</div>}
 
-      <button onClick={verify} disabled={loading} style={{ width:"100%",padding:"16px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1.5,cursor:loading?"not-allowed":"pointer",opacity:loading?0.7:1,marginBottom:16,boxShadow:`0 4px 24px ${PRIMARY}44` }}>
+      <button onClick={verify} disabled={loading || code.length !== 6} 
+        style={{ width:"100%",padding:"16px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1.5,cursor:loading?"not-allowed":"pointer",opacity:loading||code.length!==6?0.7:1,marginBottom:16,boxShadow:`0 4px 24px ${PRIMARY}44` }}>
         {loading ? "VERIFYING..." : "VERIFY EMAIL"}
       </button>
 
@@ -2256,7 +2261,7 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
         {resent ? "Code resent!" : "Resend code"}
       </button>
       <button onClick={onBack} style={{ background:"none",border:"none",fontFamily:FONT,fontSize:13,color:"#555",cursor:"pointer" }}>
-        Back
+        Back to Sign Up
       </button>
     </div>
   );
