@@ -16,8 +16,13 @@ export const signup = async ({ email, password, username, name, gender, age }) =
 };
 
 // ── Confirm Email (after signup) ──────────────────────────────────────────────
-export const confirmEmail = async ({ email, code }) => {
-  return api.post('/auth/confirm-email', { email, code });
+// ── Confirm Email (after signup) ──────────────────────────────────────────────
+export const confirmEmail = async ({ email, code, verificationId }) => {
+  return api.post('/auth/confirm-email', { 
+    email, 
+    code, 
+    verificationId   // ← This was missing
+  });
 };
 
 // ── Login ─────────────────────────────────────────────────────────────────────

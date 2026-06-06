@@ -96,11 +96,10 @@ const signUp = async ({ email, password, username, name }) => {
 };
 
 // ==================== CONFIRM SIGN UP ====================
-const confirmSignUp = async ({ email, code, verificationId }) => {   // ← Accept verificationId
+// ==================== CONFIRM SIGN UP ====================
+const confirmSignUp = async ({ email, code, verificationId }) => {
   try {
     logger.info(`confirmSignUp called with email: ${email} code: ${code} verificationId: ${verificationId}`);
-
-    await new Promise(r => setTimeout(r, 1000));
 
     const search = await clerkAPI('GET', `/users?email_address=${encodeURIComponent(email)}`);
     const users = search.data || search || [];
@@ -112,19 +111,23 @@ const confirmSignUp = async ({ email, code, verificationId }) => {   // ← Acce
 
     const emailAddressId = emailAddr.id;
 
-    // Use verification_id if available, otherwise fallback
-    const payload = { code: String(code) };
-    if (verificationId) {
-      payload.verification_id = verificationId;
+    // Clerk requires verification_id for attempt_verification in most cases
+    if (!verificationId) {
+      logger.warn('verificationId missing - attempting fallback');
+      // Optional: You could fetch latest verification, but better to always pass it from frontend
     }
+
+    const payload = { 
+      code: String(code),
+      verification_id: verificationId   // Always include if we have it
+    };
 
     logger.info(`Attempting verification with payload: ${JSON.stringify(payload)}`);
 
-    await clerkAPI('POST', `/email_addresses/${emailAddressId}/attempt_verification`, payload);
+    const result = await clerkAPI('POST', `/email_addresses/${emailAddressId}/attempt_verification`, payload);
 
     logger.info(`✅ Verification SUCCESS for ${email}`);
-    return { success: true };
-
+    return { success: true, result };
   } catch (err) {
     logger.error('=== CLERK VERIFY ERROR FULL ===');
     logger.error(JSON.stringify(err, null, 2));
@@ -134,6 +137,13 @@ const confirmSignUp = async ({ email, code, verificationId }) => {   // ← Acce
 
     logger.error(`Clerk Error: ${firstError.code} | ${errorMsg}`);
 
+    if (firstError.code === 'form_param_missing' && firstError.meta?.param_name === 'verification_id') {
+      const e = new Error('Verification ID is missing. Please try signing up again.');
+      e.name = 'VerificationFailedException';
+      throw e;
+    }
+
+    // ... keep your existing error mapping
     if (errorMsg.toLowerCase().includes('incorrect') || errorMsg.toLowerCase().includes('invalid')) {
       const e = new Error('Invalid verification code.');
       e.name = 'CodeMismatchException';
@@ -150,7 +160,6 @@ const confirmSignUp = async ({ email, code, verificationId }) => {   // ← Acce
     throw finalError;
   }
 };
-   
 
 // Keep other functions as before (or update similarly if needed)
 const login = async ({ email, password }) => { /* your original login */ };

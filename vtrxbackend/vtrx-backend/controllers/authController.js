@@ -86,36 +86,45 @@ const signup = async (req, res) => {
 };
 
 // ── POST /api/auth/confirm-email ──────────────────────────────────────────────
+// ── POST /api/auth/confirm-email ──────────────────────────────────────────────
 const confirmEmail = async (req, res) => {
-  const { email, code, verificationId } = req.body;   // ← Added verificationId
+  const { email, code, verificationId } = req.body;
+
+  if (!verificationId) {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'verificationId is required' 
+    });
+  }
+
+  logger.info(`confirmEmail called with verificationId: ${verificationId} | code: ${code}`);
 
   try {
-    logger.info(`confirmEmail called with verificationId: ${verificationId || 'none'}`);
-
-    await cognito.confirmSignUp({ 
-      email, 
-      code, 
-      verificationId     // ← Pass to service
+    await cognito.confirmSignUp({
+      email,
+      code,
+      verificationId   // Make sure this is passed correctly
     });
 
-    res.json({ 
-      success: true, 
-      message: 'Email confirmed! You can now log in.' 
+    res.json({
+      success: true,
+      message: 'Email confirmed! You can now log in.'
     });
   } catch (error) {
+    logger.error('=== CLERK VERIFY ERROR FULL ===', JSON.stringify(error, null, 2));
+    
+    if (error.errors?.[0]?.code === 'form_param_missing') {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Verification ID is missing. Please try signing up again.' 
+      });
+    }
+    // ... rest of your error handling
     logger.error('Confirm email error:', error);
-
-    if (error.name === 'CodeMismatchException') {
-      return res.status(400).json({ success: false, message: 'Invalid verification code.' });
-    }
-    if (error.name === 'ExpiredCodeException') {
-      return res.status(400).json({ success: false, message: 'Code expired — request a new one.' });
-    }
-    if (error.name === 'VerificationFailedException') {
-      return res.status(400).json({ success: false, message: error.message || 'Verification failed.' });
-    }
-
-    res.status(500).json({ success: false, message: 'Verification failed.' });
+    res.status(400).json({ 
+      success: false, 
+      message: error.errors?.[0]?.long_message || error.message 
+    });
   }
 };
 
