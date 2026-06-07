@@ -95,7 +95,7 @@ const signUp = async ({ email, password, username, name }) => {
   }
 };
 
-// ==================== CONFIRM SIGN UP ====================
+
 // ==================== CONFIRM SIGN UP ====================
 const confirmSignUp = async ({ email, code, verificationId }) => {
   try {
@@ -162,7 +162,55 @@ const confirmSignUp = async ({ email, code, verificationId }) => {
 };
 
 // Keep other functions as before (or update similarly if needed)
-const login = async ({ email, password }) => { /* your original login */ };
+// ==================== LOGIN ====================
+const login = async ({ email, password }) => {
+  try {
+    logger.info(`Attempting Clerk login for: ${email}`);
+
+    // Create a session with email + password (Clerk backend way)
+    const session = await clerkAPI('POST', '/sessions', {
+      email_address: email,
+      password: password,
+    });
+
+    if (!session || !session.id) {
+      throw new Error("Login failed");
+    }
+
+    logger.info(`✅ Login successful for: ${email}`);
+
+    return {
+      success: true,
+      token: session.id,
+      user: session.user,
+      cognitoTokens: {  // Keep compatibility with your frontend
+        accessToken: session.id,
+        idToken: session.id,
+      }
+    };
+
+  } catch (err) {
+    logger.error('Clerk login error:', JSON.stringify(err, null, 2));
+
+    const firstError = err?.errors?.[0] || {};
+    const errorMsg = firstError.longMessage || firstError.message || err.message || '';
+
+    if (errorMsg.toLowerCase().includes('invalid') || 
+        errorMsg.toLowerCase().includes('incorrect') || 
+        firstError.code === 'invalid_password' ||
+        firstError.code === 'not_found') {
+      
+      const e = new Error('Incorrect email or password.');
+      e.name = 'NotAuthorizedException';
+      throw e;
+    }
+
+    const e = new Error(errorMsg || 'Login failed');
+    e.name = 'NotAuthorizedException';
+    throw e;
+  }
+};
+
 const resendConfirmationCode = async ({ email }) => { /* your original */ };
 const forgotPassword = async ({ email }) => { logger.info(`Clerk forgotPassword: ${email}`); };
 const confirmForgotPassword = async ({ email, code, newPassword }) => { /* your original */ };

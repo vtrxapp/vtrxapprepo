@@ -138,10 +138,8 @@ const login = async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    // Step 1: Authenticate with Cognito
     const cognitoTokens = await cognito.login({ email, password });
 
-    // Step 2: Find the user in our database
     const user = await prisma.user.findUnique({
       where: { email: email.toLowerCase() },
       include: { subscription: true },
@@ -154,13 +152,11 @@ const login = async (req, res) => {
       });
     }
 
-    // Step 3: Update last active timestamp
     await prisma.user.update({
       where: { id: user.id },
-      data:  { lastActiveAt: new Date() },
+      data: { lastActiveAt: new Date() },
     });
 
-    // Step 4: Issue our own JWT (short-lived, for API authentication)
     const token = signToken(user.id);
 
     logger.info(`User logged in: ${email}`);
@@ -169,34 +165,43 @@ const login = async (req, res) => {
       success: true,
       message: 'Login successful',
       data: {
-        token,                          // Our JWT for API requests
-        cognitoTokens,                  // Cognito tokens for AWS services
+        token,
+        cognitoTokens,
         user: {
-          id:          user.id,
-          email:       user.email,
-          username:    user.username,
-          name:        user.name,
-          avatarUrl:   user.avatarUrl,
-          goal:        user.goal,
-          isPremium:   user.isPremium,
-          streakDays:  user.streakDays,
-          plan:        user.subscription?.plan || 'free',
+          id: user.id,
+          email: user.email,
+          username: user.username,
+          name: user.name,
+          avatarUrl: user.avatarUrl,
+          goal: user.goal,
+          isPremium: user.isPremium,
+          streakDays: user.streakDays,
+          plan: user.subscription?.plan || 'free',
         },
       },
     });
-
   } catch (error) {
-    if (error.name === 'NotAuthorizedException') {
-      return res.status(401).json({ success: false, message: 'Incorrect email or password.' });
-    }
-    if (error.name === 'UserNotConfirmedException') {
-      return res.status(401).json({ success: false, message: 'Please verify your email before logging in.', code: 'EMAIL_NOT_CONFIRMED' });
-    }
-    if (error.name === 'UserNotFoundException') {
-      return res.status(404).json({ success: false, message: 'No account found with this email.' });
-    }
     logger.error('Login error:', error);
-    res.status(500).json({ success: false, message: 'Login failed. Please try again.' });
+
+    if (error.name === 'NotAuthorizedException' || error.message?.toLowerCase().includes('incorrect') || error.message?.toLowerCase().includes('invalid')) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Incorrect email or password.' 
+      });
+    }
+
+    if (error.name === 'UserNotConfirmedException') {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Please verify your email before logging in.', 
+        code: 'EMAIL_NOT_CONFIRMED' 
+      });
+    }
+
+    res.status(500).json({ 
+      success: false, 
+      message: 'Login failed. Please try again.' 
+    });
   }
 };
 
