@@ -1904,12 +1904,67 @@ function ForgotPasswordPage({ onBack }) {
 
 
 function LoginScreen({ onLogin, onSignUp, onForgot }) {
-  const [email,   setEmail]   = useState("");
-  const [pass,    setPass]    = useState("");
-  const [showPass,setShowPass]= useState(false);
+  const { setUser } = useUser();   // ← Add this line
+
+  const [email, setEmail] = useState("");
+  const [pass, setPass] = useState("");
+  const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [errors,    setErrors]    = useState({});
+  const [errors, setErrors] = useState({});
   const [submitted, setSubmitted] = useState(false);
+
+  const handleLogin = async () => {
+    setSubmitted(true);
+    setErrors({});
+    if (!email || !pass) {
+      setErrors({ general: "Email and password are required" });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const data = await login({ email: email.trim(), password: pass });
+
+      if (data.success) {
+        // Update global user state
+        if (data.data?.user) {
+          setUser(data.data.user);        // ← This was causing the error
+        }
+        onLogin();   // Go to dashboard
+      } else {
+        setErrors({ general: data.message || "Login failed" });
+      }
+    } catch (e) {
+      console.error(e);
+      setErrors({ general: e.message || "Invalid email or password" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ position:"absolute",inset:0,background:"#0a0a0a",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"0 32px" }}>
+      {/* Your existing UI for login form */}
+      {/* ... keep your form fields, buttons, etc. */}
+
+      <button 
+        onClick={handleLogin} 
+        disabled={loading}
+        style={{ width:"100%",padding:"16px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",marginTop:20 }}
+      >
+        {loading ? "LOGGING IN..." : "LOG IN"}
+      </button>
+
+      {/* Forgot password and Sign up links */}
+      <button onClick={onForgot} style={{marginTop:16,color:PRIMARY,background:"none",border:"none",fontSize:13}}>
+        Forgot Password?
+      </button>
+      <button onClick={onSignUp} style={{marginTop:8,color:PRIMARY,background:"none",border:"none",fontSize:13}}>
+        Don't have an account? Sign Up
+      </button>
+    </div>
+  );
+}
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
