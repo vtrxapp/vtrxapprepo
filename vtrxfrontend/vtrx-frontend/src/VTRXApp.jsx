@@ -1902,9 +1902,8 @@ function ForgotPasswordPage({ onBack }) {
   );
 }
 
-
 function LoginScreen({ onLogin, onSignUp, onForgot }) {
-  const { setUser } = useUser();   // ← Add this line
+  const { setUser } = useUser();   // ← This was missing
 
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
@@ -1913,101 +1912,73 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
   const [errors, setErrors] = useState({});
   const [submitted, setSubmitted] = useState(false);
 
-  const handleLogin = async () => {
-    setSubmitted(true);
-    setErrors({});
-    if (!email || !pass) {
-      setErrors({ general: "Email and password are required" });
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const data = await login({ email: email.trim(), password: pass });
-
-      if (data.success) {
-        // Update global user state
-        if (data.data?.user) {
-          setUser(data.data.user);        // ← This was causing the error
-        }
-        onLogin();   // Go to dashboard
-      } else {
-        setErrors({ general: data.message || "Login failed" });
-      }
-    } catch (e) {
-      console.error(e);
-      setErrors({ general: e.message || "Invalid email or password" });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div style={{ position:"absolute",inset:0,background:"#0a0a0a",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"0 32px" }}>
-      {/* Your existing UI for login form */}
-      {/* ... keep your form fields, buttons, etc. */}
-
-      <button 
-        onClick={handleLogin} 
-        disabled={loading}
-        style={{ width:"100%",padding:"16px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",marginTop:20 }}
-      >
-        {loading ? "LOGGING IN..." : "LOG IN"}
-      </button>
-
-      {/* Forgot password and Sign up links */}
-      <button onClick={onForgot} style={{marginTop:16,color:PRIMARY,background:"none",border:"none",fontSize:13}}>
-        Forgot Password?
-      </button>
-      <button onClick={onSignUp} style={{marginTop:8,color:PRIMARY,background:"none",border:"none",fontSize:13}}>
-        Don't have an account? Sign Up
-      </button>
-    </div>
-  );
-}
-
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   const validateField = (field, value) => {
     if (!submitted) return;
-    if (field==="email") {
-      if (!value.trim())               setErrors(p=>({...p, email:"Email is required."}));
-      else if (!emailRegex.test(value.trim())) setErrors(p=>({...p, email:"Please enter a valid email address."}));
-      else                             setErrors(p=>({...p, email:undefined}));
+    if (field === "email") {
+      if (!value.trim()) setErrors(p => ({...p, email: "Email is required."}));
+      else if (!emailRegex.test(value.trim())) setErrors(p => ({...p, email: "Please enter a valid email address."}));
+      else setErrors(p => ({...p, email: undefined}));
     }
-    if (field==="pass") {
-      if (!value.trim()) setErrors(p=>({...p, pass:"Password is required."}));
-      else               setErrors(p=>({...p, pass:undefined}));
+    if (field === "pass") {
+      if (!value.trim()) setErrors(p => ({...p, pass: "Password is required."}));
+      else setErrors(p => ({...p, pass: undefined}));
     }
   };
 
   const handle = async () => {
     setSubmitted(true);
     const errs = {};
-    if (!email.trim())               errs.email = "Email is required.";
+    if (!email.trim()) errs.email = "Email is required.";
     else if (!emailRegex.test(email.trim())) errs.email = "Please enter a valid email address.";
-    if (!pass.trim())                errs.pass  = "Password is required.";
-    if (Object.keys(errs).length) { setErrors(errs); return; }
-    setErrors({}); setLoading(true);
+    if (!pass.trim()) errs.pass = "Password is required.";
+
+    if (Object.keys(errs).length) { 
+      setErrors(errs); 
+      return; 
+    }
+
+    setErrors({}); 
+    setLoading(true);
+
     try {
       const data = await apiCall("/auth/login", {
         method: "POST",
-        body:   JSON.stringify({ email: email.trim().toLowerCase(), password: pass }),
+        body: JSON.stringify({ 
+          email: email.trim().toLowerCase(), 
+          password: pass 
+        }),
       });
+
       const d = data.data || data;
-      storeAuth(d.token, d.user);
-      if (d.user) setUser(u=>({...u,...d.user}));
-      if (data.data.cognitoTokens?.accessToken) {
-        localStorage.setItem("vtrx_cognito_token", data.data.cognitoTokens.accessToken);
-      }
-      onLogin(data.data.user);
-    } catch (e) {
-      if (e.code === "EMAIL_NOT_CONFIRMED") {
-        setErrors({ general: "Please verify your email before logging in. Check your inbox." });
+
+      if (data.success) {
+        storeAuth(d.token, d.user);
+        
+        // Update global user state
+        if (d.user) {
+          setUser(u => ({...u, ...d.user}));
+        }
+
+        if (d.cognitoTokens?.accessToken) {
+          localStorage.setItem("vtrx_cognito_token", d.cognitoTokens.accessToken);
+        }
+
+        onLogin(d.user);
       } else {
-        setErrors({ general: e.message || "Incorrect email or password. Please try again." });
+        setErrors({ general: data.message || "Login failed" });
       }
-    } finally { setLoading(false); }
+    } catch (e) {
+      console.error(e);
+      if (e.code === "EMAIL_NOT_CONFIRMED") {
+        setErrors({ general: "Please verify your email before logging in." });
+      } else {
+        setErrors({ general: e.message || "Incorrect email or password." });
+      }
+    } finally { 
+      setLoading(false); 
+    }
   };
 
   return (
@@ -2024,16 +1995,19 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
 
       {/* Form */}
       <div style={{ padding:"0 26px 48px", display:"flex", flexDirection:"column", gap:14 }}>
-
         {/* Email field */}
         <div style={{ position:"relative" }}>
           <div style={{ position:"absolute", left:18, top:"50%", transform:"translateY(-50%)", zIndex:1, display:"flex", alignItems:"center" }}>
             <BodyFieldIcon type="email"/>
           </div>
           <input
-            value={email} onChange={e=>{ setEmail(e.target.value); setErrors(p=>({...p,email:undefined})); }} onBlur={e=>validateField("email", e.target.value)}
-            placeholder="Email address" type="email"
-            autoCapitalize="none" autoCorrect="off"
+            value={email} 
+            onChange={e=>{ setEmail(e.target.value); setErrors(p=>({...p,email:undefined})); }} 
+            onBlur={e=>validateField("email", e.target.value)}
+            placeholder="Email address" 
+            type="email"
+            autoCapitalize="none" 
+            autoCorrect="off"
             style={{ width:"100%", background:"rgba(255,255,255,0.92)", borderRadius:50, border:`2px solid ${submitted&&errors.email?"#EF4444":"transparent"}`, padding:"16px 18px 16px 44px", fontFamily:FONT, fontSize:14, fontWeight:500, color:"#111", outline:"none", boxSizing:"border-box" }}
           />
         </div>
@@ -2044,8 +2018,11 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
             <BodyFieldIcon type="lock"/>
           </div>
           <input
-            value={pass} onChange={e=>{ setPass(e.target.value); setErrors(p=>({...p,pass:undefined})); }} onBlur={e=>validateField("pass", e.target.value)}
-            placeholder="Password" type={showPass?"text":"password"}
+            value={pass} 
+            onChange={e=>{ setPass(e.target.value); setErrors(p=>({...p,pass:undefined})); }} 
+            onBlur={e=>validateField("pass", e.target.value)}
+            placeholder="Password" 
+            type={showPass?"text":"password"}
             onKeyDown={e=>e.key==="Enter"&&handle()}
             style={{ width:"100%", background:"rgba(255,255,255,0.92)", borderRadius:50, border:`2px solid ${submitted&&errors.pass?"#EF4444":"transparent"}`, padding:"16px 46px 16px 44px", fontFamily:FONT, fontSize:14, fontWeight:500, color:"#111", outline:"none", boxSizing:"border-box" }}
           />
@@ -2060,14 +2037,14 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
           </button>
         </div>
 
-        {/* Per-field errors */}
+        {/* Errors */}
         {submitted && errors.email && <div style={{ fontFamily:FONT, fontSize:12, color:"#EF4444", marginTop:6, marginBottom:4, paddingLeft:20 }}>⚠ {errors.email}</div>}
-        {submitted && errors.pass  && <div style={{ fontFamily:FONT, fontSize:12, color:"#EF4444", marginTop:6, marginBottom:4, paddingLeft:20 }}>⚠ {errors.pass}</div>}
+        {submitted && errors.pass && <div style={{ fontFamily:FONT, fontSize:12, color:"#EF4444", marginTop:6, marginBottom:4, paddingLeft:20 }}>⚠ {errors.pass}</div>}
         {errors.general && <div style={{ fontFamily:FONT, fontSize:13, color:"#EF4444", textAlign:"center", marginTop:8, padding:"10px 16px", background:"rgba(239,68,68,0.1)", borderRadius:12, border:"1px solid rgba(239,68,68,0.3)" }}>{errors.general}</div>}
 
         {/* Forgot password */}
         <div style={{ textAlign:"right", marginTop:-6 }}>
-          <button onClick={onForgot||null} style={{ background:"none", border:"none", fontFamily:FONT, fontSize:13, color:"rgba(255,255,255,0.6)", cursor:"pointer", padding:0 }}>
+          <button onClick={onForgot} style={{ background:"none", border:"none", fontFamily:FONT, fontSize:13, color:"rgba(255,255,255,0.6)", cursor:"pointer", padding:0 }}>
             Forgot password?
           </button>
         </div>
@@ -2084,11 +2061,10 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
             Sign up
           </button>
         </div>
-
       </div>
     </Shell>
   );
-
+}
 
 function SignUpScreen({ onContinue, onBack, onLogin }) {
   const [f, setF]         = useState({ name:"", username:"", email:"", password:"", confirm:"" });
