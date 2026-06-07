@@ -119,13 +119,9 @@ const confirmSignUp = async ({ email, code, verificationId }) => {
     const emailAddr = user.email_addresses?.find(e => e.email_address === email);
     if (!emailAddr) throw new Error('Email address not found on this account.');
 
-    // If Clerk already considers the email verified, accept immediately
-    if (emailAddr.verification?.status === 'verified') {
-      logger.info(`Email ${email} is already verified — skipping attempt`);
-      return { success: true };
-    }
-
-    // Submit the code to Clerk.
+    // Always submit the code — never short-circuit on a pre-existing 'verified' status.
+    // Clerk auto-verifies emails created via the BAPI in dev/test mode, which would
+    // otherwise allow any code to pass if we returned early.
     // NOTE: verification_id is NOT a recognised BAPI parameter — only `code` is sent.
     const result = await clerkAPI(
       'POST',
@@ -133,8 +129,6 @@ const confirmSignUp = async ({ email, code, verificationId }) => {
       { code: String(code) }
     );
 
-    // Explicitly assert the verification succeeded.
-    // This prevents a bypass if Clerk returns 200 but with status != 'verified'.
     if (result?.verification?.status !== 'verified') {
       logger.error(`Unexpected verification status after attempt: ${result?.verification?.status}`);
       const e = new Error('Invalid verification code.');
