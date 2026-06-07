@@ -2193,7 +2193,7 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
         {/* Log in link */}
         <div style={{ textAlign:"center" }}>
           <span style={{ fontFamily:FONT, fontSize:13, color:"rgba(255,255,255,0.6)" }}>Already have an account? </span>
-          <button onClick={onBack} style={{ background:"none", border:"none", fontFamily:FONT, fontSize:13, color:"#fff", fontWeight:800, cursor:"pointer", padding:0 }}>
+          <button onClick={onLogin} style={{ background:"none", border:"none", fontFamily:FONT, fontSize:13, color:"#fff", fontWeight:800, cursor:"pointer", padding:0 }}>
             Log In
           </button>
         </div>
@@ -2398,7 +2398,7 @@ function BodyScreen({ onContinue, onBack }) {
           <span style={lbl}>BODYWEIGHT</span>
           <UnitToggle units={["lbs","kg"]} current={weightUnit} onChange={switchWeightUnit}/>
           <input value={weight} onChange={e=>setWeight(e.target.value.replace(/[^0-9.]/g,""))}
-            placeholder={weightUnit==="lbs"?"e.g. 165":"e.g. 75"} inputMode="decimal" style={field}/>
+            placeholder={weightUnit==="lbs"?"160":"73"} inputMode="decimal" style={field}/>
         </div>
 
         {/* Height — single field, auto formats ft */}
@@ -4156,7 +4156,7 @@ function PersonalDetailsPage({ onBack }) {
           <div style={{ background:"#1e1e1e",border:`1.5px solid ${BORDER}`,borderRadius:12,padding:"12px 14px",display:"flex",alignItems:"center",gap:8 }}>
             <DetailFieldIcon type="scale"/>
             <input value={weight} onChange={e=>setWeight(e.target.value.replace(/[^0-9.]/g,""))}
-              inputMode="decimal" placeholder={weightUnit==="lbs"?"e.g. 165":"e.g. 75"}
+              inputMode="decimal" placeholder={weightUnit==="lbs"?"160":"73"}
               style={{ flex:1,background:"none",border:"none",fontFamily:FONT,fontSize:16,fontWeight:700,color:"#fff",outline:"none",width:"100%" }}/>
             <span style={{ fontFamily:FONT,fontSize:13,color:"#555" }}>{weightUnit}</span>
           </div>
@@ -6574,7 +6574,7 @@ function VTRXAppInner() {
 // ── ROOT APP ──────────────────────────────────────────────────────────────────
 // ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 function VTRXApp() {
-  const [user, setUser] = useState({ name:"Nhamo M", age:"28", gender:"Male", weight:"82", height:"180", goal:"Build Muscle", level:"Intermediate", days:5 });
+  const [user, setUser] = useState({ name:"", age:"", gender:"", weight:"", height:"", goal:"", level:"", days:5 });
   const [profileImg, setProfileImg] = useState(null);
   const [isPremium, setIsPremium] = useState(false);
   return (
