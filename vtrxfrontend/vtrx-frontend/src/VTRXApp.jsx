@@ -2088,7 +2088,7 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
       </div>
     </Shell>
   );
-}
+
 
 function SignUpScreen({ onContinue, onBack, onLogin }) {
   const [f, setF]         = useState({ name:"", username:"", email:"", password:"", confirm:"" });
