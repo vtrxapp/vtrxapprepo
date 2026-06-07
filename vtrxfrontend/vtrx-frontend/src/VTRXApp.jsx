@@ -2218,43 +2218,44 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
     : "";
 
   const verify = async () => {
-    if (code.length !== 6) {
-      setError("Please enter the full 6-digit code");
-      return;
-    }
-    if (!verificationId) {
-      setError("Session expired. Please sign up again.");
-      return;
-    }
+  if (code.length !== 6) {
+    setError("Please enter the full 6-digit code");
+    return;
+  }
+  if (!verificationId) {
+    setError("Session expired. Please sign up again.");
+    return;
+  }
 
-    setLoading(true);
-    setError("");
+  setLoading(true);
+  setError("");
 
-    try {
-      console.log("Sending verification:", { email, code, verificationId }); // for debugging
+  try {
+    const response = await apiCall("/auth/confirm-email", {
+      method: "POST",
+      body: JSON.stringify({ 
+        email, 
+        code: code.trim(), 
+        verificationId 
+      }),
+    });
 
-      const response = await apiCall("/auth/confirm-email", {
-        method: "POST",
-        body: JSON.stringify({ email, code: code.trim(), verificationId }),
-      });
-
-      console.log("Backend response:", response); // for debugging
-
-      if (response?.success === true) {
-        if (typeof localStorage !== "undefined") {
-          localStorage.removeItem("vtrx_verification_id");
-        }
-        onVerified();
-      } else {
-        throw new Error(response?.message || "Invalid code");
+    // STRICT SUCCESS CHECK
+    if (response && response.success === true) {
+      if (typeof localStorage !== "undefined") {
+        localStorage.removeItem("vtrx_verification_id");
       }
-    } catch (e) {
-      console.error("Verification error:", e);
-      setError(e.message || "Invalid or expired code. Please try again.");
-    } finally {
-      setLoading(false);
+      onVerified();
+    } else {
+      throw new Error(response?.message || "Invalid verification code");
     }
-  };
+  } catch (e) {
+    console.error("Verification failed:", e);
+    setError(e.message || "Invalid or expired code. Please try again.");
+  } finally {
+    setLoading(false);
+  }
+};
 
   // ... rest of the component (resend + return JSX) remains the same
 

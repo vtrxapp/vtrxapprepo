@@ -90,40 +90,30 @@ const signup = async (req, res) => {
 const confirmEmail = async (req, res) => {
   const { email, code, verificationId } = req.body;
 
-  if (!verificationId) {
+  if (!email || !code || !verificationId) {
     return res.status(400).json({ 
       success: false, 
-      message: 'verificationId is required' 
+      message: 'Email, code, and verificationId are required' 
     });
   }
 
-  logger.info(`confirmEmail called with verificationId: ${verificationId} | code: ${code}`);
-
   try {
-    await cognito.confirmSignUp({
-      email,
-      code,
-      verificationId   // Make sure this is passed correctly
-    });
+    logger.info(`confirmEmail called with verificationId: ${verificationId} | code: ${code}`);
+
+    await cognito.confirmSignUp({ email, code, verificationId });
 
     res.json({
       success: true,
-      message: 'Email confirmed! You can now log in.'
+      message: 'Email confirmed successfully. You can now log in.'
     });
   } catch (error) {
-    logger.error('=== CLERK VERIFY ERROR FULL ===', JSON.stringify(error, null, 2));
-    
-    if (error.errors?.[0]?.code === 'form_param_missing') {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Verification ID is missing. Please try signing up again.' 
-      });
-    }
-    // ... rest of your error handling
-    logger.error('Confirm email error:', error);
-    res.status(400).json({ 
-      success: false, 
-      message: error.errors?.[0]?.long_message || error.message 
+    logger.error('=== CONFIRM EMAIL ERROR ===', JSON.stringify(error, null, 2));
+
+    const message = error.message || 'Invalid or expired verification code.';
+
+    res.status(400).json({
+      success: false,
+      message: message
     });
   }
 };
