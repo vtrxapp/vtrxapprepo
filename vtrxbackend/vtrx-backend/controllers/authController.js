@@ -86,14 +86,18 @@ const signup = async (req, res) => {
 };
 
 // ── POST /api/auth/confirm-email ──────────────────────────────────────────────
-// ── POST /api/auth/confirm-email ──────────────────────────────────────────────
 const confirmEmail = async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ success: false, errors: errors.array() });
+  }
+
   const { email, code, verificationId } = req.body;
 
   if (!email || !code || !verificationId) {
-    return res.status(400).json({ 
-      success: false, 
-      message: 'Email, code, and verificationId are required' 
+    return res.status(400).json({
+      success: false,
+      message: 'Email, code, and verificationId are required'
     });
   }
 
@@ -128,7 +132,9 @@ const login = async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    const cognitoTokens = await cognito.login({ email, password });
+    // login() returns { success, clerkUserId, cognitoTokens: { accessToken, idToken } }
+    const loginResult  = await cognito.login({ email, password });
+    const cognitoTokens = loginResult.cognitoTokens || {};
 
     const user = await prisma.user.findUnique({
       where: { email: email.toLowerCase() },
