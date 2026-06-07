@@ -2193,7 +2193,7 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
         {/* Log in link */}
         <div style={{ textAlign:"center" }}>
           <span style={{ fontFamily:FONT, fontSize:13, color:"rgba(255,255,255,0.6)" }}>Already have an account? </span>
-          <button onClick={onBack} style={{ background:"none", border:"none", fontFamily:FONT, fontSize:13, color:"#fff", fontWeight:800, cursor:"pointer", padding:0 }}>
+          <button onClick={onLogin} style={{ background:"none", border:"none", fontFamily:FONT, fontSize:13, color:"#fff", fontWeight:800, cursor:"pointer", padding:0 }}>
             Log In
           </button>
         </div>
@@ -2398,7 +2398,7 @@ function BodyScreen({ onContinue, onBack }) {
           <span style={lbl}>BODYWEIGHT</span>
           <UnitToggle units={["lbs","kg"]} current={weightUnit} onChange={switchWeightUnit}/>
           <input value={weight} onChange={e=>setWeight(e.target.value.replace(/[^0-9.]/g,""))}
-            placeholder={weightUnit==="lbs"?"e.g. 165":"e.g. 75"} inputMode="decimal" style={field}/>
+            placeholder={weightUnit==="lbs"?"160":"73"} inputMode="decimal" style={field}/>
         </div>
 
         {/* Height — single field, auto formats ft */}
@@ -4156,7 +4156,7 @@ function PersonalDetailsPage({ onBack }) {
           <div style={{ background:"#1e1e1e",border:`1.5px solid ${BORDER}`,borderRadius:12,padding:"12px 14px",display:"flex",alignItems:"center",gap:8 }}>
             <DetailFieldIcon type="scale"/>
             <input value={weight} onChange={e=>setWeight(e.target.value.replace(/[^0-9.]/g,""))}
-              inputMode="decimal" placeholder={weightUnit==="lbs"?"e.g. 165":"e.g. 75"}
+              inputMode="decimal" placeholder={weightUnit==="lbs"?"160":"73"}
               style={{ flex:1,background:"none",border:"none",fontFamily:FONT,fontSize:16,fontWeight:700,color:"#fff",outline:"none",width:"100%" }}/>
             <span style={{ fontFamily:FONT,fontSize:13,color:"#555" }}>{weightUnit}</span>
           </div>
@@ -4575,7 +4575,7 @@ function ConnectedAppIcon({ type }) {
   if (type==="fork")   return <svg {...s}><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>;
   return <svg {...s}><circle cx="12" cy="12" r="10"/></svg>;
 }
-function AccountSettingsPage({ onBack }) {
+function AccountSettingsPage({ onBack, onLogout }) {
   const { user, profileImg, setProfileImg } = useUser();
   const [apps, setApps]   = useState({ appleHealth:true, fitbit:true, strava:false, myFitnessPal:true });
   const acctScrollRef = useScrollPos("account-settings");
@@ -5293,7 +5293,7 @@ function ProfilePage({ onBack, onLogout, streakDay=1, workoutsTotal=0 }) {
       </div>
       {/* Sub-page overlays — ProfilePage stays mounted preserving scroll */}
       {subPage==="progress"     && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><ProgressPhotosPage     onBack={()=>setSubPage(null)}/></div>}
-      {subPage==="account"      && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><AccountSettingsPage    onBack={()=>setSubPage(null)}/></div>}
+      {subPage==="account"      && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><AccountSettingsPage    onBack={()=>setSubPage(null)} onLogout={onLogout}/></div>}
       {subPage==="fitness"      && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><FitnessPreferencesPage onBack={()=>setSubPage(null)}/></div>}
       {subPage==="notifSettings"&& <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><NotifSettingsPage     onBack={()=>setSubPage(null)}/></div>}
       {subPage==="privacy"      && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><PrivacyPage            onBack={()=>setSubPage(null)}/></div>}
@@ -6574,7 +6574,7 @@ function VTRXAppInner() {
 // ── ROOT APP ──────────────────────────────────────────────────────────────────
 // ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 function VTRXApp() {
-  const [user, setUser] = useState({ name:"Nhamo M", age:"28", gender:"Male", weight:"82", height:"180", goal:"Build Muscle", level:"Intermediate", days:5 });
+  const [user, setUser] = useState({ name:"", age:"", gender:"", weight:"", height:"", goal:"", level:"", days:5 });
   const [profileImg, setProfileImg] = useState(null);
   const [isPremium, setIsPremium] = useState(false);
   return (
