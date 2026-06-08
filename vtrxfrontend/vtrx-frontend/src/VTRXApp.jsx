@@ -1,4 +1,11 @@
 import React, { useState, useEffect, useRef, createContext, useContext } from "react";
+import { loadStripe } from "@stripe/stripe-js";
+import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
+
+// Stripe.js loaded once at module scope — publishable key is safe in client code
+const _stripePromise = import.meta?.env?.VITE_STRIPE_PUBLISHABLE_KEY
+  ? loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY)
+  : null;
 
 // ── API Configuration ─────────────────────────────────────────────────────────
 const API_URL = typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL : "";
@@ -76,16 +83,19 @@ const getStoredUser = () => {
 const UserCtx = createContext(null);
 const useUser = () => useContext(UserCtx);
 
-// ── Shared Stripe checkout launcher ──────────────────────────────────────────
-// All "Upgrade" / "Unlock" buttons funnel through this — never setIsPremium(true) directly.
-const startCheckout = async (plan = "monthly") => {
-  try {
-    const data = await apiCall("/payments/create-checkout", {
-      method: "POST",
-      body:   JSON.stringify({ plan }),
-    });
-    if (data.data?.url) window.location.href = data.data.url;
-  } catch (_e) {}
+// ── In-app payment sheet bridge ───────────────────────────────────────────────
+// Module-level ref so any component can open the sheet without prop-drilling.
+// VTRXAppInner registers the setter; everything else just calls openPaymentSheet().
+let _openPaymentSheet = null;
+const openPaymentSheet = (plan = "monthly") => {
+  if (_openPaymentSheet) {
+    _openPaymentSheet(plan);
+  } else {
+    // Fallback redirect if the sheet isn't mounted (e.g. onboarding phase)
+    apiCall("/payments/create-checkout", { method:"POST", body:JSON.stringify({ plan }) })
+      .then(d => { if (d?.data?.url) window.location.href = d.data.url; })
+      .catch(()=>{});
+  }
 };
 
 // ── Premium gate component ────────────────────────────────────────────────────
@@ -98,7 +108,7 @@ function PremiumGate({ feature, children, mini=false }) {
       <div style={{ position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"rgba(10,10,10,0.75)",backdropFilter:"blur(2px)",borderRadius:16,padding:16 }}>
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00A3FF" strokeWidth="2" style={{marginBottom:8}}><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
         <div style={{ fontFamily:"'Montserrat',sans-serif",fontWeight:800,fontSize:12,color:"#fff",marginBottom:4,textAlign:"center" }}>Premium Feature</div>
-        <button onClick={()=>startCheckout()} style={{ padding:"6px 16px",borderRadius:50,background:"#00A3FF",border:"none",fontFamily:"'Montserrat',sans-serif",fontWeight:700,fontSize:11,color:"#fff",cursor:"pointer" }}>Unlock</button>
+        <button onClick={()=>openPaymentSheet()} style={{ padding:"6px 16px",borderRadius:50,background:"#00A3FF",border:"none",fontFamily:"'Montserrat',sans-serif",fontWeight:700,fontSize:11,color:"#fff",cursor:"pointer" }}>Unlock</button>
       </div>
     </div>
   );
@@ -110,7 +120,7 @@ function PremiumGate({ feature, children, mini=false }) {
       <div style={{ fontFamily:"'Montserrat',sans-serif",fontWeight:900,fontSize:22,color:"#fff",marginBottom:8,textAlign:"center" }}>Premium Feature</div>
       <div style={{ fontFamily:"'Montserrat',sans-serif",fontSize:13,color:"#888",marginBottom:6,textAlign:"center",lineHeight:1.6 }}>{feature}</div>
       <div style={{ fontFamily:"'Montserrat',sans-serif",fontSize:12,color:"#555",marginBottom:28,textAlign:"center" }}>Unlock with VTRX Premium</div>
-      <button onClick={()=>startCheckout()}
+      <button onClick={()=>openPaymentSheet()}
         style={{ width:"100%",maxWidth:280,padding:"15px 0",borderRadius:50,background:"#00A3FF",border:"none",fontFamily:"'Montserrat',sans-serif",fontWeight:800,fontSize:15,color:"#fff",cursor:"pointer",marginBottom:14,boxShadow:"0 4px 24px rgba(0,163,255,0.4)" }}>
         Upgrade to Premium
       </button>
@@ -401,7 +411,7 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
 
   const goTo = (next) => {
     if (next < 0 || next > MAX_WEEK) return; // boundary guard
-    if (!isPremium && next > 0) { startCheckout(); return; } // older weeks = premium only
+    if (!isPremium && next > 0) { openPaymentSheet(); return; } // older weeks = premium only
     setDir(next > week ? 1 : -1);
     setAnimKey(k => k + 1);
     setWeek(next);
@@ -1478,7 +1488,7 @@ function AISummaryPage({ energyKey, onBack }) {
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
                       <span style={{ fontFamily:FONT,fontSize:12,color:"#fff",fontWeight:700 }}>Full analysis is a Premium feature</span>
                     </div>
-                    <button onClick={()=>startCheckout()} style={{ padding:"8px 24px",borderRadius:50,background:PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:12,color:"#fff",cursor:"pointer",boxShadow:`0 4px 16px ${PRIMARY}44` }}>
+                    <button onClick={()=>openPaymentSheet()} style={{ padding:"8px 24px",borderRadius:50,background:PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:12,color:"#fff",cursor:"pointer",boxShadow:`0 4px 16px ${PRIMARY}44` }}>
                       Unlock Premium
                     </button>
                   </div>
@@ -2686,7 +2696,7 @@ function PricingScreen({ onContinue, onBack }) {
         </div>
 
         {/* CTA Button */}
-        <button onClick={()=>{ if(selected==="premium") { startCheckout(billingAnnual?"annual":"monthly"); return; } onContinue(); }}
+        <button onClick={()=>{ if(selected==="premium") { openPaymentSheet(billingAnnual?"annual":"monthly"); return; } onContinue(); }}
           style={{ width:"100%",padding:"16px 0",borderRadius:50,background:PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff",cursor:"pointer",boxShadow:`0 4px 24px ${PRIMARY}44`,marginTop:4,letterSpacing:0.5 }}>
           {selected==="free" ? "Continue with Free" : "Start Free — 1 Month On Us"}
         </button>
@@ -4589,6 +4599,258 @@ function CancelSubscriptionPage({ onBack }) {
   );
 }
 
+// ── Stripe Elements appearance — matches dark app theme ──────────────────────
+const STRIPE_APPEARANCE = {
+  theme: "night",
+  variables: {
+    colorPrimary:           "#00A3FF",
+    colorBackground:        "#111111",
+    colorText:              "#ffffff",
+    colorTextSecondary:     "#888888",
+    colorTextPlaceholder:   "#444444",
+    colorDanger:            "#EF4444",
+    fontFamily:             "'Montserrat', system-ui, sans-serif",
+    fontSizeBase:           "15px",
+    spacingUnit:            "4px",
+    borderRadius:           "12px",
+  },
+  rules: {
+    ".Input": {
+      border:     "1px solid rgba(255,255,255,0.1)",
+      boxShadow:  "none",
+      background: "#1a1a1a",
+      color:      "#ffffff",
+      padding:    "14px 16px",
+    },
+    ".Input:focus": {
+      border:    "1px solid #00A3FF",
+      boxShadow: "0 0 0 3px rgba(0,163,255,0.15)",
+    },
+    ".Input--invalid": { border: "1px solid #EF4444" },
+    ".Label": {
+      fontWeight:    "700",
+      letterSpacing: "0.08em",
+      fontSize:      "11px",
+      color:         "#888888",
+    },
+    ".Tab": { border: "1px solid rgba(255,255,255,0.08)", background: "#1a1a1a" },
+    ".Tab--selected": { border: "1px solid #00A3FF", background: "rgba(0,163,255,0.08)" },
+    ".TabLabel--selected": { color: "#00A3FF" },
+    ".Block": { background: "#1a1a1a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "12px" },
+    ".CheckboxInput": { background: "#1a1a1a", border: "1px solid rgba(255,255,255,0.12)" },
+  },
+};
+
+// ── In-app payment bottom sheet ───────────────────────────────────────────────
+function PaymentSheet({ initialPlan = "monthly", onClose }) {
+  const [plan,         setPlan]         = useState(initialPlan);
+  const [clientSecret, setClientSecret] = useState(null);
+  const [isTrial,      setIsTrial]      = useState(false);
+  const [fetching,     setFetching]     = useState(false);
+  const [err,          setErr]          = useState("");
+
+  const PLANS = {
+    monthly: { label:"Monthly",  price:"$9.99",  period:"/month", sub:"Billed monthly" },
+    annual:  { label:"Annual",   price:"$69.99", period:"/year",  sub:"Save 41% · $5.83/mo", badge:"BEST VALUE" },
+  };
+
+  const trialEnd = new Date(Date.now() + 30 * 864e5).toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" });
+
+  const fetchIntent = async (p) => {
+    setFetching(true); setErr(""); setClientSecret(null);
+    try {
+      const res = await apiCall("/payments/create-subscription-intent", {
+        method: "POST",
+        body:   JSON.stringify({ plan: p }),
+      });
+      setClientSecret(res.data.clientSecret);
+      setIsTrial(res.data.isTrial || false);
+    } catch(e) {
+      setErr(e.message || "Couldn't load payment form. Try again.");
+    } finally {
+      setFetching(false);
+    }
+  };
+
+  return (
+    <div style={{ position:"fixed",inset:0,zIndex:400,display:"flex",flexDirection:"column",justifyContent:"flex-end" }}>
+      <div onClick={onClose} style={{ position:"absolute",inset:0,background:"rgba(0,0,0,0.88)" }}/>
+      <div style={{ position:"relative",background:"#0f0f0f",borderRadius:"26px 26px 0 0",maxHeight:"94vh",display:"flex",flexDirection:"column",animation:"slideUp 0.32s cubic-bezier(0.32,0.72,0,1) both" }}>
+        {/* Drag handle */}
+        <div style={{ flexShrink:0,display:"flex",justifyContent:"center",padding:"12px 0 6px" }}>
+          <div style={{ width:38,height:4,borderRadius:2,background:"rgba(255,255,255,0.15)" }}/>
+        </div>
+        {/* Header */}
+        <div style={{ flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 22px 0" }}>
+          <div style={{ fontFamily:FONT,fontWeight:900,fontSize:19,color:"#fff" }}>
+            {clientSecret?"Secure Checkout":"Upgrade to Premium"}
+          </div>
+          <button onClick={onClose} style={{ width:30,height:30,borderRadius:"50%",background:"rgba(255,255,255,0.08)",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center" }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+
+        <div style={{ flex:1,overflowY:"auto",padding:"18px 22px 44px" }}>
+          {!clientSecret ? (
+            <>
+              {/* Plan selector */}
+              <div style={{ display:"flex",gap:10,marginBottom:18 }}>
+                {Object.entries(PLANS).map(([key,p])=>(
+                  <button key={key} onClick={()=>{ setPlan(key); setErr(""); }}
+                    style={{ flex:1,padding:"16px 10px",borderRadius:18,border:`2px solid ${plan===key?PRIMARY:BORDER}`,background:plan===key?`${PRIMARY}14`:"#111",cursor:"pointer",textAlign:"center",position:"relative",transition:"all 0.18s",overflow:"hidden" }}>
+                    {p.badge&&<div style={{ position:"absolute",top:0,right:0,background:PRIMARY,padding:"3px 10px",borderRadius:"0 16px 0 12px",fontFamily:FONT,fontWeight:800,fontSize:9,color:"#fff",letterSpacing:0.8 }}>{p.badge}</div>}
+                    <div style={{ fontFamily:FONT,fontWeight:900,fontSize:22,color:plan===key?PRIMARY:"#fff",marginBottom:2 }}>{p.price}</div>
+                    <div style={{ fontFamily:FONT,fontSize:11,color:"#888" }}>{p.period}</div>
+                    <div style={{ fontFamily:FONT,fontSize:10,color:plan===key?"#00A3FF88":"#444",marginTop:3,lineHeight:1.3 }}>{p.sub}</div>
+                  </button>
+                ))}
+              </div>
+
+              {/* Trial notice */}
+              <div style={{ background:"rgba(0,163,255,0.07)",border:"1px solid rgba(0,163,255,0.2)",borderRadius:14,padding:"12px 16px",marginBottom:20,display:"flex",gap:12,alignItems:"flex-start" }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00A3FF" strokeWidth="2" style={{flexShrink:0,marginTop:1}}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                <div style={{ fontFamily:FONT,fontSize:12,color:"#aaa",lineHeight:1.55 }}>
+                  <span style={{ color:"#fff",fontWeight:700 }}>30-day free trial.</span> Your card is saved securely today but not charged until <span style={{ color:"#fff" }}>{trialEnd}</span>. Cancel anytime.
+                </div>
+              </div>
+
+              {/* Feature bullets */}
+              <div style={{ marginBottom:22 }}>
+                {["Unlimited workout videos & AI coaching","Full analytics, history & weekly AI report","Complete meal plans & grocery list","Apple Pay, Google Pay — saved for renewals","Cancel anytime from Account Settings"].map((f,i)=>(
+                  <div key={i} style={{ display:"flex",alignItems:"center",gap:12,marginBottom:i<4?10:0 }}>
+                    <div style={{ width:20,height:20,borderRadius:"50%",background:"rgba(0,163,255,0.1)",border:"1px solid rgba(0,163,255,0.3)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+                      <svg width="10" height="8" viewBox="0 0 10 8" fill="none" stroke={PRIMARY} strokeWidth="2.5"><polyline points="1,4 3.5,7 9,1"/></svg>
+                    </div>
+                    <span style={{ fontFamily:FONT,fontSize:13,color:"#bbb" }}>{f}</span>
+                  </div>
+                ))}
+              </div>
+
+              {err&&<div style={{ fontFamily:FONT,fontSize:13,color:"#EF4444",marginBottom:12,textAlign:"center" }}>{err}</div>}
+              <button onClick={()=>fetchIntent(plan)} disabled={fetching}
+                style={{ width:"100%",padding:"17px 0",borderRadius:50,background:fetching?"#1a1a1a":`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:fetching?`1px solid ${BORDER}`:"none",fontFamily:FONT,fontWeight:800,fontSize:15,color:fetching?"#555":"#fff",cursor:fetching?"not-allowed":"pointer",letterSpacing:0.5,transition:"all 0.2s" }}>
+                {fetching?"Loading secure form...":"Continue to Payment"}
+              </button>
+              <div style={{ fontFamily:FONT,fontSize:11,color:"#444",textAlign:"center",marginTop:10 }}>
+                🔒 Secured by Stripe · 256-bit SSL encryption
+              </div>
+            </>
+          ) : _stripePromise ? (
+            <Elements
+              stripe={_stripePromise}
+              options={{
+                clientSecret,
+                appearance: STRIPE_APPEARANCE,
+                fonts: [{ cssSrc: "https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&display=swap" }],
+              }}
+            >
+              <CheckoutForm
+                plan={plan}
+                isTrial={isTrial}
+                onSuccess={onClose}
+                onBack={()=>setClientSecret(null)}
+              />
+            </Elements>
+          ) : (
+            <div style={{ textAlign:"center",padding:"40px 0",fontFamily:FONT,fontSize:13,color:"#EF4444",lineHeight:1.6 }}>
+              Stripe is not configured.<br/>Add VITE_STRIPE_PUBLISHABLE_KEY to your Vercel environment variables.
+            </div>
+          )}
+        </div>
+      </div>
+      <style>{`@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}`}</style>
+    </div>
+  );
+}
+
+function CheckoutForm({ plan, isTrial, onSuccess, onBack }) {
+  const stripe    = useStripe();
+  const elements  = useElements();
+  const { setIsPremium } = useUser();
+  const [loading, setLoading] = useState(false);
+  const [err,     setErr]     = useState("");
+  const [done,    setDone]    = useState(false);
+
+  const PLAN_LABEL = { monthly:"$9.99 / month", annual:"$69.99 / year" };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!stripe || !elements) return;
+    setLoading(true); setErr("");
+
+    // SetupIntent (trial) → confirmSetup; PaymentIntent → confirmPayment
+    const confirmFn = isTrial
+      ? (opts) => stripe.confirmSetup(opts)
+      : (opts) => stripe.confirmPayment(opts);
+
+    const { error } = await confirmFn({
+      elements,
+      confirmParams: { return_url: window.location.origin },
+      redirect: "if_required",
+    });
+
+    if (error) {
+      setErr(error.message || "Payment failed. Please check your card details.");
+      setLoading(false);
+      return;
+    }
+
+    // Payment confirmed — update UI immediately; webhook syncs DB in background
+    setIsPremium(true);
+    setDone(true);
+    setTimeout(onSuccess, 2600);
+  };
+
+  if (done) return (
+    <div style={{ textAlign:"center",padding:"48px 0 24px" }}>
+      <div style={{ width:76,height:76,borderRadius:"50%",background:"rgba(34,197,94,0.1)",border:"2px solid rgba(34,197,94,0.4)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",animation:"fadeUp 0.4s ease both" }}>
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>
+      <div style={{ fontFamily:FONT,fontWeight:900,fontSize:23,color:"#fff",marginBottom:10 }}>Welcome to Premium!</div>
+      <div style={{ fontFamily:FONT,fontSize:14,color:"#888",lineHeight:1.65,maxWidth:260,margin:"0 auto" }}>
+        {isTrial
+          ? "Your 30-day free trial is now active. You won't be charged until the trial ends."
+          : "Your subscription is active. Enjoy full access to all features."}
+      </div>
+    </div>
+  );
+
+  return (
+    <form onSubmit={handleSubmit}>
+      {/* Back + plan summary */}
+      <div style={{ display:"flex",alignItems:"center",gap:12,marginBottom:18 }}>
+        <button type="button" onClick={onBack}
+          style={{ width:30,height:30,borderRadius:"50%",background:"rgba(255,255,255,0.06)",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <div style={{ flex:1,fontFamily:FONT,fontSize:13,color:"#888" }}>
+          {isTrial&&<span style={{ color:"#22C55E",fontWeight:700 }}>Free trial · </span>}
+          then <span style={{ color:"#fff",fontWeight:700 }}>{PLAN_LABEL[plan]}</span>
+        </div>
+      </div>
+
+      {/* Stripe Payment Element — handles card + Apple Pay + Google Pay */}
+      <PaymentElement
+        options={{
+          layout:  { type:"tabs", defaultCollapsed:false },
+          wallets: { applePay:"auto", googlePay:"auto" },
+          fields:  { billingDetails:{ name:"auto" } },
+        }}
+      />
+
+      {err&&<div style={{ fontFamily:FONT,fontSize:13,color:"#EF4444",marginTop:14,textAlign:"center",lineHeight:1.4 }}>{err}</div>}
+
+      <button type="submit" disabled={!stripe||loading}
+        style={{ width:"100%",marginTop:20,padding:"17px 0",borderRadius:50,background:!stripe||loading?"#1a1a1a":`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:!stripe||loading?`1px solid ${BORDER}`:"none",fontFamily:FONT,fontWeight:800,fontSize:15,color:!stripe||loading?"#444":"#fff",cursor:!stripe||loading?"not-allowed":"pointer",letterSpacing:0.5,transition:"all 0.2s" }}>
+        {loading?"Processing...":isTrial?"Start Free Trial":"Subscribe Now"}
+      </button>
+      <div style={{ fontFamily:FONT,fontSize:11,color:"#333",textAlign:"center",marginTop:12 }}>
+        🔒 Secured by Stripe · Your card details never touch our servers
+      </div>
+    </form>
+  );
+}
+
 // ── DARK MODE ROW ────────────────────────────────────────────────────────────
 function DarkModeRow() {
   const { dark, toggle } = useTheme();
@@ -5019,7 +5281,7 @@ function ProgressPhotosPage({ onBack }) {
           <div style={{ fontFamily:FONT,fontWeight:900,fontSize:22,color:"#fff",marginBottom:10,textAlign:"center" }}>Progress Photos</div>
           <div style={{ fontFamily:FONT,fontSize:13,color:"#888",marginBottom:8,textAlign:"center",lineHeight:1.6 }}>Upload weekly photos and watch your transformation. Side-by-side comparison included.</div>
           <div style={{ fontFamily:FONT,fontSize:12,color:"#555",marginBottom:28,textAlign:"center" }}>Premium feature</div>
-          <button onClick={()=>startCheckout()}
+          <button onClick={()=>openPaymentSheet()}
             style={{ width:"100%",maxWidth:280,padding:"15px 0",borderRadius:50,background:PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff",cursor:"pointer",boxShadow:"0 4px 24px rgba(0,163,255,0.4)" }}>
             Upgrade to Premium
           </button>
@@ -6293,6 +6555,7 @@ function VTRXAppInner() {
   });
   const [notifCount,    setNotifCount]    = useState(0);
   const [liveUser,      setLiveUser]      = useState(null);
+  const [paymentPlan,   setPaymentPlan]   = useState(null);
   const dashScrollRef  = useRef(null);
   const savedScrollPos = useRef(0);
   const mouseStart     = useRef(null);
@@ -6346,6 +6609,12 @@ function VTRXAppInner() {
         }
       }).catch(()=>{});
     }
+  }, []);
+
+  // Register the module-level bridge so any component can call openPaymentSheet()
+  useEffect(()=>{
+    _openPaymentSheet = (plan) => setPaymentPlan(plan || "monthly");
+    return () => { _openPaymentSheet = null; };
   }, []);
 
   useEffect(()=>{
@@ -6619,6 +6888,14 @@ function VTRXAppInner() {
           <WeightsHub onLogout={handleLogout} onNavigate={navigate}/>
         )}
       </div>
+
+      {/* In-app payment sheet */}
+      {paymentPlan && (
+        <PaymentSheet
+          initialPlan={paymentPlan}
+          onClose={()=>setPaymentPlan(null)}
+        />
+      )}
 
       {/* Bottom nav */}
       {!innerPage&&(

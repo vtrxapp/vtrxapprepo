@@ -124,6 +124,65 @@ const verifySession = async (req, res) => {
   }
 };
 
+// ── POST /api/payments/create-subscription-intent ────────────────────────────
+// Creates a Stripe subscription in default_incomplete state and returns the
+// client_secret needed by Stripe.js to confirm payment in-app.
+// Trial → returns a SetupIntent secret (seti_...); no-trial → PaymentIntent (pi_...).
+const createSubscriptionIntent = async (req, res) => {
+  const { plan = 'monthly' } = req.body;
+
+  if (!['monthly', 'annual'].includes(plan)) {
+    return res.status(400).json({ success: false, message: 'Invalid plan' });
+  }
+
+  try {
+    const StripeSDK    = require('stripe');
+    const stripeClient = new StripeSDK(process.env.STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
+
+    // Get or create Stripe customer
+    const customerId = await stripe.createOrGetCustomer(req.user);
+
+    const priceId = plan === 'annual'
+      ? process.env.STRIPE_ANNUAL_PRICE_ID
+      : process.env.STRIPE_MONTHLY_PRICE_ID;
+
+    const subscription = await stripeClient.subscriptions.create({
+      customer:         customerId,
+      items:            [{ price: priceId }],
+      payment_behavior: 'default_incomplete',
+      payment_settings: {
+        save_default_payment_method: 'on_subscription',
+        payment_method_types:        ['card'],
+      },
+      trial_period_days: 30,
+      metadata:          { userId: req.user.id, plan },
+      expand:            ['latest_invoice.payment_intent', 'pending_setup_intent'],
+    });
+
+    // Trials produce a SetupIntent (save card, no charge yet)
+    // Non-trials produce a PaymentIntent (charge immediately)
+    const clientSecret =
+      subscription.pending_setup_intent?.client_secret ??
+      subscription.latest_invoice?.payment_intent?.client_secret;
+
+    if (!clientSecret) {
+      throw new Error('Stripe did not return a client secret');
+    }
+
+    res.json({
+      success: true,
+      data: {
+        clientSecret,
+        subscriptionId: subscription.id,
+        isTrial:        !!subscription.pending_setup_intent,
+      },
+    });
+  } catch (err) {
+    logger.error('Create subscription intent error:', err);
+    res.status(500).json({ success: false, message: err.message || 'Failed to create subscription' });
+  }
+};
+
 // ── GET /api/payments/methods ─────────────────────────────────────────────────
 // Returns the user's saved Stripe payment methods (cards only)
 const getPaymentMethods = async (req, res) => {
@@ -200,4 +259,4 @@ const getBillingHistory = async (req, res) => {
   }
 };
 
-module.exports = { createCheckout, createPortal, getStatus, webhook, verifySession, getPaymentMethods, getBillingHistory };
+module.exports = { createCheckout, createPortal, getStatus, webhook, verifySession, getPaymentMethods, getBillingHistory, createSubscriptionIntent };

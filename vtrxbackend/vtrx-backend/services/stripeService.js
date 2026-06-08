@@ -260,6 +260,29 @@ const handleWebhookEvent = async (rawBody, signature) => {
       break;
     }
 
+    // ── Subscription created / became active or trialing ───────────────────
+    // Fires when in-app subscription intent is confirmed (trial or immediate)
+    case 'customer.subscription.created':
+    case 'customer.subscription.updated': {
+      const sub    = event.data.object;
+      const userId = sub.metadata?.userId;
+      if (!userId) break;
+
+      const prev = event.data.previous_attributes?.status;
+      const curr = sub.status;
+
+      // Activate when first transitioning from incomplete → active/trialing
+      if (
+        ['active', 'trialing'].includes(curr) &&
+        (prev === 'incomplete' || prev === undefined || event.type === 'customer.subscription.created')
+      ) {
+        const plan = sub.metadata?.plan || 'monthly';
+        await activatePremium({ userId, plan, stripeSubscriptionId: sub.id });
+        logger.info(`Premium activated for user ${userId} via ${event.type} (${curr})`);
+      }
+      break;
+    }
+
     // ── Trial ending soon ───────────────────────────────────────────────────
     case 'customer.subscription.trial_will_end': {
       const sub    = event.data.object;
@@ -384,4 +407,5 @@ module.exports = {
   handleWebhookEvent,
   getSubscriptionStatus,
   activatePremium,
+  createOrGetCustomer,
 };
