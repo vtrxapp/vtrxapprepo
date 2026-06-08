@@ -2093,7 +2093,7 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
   );
 }
 
-function SignUpScreen({ onContinue, onBack, onLogin }) {
+function SignUpScreen({ onContinue, onAlreadyVerified, onBack, onLogin }) {
   const [f, setF]         = useState({ name:"", username:"", email:"", password:"", confirm:"" });
   const [errors,    setErrors]    = useState({});
   const [submitted, setSubmitted] = useState(false);
@@ -2139,15 +2139,22 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
         }),
       });
 
-      // ✅ ADD THESE LINES RIGHT HERE (after successful signup)
-      if (data.success && data.data?.verificationId) {
-        if (typeof localStorage !== "undefined") {
-          localStorage.setItem("vtrx_verification_id", data.data.verificationId);
-          localStorage.setItem("vtrx_pending_email", f.email.trim().toLowerCase());
+      if (data.success) {
+        if (data.data?.emailVerification === true) {
+          // Clerk auto-verified (dev mode) — skip the code screen
+          onAlreadyVerified();
+        } else if (data.data?.verificationId) {
+          if (typeof localStorage !== "undefined") {
+            localStorage.setItem("vtrx_verification_id", data.data.verificationId);
+            localStorage.setItem("vtrx_pending_email", f.email.trim().toLowerCase());
+          }
+          onContinue(f.email.trim().toLowerCase());
+        } else {
+          // verificationId missing and not auto-verified
+          setErrors({ general: "Verification setup failed. Please try again." });
+          return;
         }
       }
-
-      onContinue(f.email.trim().toLowerCase());
     } catch (e) {
       setErrors({ general: e.message || "Signup failed. Please try again." });
     } finally { 
@@ -6676,8 +6683,14 @@ function VTRXAppInner({ setPaymentPlan }) {
 
   if (phase==="preferences") {
     const SCREENS = [
-      <SignUpScreen              key={0} onContinue={(email)=>{ if(email){ setPendingEmail(email); setPhase("emailVerify"); } else goNext(); }} onBack={()=>setPhase("onboarding")} onLogin={()=>setPhase("login")}/>,
-      <EmailVerifyScreen   key={1} onContinue={goNext} onBack={goPrev}/>,
+      <SignUpScreen
+        key={0}
+        onContinue={(email)=>{ if(email){ setPendingEmail(email); setPhase("emailVerify"); } else goNext(); }}
+        onAlreadyVerified={()=>{ setScreen(2); }}
+        onBack={()=>setPhase("onboarding")}
+        onLogin={()=>setPhase("login")}
+      />,
+      <EmailVerifyScreen   key={1} email={pendingEmail} onVerified={()=>{ goNext(); }} onBack={goPrev}/>,
       <BodyScreen                key={2} onContinue={goNext} onBack={goPrev}/>,
       <WorkoutScreen             key={3} onContinue={goNext} onBack={goPrev}/>,
       <NutritionScreen           key={4} onContinue={goNext} onBack={goPrev}/>,

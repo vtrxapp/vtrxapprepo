@@ -67,6 +67,19 @@ const signUp = async ({ email, password, username, name }) => {
     logger.info(`Clerk signUp: ${email} | id: ${user.id}`);
 
     const emailAddr = user.email_addresses?.[0];
+
+    // Clerk auto-verifies emails created via BAPI in dev/test mode.
+    // Detect this immediately and skip the code-verification flow entirely.
+    if (emailAddr?.verification?.status === 'verified') {
+      logger.info(`Email ${email} auto-verified by Clerk (dev mode) — skipping code flow`);
+      return {
+        clerkUserId:       user.id,
+        emailVerification: true,  // signals frontend to skip the verify screen
+        emailAddressId:    emailAddr.id,
+        verificationId:    null,
+      };
+    }
+
     let verificationId = null;
 
     if (emailAddr) {
@@ -76,20 +89,17 @@ const signUp = async ({ email, password, username, name }) => {
           `/email_addresses/${emailAddr.id}/prepare_verification`,
           { strategy: 'email_code' }
         );
-        // Clerk returns the email_address object; verification.id is on the verification sub-object
         verificationId = prepareRes?.verification?.id || prepareRes?.id || null;
         logger.info(`Verification prepared for ${email} | verificationId: ${verificationId}`);
       } catch (e) {
-        // Log the full Clerk error so it is visible in Railway logs
         logger.error(`prepare_verification FAILED for ${email}: ${JSON.stringify(e)}`);
-        // verificationId stays null — frontend will show "Session expired, sign up again"
       }
     }
 
     return {
-      clerkUserId:    user.id,
-      emailVerification: emailAddr?.verification?.status === 'verified',
-      emailAddressId: emailAddr?.id,
+      clerkUserId:       user.id,
+      emailVerification: false,
+      emailAddressId:    emailAddr?.id,
       verificationId,
     };
   } catch (err) {
@@ -147,26 +157,17 @@ const confirmSignUp = async ({ email, code, verificationId }) => {
     // Clerk API returns snake_case in raw JSON (long_message), JS object may have either
     const errorMsg = firstError.longMessage || firstError.long_message || firstError.message || err.message || 'Verification failed';
 
-    // strategy_for_user_invalid: no pending verification (e.g. Clerk auto-verified in dev mode)
-    // verification_already_verified: email already confirmed
+    // strategy_for_user_invalid / verification_already_verified:
+    // No pending verification exists. This should not happen in normal prod flow —
+    // the signUp() function now detects auto-verified emails and skips this path.
+    // Treat these as a hard failure: the user must request a new code.
     if (
       firstError.code === 'strategy_for_user_invalid' ||
       firstError.code === 'verification_already_verified' ||
       errorMsg.toLowerCase().includes('strategy')
     ) {
-      // Re-check current verification status — if already verified, accept as success
-      try {
-        const recheck = await clerkAPI('GET', `/users?email_address=${encodeURIComponent(email)}`);
-        const recheckUsers = toArray(recheck);
-        if (recheckUsers.length) {
-          const addr = recheckUsers[0].email_addresses?.find(a => a.email_address === email);
-          if (addr?.verification?.status === 'verified') {
-            logger.info(`Email ${email} is already verified — treating confirmation as success`);
-            return { success: true };
-          }
-        }
-      } catch (_e) {}
-      const e = new Error('No pending verification found. Please request a new code.');
+      logger.warn(`confirmSignUp: no pending verification for ${email} (code: ${firstError.code})`);
+      const e = new Error('No active verification found. Please request a new code.');
       e.name = 'CodeMismatchException';
       throw e;
     }
@@ -248,21 +249,34 @@ const login = async ({ email, password }) => {
       throw err;
     }
 
-    logger.error('Clerk login error:', JSON.stringify(err, null, 2));
+    logger.error('Clerk login error full:', JSON.stringify(err, null, 2));
     const firstError = err?.errors?.[0] || {};
+    const code = firstError.code || '';
 
-    if (
-      firstError.code === 'form_password_incorrect' ||
-      firstError.code === 'not_found'
-    ) {
+    if (code === 'form_password_incorrect' || code === 'not_found' || code === 'resource_not_found') {
       const e = new Error('Incorrect email or password.');
       e.name  = 'NotAuthorizedException';
       throw e;
     }
 
-    // Any other Clerk error → generic auth failure (don't leak internal details)
-    const e = new Error('Login failed. Please try again.');
-    e.name  = 'NotAuthorizedException';
+    // Password auth not enabled in Clerk dashboard, or user has no password set
+    if (code === 'strategy_for_user_invalid' || code === 'not_allowed_for_user') {
+      logger.error(`CLERK CONFIG ISSUE: verify_password returned "${code}" — check that Password is enabled in Clerk dashboard`);
+      const e = new Error('Login is currently unavailable. Please contact support.');
+      e.name  = 'ServiceUnavailableException';
+      throw e;
+    }
+
+    // Rate limited by Clerk
+    if (code?.includes('rate_limit') || err.status === 429) {
+      const e = new Error('Too many login attempts. Please wait and try again.');
+      e.name  = 'LimitExceededException';
+      throw e;
+    }
+
+    // Genuine unknown error — log it fully, don't mask as wrong-password
+    const e = new Error('Login failed due to a server error. Please try again.');
+    e.name  = 'ServerErrorException';
     throw e;
   }
 };

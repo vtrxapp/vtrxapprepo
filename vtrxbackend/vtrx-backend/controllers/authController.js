@@ -177,27 +177,23 @@ const login = async (req, res) => {
       },
     });
   } catch (error) {
-    logger.error('Login error:', error);
+    logger.error('Login error:', error.name, error.message);
 
-    if (error.name === 'NotAuthorizedException' || error.message?.toLowerCase().includes('incorrect') || error.message?.toLowerCase().includes('invalid')) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Incorrect email or password.' 
-      });
+    if (error.name === 'NotAuthorizedException') {
+      return res.status(401).json({ success: false, message: 'Incorrect email or password.' });
     }
-
     if (error.name === 'UserNotConfirmedException') {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Please verify your email before logging in.', 
-        code: 'EMAIL_NOT_CONFIRMED' 
-      });
+      return res.status(401).json({ success: false, message: 'Please verify your email before logging in.', code: 'EMAIL_NOT_CONFIRMED' });
+    }
+    if (error.name === 'LimitExceededException') {
+      return res.status(429).json({ success: false, message: error.message });
+    }
+    if (error.name === 'ServiceUnavailableException') {
+      return res.status(503).json({ success: false, message: error.message });
     }
 
-    res.status(500).json({ 
-      success: false, 
-      message: 'Login failed. Please try again.' 
-    });
+    logger.error('Unexpected login error (full):', error);
+    res.status(500).json({ success: false, message: 'Login failed. Please try again.' });
   }
 };
 
