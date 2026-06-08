@@ -6455,7 +6455,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
 }
 
 
-function VTRXAppInner() {
+function VTRXAppInner({ setPaymentPlan }) {
 
   const { user, setUser, profileImg, isPremium, setIsPremium } = useUser();
 
@@ -6521,7 +6521,6 @@ function VTRXAppInner() {
   });
   const [notifCount,    setNotifCount]    = useState(0);
   const [liveUser,      setLiveUser]      = useState(null);
-  const [paymentPlan,   setPaymentPlan]   = useState(null);
   const dashScrollRef  = useRef(null);
   const savedScrollPos = useRef(0);
   const mouseStart     = useRef(null);
@@ -6855,14 +6854,6 @@ function VTRXAppInner() {
         )}
       </div>
 
-      {/* In-app payment sheet */}
-      {paymentPlan && (
-        <PaymentSheet
-          initialPlan={paymentPlan}
-          onClose={()=>setPaymentPlan(null)}
-        />
-      )}
-
       {/* Bottom nav */}
       {!innerPage&&(
         <div style={{ position:"absolute",bottom:0,left:0,right:0,background:"rgba(10,10,10,0.95)",backdropFilter:"blur(20px)",borderTop:`1px solid ${BORDER}`,display:"flex",padding:"8px 0 24px",zIndex:50 }}>
@@ -6893,9 +6884,11 @@ function VTRXApp() {
   const [user, setUser] = useState({ name:"", age:"", gender:"", weight:"", height:"", goal:"", level:"", days:5 });
   const [profileImg, setProfileImg] = useState(null);
   const [isPremium, setIsPremium] = useState(false);
+  const [paymentPlan, setPaymentPlan] = useState(null);
   return (
     <UserCtx.Provider value={{ user, setUser, profileImg, setProfileImg, isPremium, setIsPremium }}>
-      <VTRXAppInner/>
+      <VTRXAppInner setPaymentPlan={setPaymentPlan}/>
+      {paymentPlan && <PaymentSheet initialPlan={paymentPlan} onClose={()=>setPaymentPlan(null)}/>}
     </UserCtx.Provider>
   );
 }
