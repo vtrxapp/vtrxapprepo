@@ -15,9 +15,12 @@ router.post('/webhook', payment.webhook);
 // All other routes need authentication
 router.use(protect);
 
-router.post('/create-checkout', payment.createCheckout);
-router.post('/portal',          payment.createPortal);
-router.get('/status',           payment.getStatus);
-router.post('/verify-session',  payment.verifySession);
+router.post('/create-checkout',           payment.createCheckout);
+router.post('/create-subscription-intent', payment.createSubscriptionIntent);
+router.post('/portal',                    payment.createPortal);
+router.get('/status',                     payment.getStatus);
+router.post('/verify-session',            payment.verifySession);
+router.get('/methods',                    payment.getPaymentMethods);
+router.get('/invoices',                   payment.getBillingHistory);
 
 module.exports = router;

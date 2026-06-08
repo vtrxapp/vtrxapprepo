@@ -94,10 +94,10 @@ const confirmEmail = async (req, res) => {
 
   const { email, code, verificationId } = req.body;
 
-  if (!email || !code || !verificationId) {
+  if (!email || !code) {
     return res.status(400).json({
       success: false,
-      message: 'Email, code, and verificationId are required'
+      message: 'Email and code are required'
     });
   }
 
@@ -177,27 +177,23 @@ const login = async (req, res) => {
       },
     });
   } catch (error) {
-    logger.error('Login error:', error);
+    logger.error('Login error:', error.name, error.message);
 
-    if (error.name === 'NotAuthorizedException' || error.message?.toLowerCase().includes('incorrect') || error.message?.toLowerCase().includes('invalid')) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Incorrect email or password.' 
-      });
+    if (error.name === 'NotAuthorizedException') {
+      return res.status(401).json({ success: false, message: 'Incorrect email or password.' });
     }
-
     if (error.name === 'UserNotConfirmedException') {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Please verify your email before logging in.', 
-        code: 'EMAIL_NOT_CONFIRMED' 
-      });
+      return res.status(401).json({ success: false, message: 'Please verify your email before logging in.', code: 'EMAIL_NOT_CONFIRMED' });
+    }
+    if (error.name === 'LimitExceededException') {
+      return res.status(429).json({ success: false, message: error.message });
+    }
+    if (error.name === 'ServiceUnavailableException') {
+      return res.status(503).json({ success: false, message: error.message });
     }
 
-    res.status(500).json({ 
-      success: false, 
-      message: 'Login failed. Please try again.' 
-    });
+    logger.error('Unexpected login error (full):', error);
+    res.status(500).json({ success: false, message: 'Login failed. Please try again.' });
   }
 };
 
@@ -261,15 +257,28 @@ const resendVerificationCode = async (req, res) => {
 const resetPassword = async (req, res) => {
   const { email, code, newPassword } = req.body;
 
+  if (!email || !code || !newPassword) {
+    return res.status(400).json({ success: false, message: 'Email, code, and new password are required.' });
+  }
+
   try {
     await cognito.confirmForgotPassword({ email, code, newPassword });
     res.json({ success: true, message: 'Password reset successful. You can now log in.' });
   } catch (error) {
     if (error.name === 'CodeMismatchException') {
-      return res.status(400).json({ success: false, message: 'Invalid or expired reset code.' });
+      return res.status(400).json({ success: false, message: 'Invalid verification code.' });
+    }
+    if (error.name === 'ExpiredCodeException') {
+      return res.status(400).json({ success: false, message: 'Code expired. Please request a new one.' });
+    }
+    if (error.name === 'InvalidPasswordException') {
+      return res.status(400).json({ success: false, message: error.message || 'Password does not meet requirements.' });
+    }
+    if (error.name === 'UserNotFoundException') {
+      return res.status(404).json({ success: false, message: 'No account found with this email.' });
     }
     logger.error('Reset password error:', error);
-    res.status(500).json({ success: false, message: 'Password reset failed.' });
+    res.status(500).json({ success: false, message: 'Password reset failed. Please try again.' });
   }
 };
 

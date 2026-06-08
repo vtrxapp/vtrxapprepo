@@ -1,4 +1,11 @@
 import React, { useState, useEffect, useRef, createContext, useContext } from "react";
+import { loadStripe } from "@stripe/stripe-js";
+import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
+
+// Stripe.js loaded once at module scope — publishable key is safe in client code
+const _stripePromise = import.meta?.env?.VITE_STRIPE_PUBLISHABLE_KEY
+  ? loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY)
+  : null;
 
 // ── API Configuration ─────────────────────────────────────────────────────────
 const API_URL = typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL : "";
@@ -76,9 +83,24 @@ const getStoredUser = () => {
 const UserCtx = createContext(null);
 const useUser = () => useContext(UserCtx);
 
+// ── In-app payment sheet bridge ───────────────────────────────────────────────
+// Module-level ref so any component can open the sheet without prop-drilling.
+// VTRXAppInner registers the setter; everything else just calls openPaymentSheet().
+let _openPaymentSheet = null;
+const openPaymentSheet = (plan = "monthly") => {
+  if (_openPaymentSheet) {
+    _openPaymentSheet(plan);
+  } else {
+    // Fallback redirect if the sheet isn't mounted (e.g. onboarding phase)
+    apiCall("/payments/create-checkout", { method:"POST", body:JSON.stringify({ plan }) })
+      .then(d => { if (d?.data?.url) window.location.href = d.data.url; })
+      .catch(()=>{});
+  }
+};
+
 // ── Premium gate component ────────────────────────────────────────────────────
 function PremiumGate({ feature, children, mini=false }) {
-  const { isPremium, setIsPremium } = useUser();
+  const { isPremium } = useUser();
   if (isPremium) return children;
   if (mini) return (
     <div style={{position:"relative",overflow:"hidden",borderRadius:16 }}>
@@ -86,7 +108,7 @@ function PremiumGate({ feature, children, mini=false }) {
       <div style={{ position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"rgba(10,10,10,0.75)",backdropFilter:"blur(2px)",borderRadius:16,padding:16 }}>
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00A3FF" strokeWidth="2" style={{marginBottom:8}}><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
         <div style={{ fontFamily:"'Montserrat',sans-serif",fontWeight:800,fontSize:12,color:"#fff",marginBottom:4,textAlign:"center" }}>Premium Feature</div>
-        <button onClick={()=>setIsPremium(true)} style={{ padding:"6px 16px",borderRadius:50,background:"#00A3FF",border:"none",fontFamily:"'Montserrat',sans-serif",fontWeight:700,fontSize:11,color:"#fff",cursor:"pointer" }}>Unlock</button>
+        <button onClick={()=>openPaymentSheet()} style={{ padding:"6px 16px",borderRadius:50,background:"#00A3FF",border:"none",fontFamily:"'Montserrat',sans-serif",fontWeight:700,fontSize:11,color:"#fff",cursor:"pointer" }}>Unlock</button>
       </div>
     </div>
   );
@@ -98,7 +120,7 @@ function PremiumGate({ feature, children, mini=false }) {
       <div style={{ fontFamily:"'Montserrat',sans-serif",fontWeight:900,fontSize:22,color:"#fff",marginBottom:8,textAlign:"center" }}>Premium Feature</div>
       <div style={{ fontFamily:"'Montserrat',sans-serif",fontSize:13,color:"#888",marginBottom:6,textAlign:"center",lineHeight:1.6 }}>{feature}</div>
       <div style={{ fontFamily:"'Montserrat',sans-serif",fontSize:12,color:"#555",marginBottom:28,textAlign:"center" }}>Unlock with VTRX Premium</div>
-      <button onClick={()=>setIsPremium(true)}
+      <button onClick={()=>openPaymentSheet()}
         style={{ width:"100%",maxWidth:280,padding:"15px 0",borderRadius:50,background:"#00A3FF",border:"none",fontFamily:"'Montserrat',sans-serif",fontWeight:800,fontSize:15,color:"#fff",cursor:"pointer",marginBottom:14,boxShadow:"0 4px 24px rgba(0,163,255,0.4)" }}>
         Upgrade to Premium
       </button>
@@ -389,7 +411,7 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
 
   const goTo = (next) => {
     if (next < 0 || next > MAX_WEEK) return; // boundary guard
-    if (!isPremium && next > 0) { setIsPremium(true); return; } // older weeks = premium only
+    if (!isPremium && next > 0) { openPaymentSheet(); return; } // older weeks = premium only
     setDir(next > week ? 1 : -1);
     setAnimKey(k => k + 1);
     setWeek(next);
@@ -1366,13 +1388,8 @@ function AISummaryPage({ energyKey, onBack }) {
     { key:"pumped",  label:"Pumped",  color:PRIMARY   },
   ];
 
-  const handleUpgrade = async () => {
-    setUpgrading(true);
-    try {
-      const r = await apiCall("/payments/create-checkout", { method:"POST", body:JSON.stringify({ plan:"monthly" }) });
-      if (r.data?.url) { window.location.href = r.data.url; return; }
-    } catch(_e){}
-    setUpgrading(false);
+  const handleUpgrade = () => {
+    openPaymentSheet("monthly");
   };
 
   const cardBg = dark ? "linear-gradient(145deg,#0a0f1e,#141b35)" : "#ffffff";
@@ -1466,7 +1483,7 @@ function AISummaryPage({ energyKey, onBack }) {
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
                       <span style={{ fontFamily:FONT,fontSize:12,color:"#fff",fontWeight:700 }}>Full analysis is a Premium feature</span>
                     </div>
-                    <button onClick={()=>setIsPremium(true)} style={{ padding:"8px 24px",borderRadius:50,background:PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:12,color:"#fff",cursor:"pointer",boxShadow:`0 4px 16px ${PRIMARY}44` }}>
+                    <button onClick={()=>openPaymentSheet()} style={{ padding:"8px 24px",borderRadius:50,background:PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:12,color:"#fff",cursor:"pointer",boxShadow:`0 4px 16px ${PRIMARY}44` }}>
                       Unlock Premium
                     </button>
                   </div>
@@ -1816,12 +1833,13 @@ function NavBar({ title, step, total, onBack, onSkip }) {
 
 // ─── Preference screens ───────────────────────────────────────────────────────
 function ForgotPasswordPage({ onBack }) {
-  const [step, setStep]       = useState("email"); // email → code → done
-  const [email, setEmail]     = useState("");
-  const [code,  setCode]      = useState("");
-  const [newPass, setNewPass] = useState("");
-  const [err, setErr]         = useState("");
-  const [loading, setLoading] = useState(false);
+  const [step, setStep]           = useState("email"); // email → code → done
+  const [email, setEmail]         = useState("");
+  const [code,  setCode]          = useState("");
+  const [newPass, setNewPass]     = useState("");
+  const [confirmPass, setConfirmPass] = useState("");
+  const [err, setErr]             = useState("");
+  const [loading, setLoading]     = useState(false);
 
   const sendCode = async () => {
     if (!email.trim()) { setErr("Please enter your email."); return; }
@@ -1833,9 +1851,15 @@ function ForgotPasswordPage({ onBack }) {
     finally { setLoading(false); }
   };
 
+  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+
   const resetPass = async () => {
     if (!code.trim())    { setErr("Enter the verification code."); return; }
-    if (newPass.length < 8) { setErr("Password must be at least 8 characters."); return; }
+    if (!passwordRegex.test(newPass)) {
+      setErr("Password must be at least 8 characters and include uppercase, lowercase, and a number.");
+      return;
+    }
+    if (newPass !== confirmPass) { setErr("Passwords do not match."); return; }
     setErr(""); setLoading(true);
     try {
       await apiCall("/auth/reset-password", { method:"POST", body:JSON.stringify({ email:email.trim().toLowerCase(), code:code.trim(), newPassword:newPass }) });
@@ -1889,7 +1913,10 @@ function ForgotPasswordPage({ onBack }) {
               inputMode="numeric" maxLength={6}
               style={{ width:"100%",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:14,padding:"15px 18px",fontFamily:FONT,fontSize:20,color:"#fff",outline:"none",boxSizing:"border-box",marginBottom:16,letterSpacing:6,textAlign:"center" }}/>
             <div style={{ fontFamily:FONT,fontSize:11,fontWeight:700,color:"#888",letterSpacing:1,marginBottom:6 }}>NEW PASSWORD</div>
-            <input value={newPass} onChange={e=>setNewPass(e.target.value)} placeholder="Min 8 characters" type="password"
+            <input value={newPass} onChange={e=>setNewPass(e.target.value)} placeholder="Min 8 chars, uppercase & number" type="password"
+              style={{ width:"100%",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:14,padding:"15px 18px",fontFamily:FONT,fontSize:16,color:"#fff",outline:"none",boxSizing:"border-box",marginBottom:16 }}/>
+            <div style={{ fontFamily:FONT,fontSize:11,fontWeight:700,color:"#888",letterSpacing:1,marginBottom:6 }}>CONFIRM NEW PASSWORD</div>
+            <input value={confirmPass} onChange={e=>setConfirmPass(e.target.value)} placeholder="Re-enter new password" type="password"
               style={{ width:"100%",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:14,padding:"15px 18px",fontFamily:FONT,fontSize:16,color:"#fff",outline:"none",boxSizing:"border-box",marginBottom:16 }}/>
             {err && <div style={{ fontFamily:FONT,fontSize:13,color:"#EF4444",marginBottom:12,textAlign:"center" }}>{err}</div>}
             <button onClick={resetPass} disabled={loading} style={{ width:"100%",padding:"16px 0",borderRadius:50,background:loading?"#555":PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff",cursor:loading?"not-allowed":"pointer",letterSpacing:1,opacity:loading?0.7:1 }}>
@@ -2066,7 +2093,7 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
   );
 }
 
-function SignUpScreen({ onContinue, onBack, onLogin }) {
+function SignUpScreen({ onContinue, onAlreadyVerified, onBack, onLogin }) {
   const [f, setF]         = useState({ name:"", username:"", email:"", password:"", confirm:"" });
   const [errors,    setErrors]    = useState({});
   const [submitted, setSubmitted] = useState(false);
@@ -2112,15 +2139,22 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
         }),
       });
 
-      // ✅ ADD THESE LINES RIGHT HERE (after successful signup)
-      if (data.success && data.data?.verificationId) {
-        if (typeof localStorage !== "undefined") {
-          localStorage.setItem("vtrx_verification_id", data.data.verificationId);
-          localStorage.setItem("vtrx_pending_email", f.email.trim().toLowerCase());
+      if (data.success) {
+        if (data.data?.emailVerification === true) {
+          // Clerk auto-verified (dev mode) — skip the code screen
+          onAlreadyVerified();
+        } else if (data.data?.verificationId) {
+          if (typeof localStorage !== "undefined") {
+            localStorage.setItem("vtrx_verification_id", data.data.verificationId);
+            localStorage.setItem("vtrx_pending_email", f.email.trim().toLowerCase());
+          }
+          onContinue(f.email.trim().toLowerCase());
+        } else {
+          // verificationId missing and not auto-verified
+          setErrors({ general: "Verification setup failed. Please try again." });
+          return;
         }
       }
-
-      onContinue(f.email.trim().toLowerCase());
     } catch (e) {
       setErrors({ general: e.message || "Signup failed. Please try again." });
     } finally { 
@@ -2501,24 +2535,8 @@ function ChallengeScreen({ onContinue, onBack }) {
 
 
 function PricingScreen({ onContinue, onBack }) {
-  const [stripeLoading, setStripeLoading] = useState(false);
-  const [stripeErr,     setStripeErr]     = useState("");
-
-  const subscribe = async (plan) => {
-    setStripeLoading(true); setStripeErr("");
-    try {
-      const data = await apiCall("/payments/create-checkout", {
-        method: "POST",
-        body:   JSON.stringify({ plan }),
-      });
-      // Redirect to Stripe checkout — user pays, Stripe redirects back
-      if (data.data?.url) {
-        window.location.href = data.data.url;
-      }
-    } catch (e) {
-      setStripeErr(e.message || "Payment setup failed. Try again.");
-      setStripeLoading(false);
-    }
+  const subscribe = (plan) => {
+    openPaymentSheet(plan);
   };
   const { setIsPremium } = useUser();
   const [selected, setSelected] = useState("free");
@@ -2664,7 +2682,7 @@ function PricingScreen({ onContinue, onBack }) {
         </div>
 
         {/* CTA Button */}
-        <button onClick={()=>{ if(selected==="premium") setIsPremium(true); onContinue(); }}
+        <button onClick={()=>{ if(selected==="premium") { openPaymentSheet(billingAnnual?"annual":"monthly"); return; } onContinue(); }}
           style={{ width:"100%",padding:"16px 0",borderRadius:50,background:PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff",cursor:"pointer",boxShadow:`0 4px 24px ${PRIMARY}44`,marginTop:4,letterSpacing:0.5 }}>
           {selected==="free" ? "Continue with Free" : "Start Free — 1 Month On Us"}
         </button>
@@ -4315,88 +4333,112 @@ function ChangePasswordPage({ onBack }) {
 
 // ─ Payment Method ─────────────────────────────────────────────────────────────
 function PaymentMethodPage({ onBack }) {
-  const [selected, setSelected] = useState("visa");
-  const [adding, setAdding]     = useState(false);
-  const [cardNum, setCardNum]   = useState("");
-  const [expiry, setExpiry]     = useState("");
-  const [cvv, setCvv]           = useState("");
-  const [name, setName]         = useState("");
-  const [saved, setSaved]       = useState(false);
+  const [methods,       setMethods]       = useState([]);
+  const [loading,       setLoading]       = useState(true);
+  const [portalLoading, setPortalLoading] = useState(false);
+  const [err,           setErr]           = useState("");
 
-  const cards = [
-    { key:"visa",   label:"Visa ending in 4242",   exp:"12/26", ico:"card", color:"#1A1FD6" },
-    { key:"mc",     label:"Mastercard ending in 8891", exp:"08/25", ico:"card", color:"#EB001B" },
-  ];
+  useEffect(()=>{
+    apiCall("/payments/methods")
+      .then(res => setMethods(res?.data?.methods || []))
+      .catch(()=>{})
+      .finally(()=>setLoading(false));
+  }, []);
+
+  const openPortal = async () => {
+    setPortalLoading(true); setErr("");
+    try {
+      const data = await apiCall("/payments/portal", { method:"POST" });
+      if (data.data?.url) window.location.href = data.data.url;
+    } catch(e) {
+      setErr(e.message || "Could not open billing portal.");
+      setPortalLoading(false);
+    }
+  };
+
+  const brandColor = b => ({ visa:"#1A1FD6", mastercard:"#EB001B", amex:"#2E77BC", discover:"#FF6600" })[b?.toLowerCase()] || "#555";
 
   return (
     <SubShell title="PAYMENT METHOD" onBack={onBack}>
-      <div style={{ fontFamily:FONT,fontWeight:700,fontSize:12,color:"#888888",letterSpacing:1,marginBottom:12 }}>SAVED CARDS</div>
-      <div style={{ display:"flex",flexDirection:"column",gap:10,marginBottom:20 }}>
-        {cards.map(c=>(
-          <button key={c.key} onClick={()=>setSelected(c.key)} style={{ display:"flex",alignItems:"center",gap:14,padding:"16px 18px",borderRadius:18,border:`2px solid ${selected===c.key?PRIMARY:BORDER}`,background:selected===c.key?`${PRIMARY}12`:CARD,cursor:"pointer",textAlign:"left",transition:"all 0.2s" }}>
-            <div style={{ width:44,height:30,borderRadius:8,background:c.color,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
-              <span style={{ fontFamily:FONT,fontWeight:900,fontSize:10,color:"#fff",letterSpacing:1 }}>{c.key.toUpperCase()}</span>
-            </div>
-            <div style={{ flex:1 }}>
-              <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#fff" }}>{c.label}</div>
-              <div style={{ fontFamily:FONT,fontSize:12,color:"#888888",marginTop:2 }}>Expires {c.exp}</div>
-            </div>
-            {selected===c.key&&<div style={{ width:22,height:22,borderRadius:"50%",background:PRIMARY,display:"flex",alignItems:"center",justifyContent:"center" }}><svg width="12" height="9" viewBox="0 0 12 9" fill="none" stroke="#fff" strokeWidth="2.5"><polyline points="1,4.5 4.5,8 11,1"/></svg></div>}
-          </button>
-        ))}
-      </div>
-
-      {!adding ? (
-        <button onClick={()=>setAdding(true)} style={{ width:"100%",padding:"14px 0",borderRadius:50,background:"transparent",border:`1.5px dashed ${BORDER}`,fontFamily:FONT,fontWeight:700,fontSize:13,color:"#888888",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:16 }}>
-          <span style={{ fontSize:18 }}>+</span> Add New Card
-        </button>
+      {loading ? (
+        <div style={{ textAlign:"center",padding:"40px 0",color:"#555",fontFamily:FONT,fontSize:14 }}>Loading...</div>
+      ) : methods.length > 0 ? (
+        <>
+          <div style={{ fontFamily:FONT,fontWeight:700,fontSize:12,color:"#888",letterSpacing:1,marginBottom:12 }}>SAVED CARDS</div>
+          <div style={{ display:"flex",flexDirection:"column",gap:10,marginBottom:20 }}>
+            {methods.map(m=>(
+              <div key={m.id} style={{ display:"flex",alignItems:"center",gap:14,padding:"16px 18px",borderRadius:18,border:`1.5px solid ${m.isDefault?PRIMARY:BORDER}`,background:m.isDefault?`${PRIMARY}12`:CARD }}>
+                <div style={{ width:44,height:30,borderRadius:8,background:brandColor(m.brand),display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+                  <span style={{ fontFamily:FONT,fontWeight:900,fontSize:10,color:"#fff",letterSpacing:1 }}>{m.brand.toUpperCase()}</span>
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#fff" }}>{m.brand.charAt(0).toUpperCase()+m.brand.slice(1)} ending in {m.last4}</div>
+                  <div style={{ fontFamily:FONT,fontSize:12,color:"#888",marginTop:2 }}>Expires {String(m.expMonth).padStart(2,"0")}/{String(m.expYear).slice(-2)}</div>
+                </div>
+                {m.isDefault&&<div style={{ fontFamily:FONT,fontSize:10,fontWeight:700,color:PRIMARY,background:`${PRIMARY}22`,borderRadius:20,padding:"3px 8px" }}>DEFAULT</div>}
+              </div>
+            ))}
+          </div>
+        </>
       ) : (
-        <div style={{ background:"#ffffff",borderRadius:20,border:"1px solid #e8e8e8",padding:"20px",marginBottom:16 }}>
-          <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#888888",marginBottom:14 }}>ADD NEW CARD</div>
-          <DarkInput label="CARD NUMBER" value={cardNum} onChange={setCardNum} placeholder="1234 5678 9012 3456"/>
-          <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12 }}>
-            <DarkInput label="EXPIRY" value={expiry} onChange={setExpiry} placeholder="MM/YY"/>
-            <DarkInput label="CVV" value={cvv} onChange={setCvv} placeholder="•••"/>
-          </div>
-          <DarkInput label="CARDHOLDER NAME" value={name} onChange={setName} placeholder="Name on card"/>
-          <div style={{ display:"flex",gap:10 }}>
-            <button onClick={()=>setAdding(false)} style={{ flex:1,padding:"13px 0",borderRadius:50,background:"transparent",border:`1px solid ${BORDER}`,fontFamily:FONT,fontWeight:600,fontSize:13,color:"#888888",cursor:"pointer" }}>Cancel</button>
-            <button onClick={()=>{setSaved(true);setAdding(false);setTimeout(()=>setSaved(false),2200);}} style={{ flex:2,padding:"13px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:13,color:"#fff",cursor:"pointer" }}>Add Card</button>
-          </div>
+        <div style={{ textAlign:"center",padding:"32px 20px 24px" }}>
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#333" strokeWidth="1.5" style={{display:"block",margin:"0 auto 14px"}}><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+          <div style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:"#fff",marginBottom:6 }}>No payment methods</div>
+          <div style={{ fontFamily:FONT,fontSize:13,color:"#888",marginBottom:24 }}>Add a card to manage your subscription.</div>
         </div>
       )}
-      {saved&&<div style={{ background:"#0c1c0c",border:"1px solid #22C55E44",borderRadius:14,padding:"12px 16px",textAlign:"center",fontFamily:FONT,fontWeight:700,fontSize:13,color:"#22C55E" }}>✓ Card saved successfully</div>}
+      {err&&<div style={{ fontFamily:FONT,fontSize:13,color:"#EF4444",marginBottom:12,textAlign:"center" }}>{err}</div>}
+      <button onClick={openPortal} disabled={portalLoading}
+        style={{ width:"100%",padding:"14px 0",borderRadius:50,background:"transparent",border:`1.5px dashed ${BORDER}`,fontFamily:FONT,fontWeight:700,fontSize:13,color:"#888",cursor:portalLoading?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:10,opacity:portalLoading?0.6:1 }}>
+        <span style={{ fontSize:18 }}>+</span> {portalLoading?"Opening Stripe...":"Add / Manage Payment Methods"}
+      </button>
+      <div style={{ fontFamily:FONT,fontSize:11,color:"#444",textAlign:"center" }}>Securely managed by Stripe</div>
     </SubShell>
   );
 }
 
 // ─ Billing History ────────────────────────────────────────────────────────────
 function BillingHistoryPage({ onBack }) {
-  const bills = [
-    { date:"Mar 15, 2026", desc:"Premium Plan",  amount:"$9.99",  status:"Paid" },
-    { date:"Feb 15, 2026", desc:"Premium Plan",  amount:"$9.99",  status:"Paid" },
-    { date:"Jan 15, 2026", desc:"Premium Plan",  amount:"$9.99",  status:"Paid" },
-    { date:"Dec 15, 2025", desc:"Premium Plan",  amount:"$9.99",  status:"Paid" },
+  const [invoices, setInvoices] = useState([]);
+  const [loading,  setLoading]  = useState(true);
 
-  ];
+  useEffect(()=>{
+    apiCall("/payments/invoices")
+      .then(res=>setInvoices(res?.data?.invoices || []))
+      .catch(()=>{})
+      .finally(()=>setLoading(false));
+  }, []);
+
+  const statusColor = s => s==="Paid"?"#22C55E":s==="Due"?"#F59E0B":"#EF4444";
+
   return (
     <SubShell title="BILLING HISTORY" onBack={onBack}>
-      <div style={{ background:"#ffffff",borderRadius:20,border:"1px solid #e8e8e8",padding:"0 18px",overflow:"hidden" }}>
-        {bills.map((b,i)=>(
-          <div key={i} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 0",borderBottom:i<bills.length-1?`1px solid ${BORDER}`:"none" }}>
-            <div>
-              <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#111111",marginBottom:3 }}>{b.desc}</div>
-              <div style={{ fontFamily:FONT,fontSize:12,color:"#888888" }}>{b.date}</div>
-            </div>
-            <div style={{ textAlign:"right" }}>
-              <div style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:"#111111",marginBottom:4 }}>{b.amount}</div>
-              <div style={{ background:"#22C55E18",border:"1px solid #22C55E44",borderRadius:20,padding:"2px 10px",display:"inline-block" }}>
-                <span style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:"#22C55E",letterSpacing:0.5 }}>{b.status}</span>
+      {loading ? (
+        <div style={{ textAlign:"center",padding:"40px 0",color:"#555",fontFamily:FONT,fontSize:14 }}>Loading...</div>
+      ) : invoices.length === 0 ? (
+        <div style={{ textAlign:"center",padding:"40px 20px" }}>
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#333" strokeWidth="1.5" style={{display:"block",margin:"0 auto 14px"}}><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <div style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:"#fff",marginBottom:6 }}>No billing history</div>
+          <div style={{ fontFamily:FONT,fontSize:13,color:"#888" }}>Your invoices will appear here after your first payment.</div>
+        </div>
+      ) : (
+        <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"0 18px",overflow:"hidden" }}>
+          {invoices.map((b,i)=>(
+            <div key={b.id||i} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 0",borderBottom:i<invoices.length-1?`1px solid ${BORDER}`:"none" }}>
+              <div>
+                <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#fff",marginBottom:3 }}>{b.desc}</div>
+                <div style={{ fontFamily:FONT,fontSize:12,color:"#888" }}>{b.date}{b.last4?` · ••••${b.last4}`:""}</div>
+              </div>
+              <div style={{ textAlign:"right" }}>
+                <div style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff",marginBottom:4 }}>{b.amount}</div>
+                <div style={{ background:`${statusColor(b.status)}18`,border:`1px solid ${statusColor(b.status)}44`,borderRadius:20,padding:"2px 10px",display:"inline-block" }}>
+                  <span style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:statusColor(b.status),letterSpacing:0.5 }}>{b.status}</span>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </SubShell>
   );
 }
@@ -4404,31 +4446,16 @@ function BillingHistoryPage({ onBack }) {
 // ─ Upgrade Plan ───────────────────────────────────────────────────────────────
 function UpgradePlanPage({ onBack }) {
   const [selected, setSelected] = useState("annual");
-  const [loading, setLoading] = React.useState(false);
-  const [confirmed, setConfirmed] = useState(false);
 
   const plans = [
-    { key:"monthly", label:"Monthly", price:"$9.99", period:"/month", savings:null,       badge:null },
-    { key:"annual",  label:"Annual",  price:"$69.99",period:"/year",  savings:"Save 50%", badge:"BEST VALUE" },
-
+    { key:"monthly", label:"Monthly", price:"$9.99",  period:"/month", savings:null,        badge:null         },
+    { key:"annual",  label:"Annual",  price:"$69.99", period:"/year",  savings:"Save 41%",  badge:"BEST VALUE" },
   ];
 
   const features = ["Unlimited workout videos","AI-powered summaries","Money-backed challenges","Advanced analytics","Priority support","Custom workout builder"];
 
-
-  const handleUpgrade = async (plan="monthly") => {
-    setLoading(true);
-    try {
-      const res = await apiCall("/payments/create-checkout", {
-        method: "POST",
-        body: JSON.stringify({ plan }),
-      });
-      if (res?.data?.url) {
-        window.location.href = res.data.url;
-      }
-    } catch(e) {
-      alert(e.message || "Failed to start checkout. Please try again.");
-    } finally { setLoading(false); }
+  const handleUpgrade = () => {
+    openPaymentSheet(selected);
   };
 
   return (
@@ -4439,48 +4466,57 @@ function UpgradePlanPage({ onBack }) {
             {p.badge&&<div style={{ position:"absolute",top:0,right:0,background:PRIMARY,padding:"4px 12px",borderRadius:"0 16px 0 12px",fontFamily:FONT,fontWeight:800,fontSize:10,color:"#fff",letterSpacing:1 }}>{p.badge}</div>}
             <div style={{ flex:1 }}>
               <div style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:selected===p.key?PRIMARY:"#fff",marginBottom:2 }}>{p.label}</div>
-              {p.savings&&<div style={{ fontFamily:FONT,fontSize:12,color:"#22C55E",marginBottom:4 }}>{p.savings}</div>}
+              {p.savings&&<div style={{ fontFamily:FONT,fontSize:12,color:"#22C55E" }}>{p.savings}</div>}
             </div>
             <div style={{ textAlign:"right" }}>
               <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:selected===p.key?PRIMARY:"#fff" }}>{p.price}</div>
-              <div style={{ fontFamily:FONT,fontSize:11,color:"#888888" }}>{p.period}</div>
+              <div style={{ fontFamily:FONT,fontSize:11,color:"#888" }}>{p.period}</div>
             </div>
           </button>
         ))}
       </div>
 
-      <div style={{ background:"#ffffff",borderRadius:20,border:"1px solid #e8e8e8",padding:"18px",marginBottom:16 }}>
-        <div style={{ fontFamily:FONT,fontWeight:700,fontSize:12,color:"#888888",letterSpacing:1,marginBottom:14 }}>ALL PLANS INCLUDE</div>
+      <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"18px",marginBottom:20 }}>
+        <div style={{ fontFamily:FONT,fontWeight:700,fontSize:12,color:"#888",letterSpacing:1,marginBottom:14 }}>ALL PLANS INCLUDE</div>
         {features.map((f,i)=>(
           <div key={i} style={{ display:"flex",alignItems:"center",gap:12,marginBottom:i<features.length-1?12:0 }}>
             <div style={{ width:20,height:20,borderRadius:"50%",background:`${PRIMARY}20`,border:`1px solid ${PRIMARY}55`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
               <svg width="10" height="8" viewBox="0 0 10 8" fill="none" stroke={PRIMARY} strokeWidth="2"><polyline points="1,4 3.5,7 9,1"/></svg>
             </div>
-            <span style={{ fontFamily:FONT,fontSize:14,color:"#333333" }}>{f}</span>
+            <span style={{ fontFamily:FONT,fontSize:14,color:"#ccc" }}>{f}</span>
           </div>
         ))}
       </div>
 
-      {!confirmed ? (
-        <button onClick={()=>setConfirmed(true)} style={{ width:"100%",padding:"16px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1,cursor:"pointer",boxShadow:`0 4px 24px ${PRIMARY}55` }}>
-          UPGRADE NOW →
-        </button>
-      ) : (
-        <div style={{ background:"#0c1c0c",border:"1px solid #22C55E44",borderRadius:18,padding:"20px",textAlign:"center",animation:"fadeUp 0.3s ease both" }}>
-          <div style={{ width:64,height:64,borderRadius:"50%",background:"#22C55E22",border:"1px solid #22C55E55",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 12px" }}><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg></div>
-          <div style={{ fontFamily:FONT,fontWeight:800,fontSize:17,color:"#22C55E",marginBottom:6 }}>You're now Premium!</div>
-          <div style={{ fontFamily:FONT,fontSize:13,color:"#888888" }}>Welcome to the full VTRX experience.</div>
-        </div>
-      )}
+      <button onClick={handleUpgrade}
+        style={{ width:"100%",padding:"16px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1,cursor:"pointer",boxShadow:`0 4px 24px ${PRIMARY}55` }}>
+        UPGRADE NOW →
+      </button>
+      <div style={{ fontFamily:FONT,fontSize:11,color:"#444",textAlign:"center",marginTop:10 }}>Secure checkout powered by Stripe · Cancel anytime</div>
     </SubShell>
   );
 }
 
 // ─ Cancel Subscription ────────────────────────────────────────────────────────
 function CancelSubscriptionPage({ onBack }) {
-  const [step, setStep]     = useState(0); // 0=confirm 1=reason 2=done
-  const [reason, setReason] = useState("");
+  const [step, setStep]       = useState(0); // 0=confirm 1=reason 2=redirecting
+  const [reason, setReason]   = useState("");
+  const [loading, setLoading] = useState(false);
+  const [err, setErr]         = useState("");
   const reasons = ["Too expensive","Not using it enough","Missing features I need","Found a better app","Technical issues","Other"];
+
+  const openPortal = async () => {
+    setLoading(true); setErr("");
+    try {
+      const data = await apiCall("/payments/portal", { method:"POST" });
+      if (data.data?.url) {
+        window.location.href = data.data.url;
+      }
+    } catch(e) {
+      setErr(e.message || "Could not open billing portal. Please try again.");
+      setLoading(false);
+    }
+  };
 
   return (
     <SubShell title="CANCEL SUBSCRIPTION" onBack={onBack}>
@@ -4489,9 +4525,9 @@ function CancelSubscriptionPage({ onBack }) {
           <div style={{ background:"#1c0c0c",border:"1px solid #EF444433",borderRadius:20,padding:"24px 20px",textAlign:"center",marginBottom:20 }}>
             <div style={{ width:64,height:64,borderRadius:"50%",background:"#EF444422",border:"1px solid #EF444455",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 12px" }}><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></div>
             <div style={{ fontFamily:FONT,fontWeight:800,fontSize:18,color:"#fff",marginBottom:8 }}>We're sorry to see you go</div>
-            <div style={{ fontFamily:FONT,fontSize:14,color:"#888888",lineHeight:1.65 }}>Cancelling will end your Premium access on Dec 15, 2024. You'll lose access to AI summaries, unlimited videos, and challenges.</div>
+            <div style={{ fontFamily:FONT,fontSize:14,color:"#888888",lineHeight:1.65 }}>Cancelling will end your Premium access at the end of your current billing period. You'll lose access to AI summaries, unlimited videos, and challenges.</div>
           </div>
-          <div style={{ background:"#ffffff",borderRadius:20,border:"1px solid #e8e8e8",padding:"18px",marginBottom:16 }}>
+          <div style={{ background:"rgba(255,255,255,0.05)",borderRadius:20,border:`1px solid ${BORDER}`,padding:"18px",marginBottom:16 }}>
             <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#888888",marginBottom:14 }}>BEFORE YOU GO, YOU'LL LOSE:</div>
             {["Unlimited workout videos","AI-powered summaries","Money-backed challenges","Advanced analytics"].map((f,i)=>(
               <div key={i} style={{ display:"flex",alignItems:"center",gap:12,marginBottom:i<3?12:0 }}>
@@ -4525,23 +4561,266 @@ function CancelSubscriptionPage({ onBack }) {
               </button>
             ))}
           </div>
-          <button onClick={()=>reason&&setStep(2)} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:reason?"#EF4444":"#1a1a1a",border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:reason?"#fff":"#333",letterSpacing:1,cursor:reason?"pointer":"not-allowed" }}>
-            CONFIRM CANCELLATION
-          </button>
-        </div>
-      )}
-
-      {step === 2 && (
-        <div style={{ textAlign:"center",paddingTop:40,animation:"fadeUp 0.4s ease both" }}>
-          <div style={{ width:72,height:72,borderRadius:"50%",background:"#22C55E22",border:"2px solid #22C55E55",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px" }}><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg></div>
-          <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff",marginBottom:8 }}>Subscription Cancelled</div>
-          <div style={{ fontFamily:FONT,fontSize:14,color:"#888888",lineHeight:1.65,marginBottom:32 }}>Your Premium access continues until Dec 15, 2024. We hope to see you back soon.</div>
-          <button onClick={onBack} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1,cursor:"pointer" }}>
-            Back to Account
+          {err && <div style={{ fontFamily:FONT,fontSize:13,color:"#EF4444",marginBottom:12,textAlign:"center" }}>{err}</div>}
+          <button onClick={()=>reason&&openPortal()} disabled={loading||!reason}
+            style={{ width:"100%",padding:"15px 0",borderRadius:50,background:reason&&!loading?"#EF4444":"#1a1a1a",border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:reason&&!loading?"#fff":"#333",letterSpacing:1,cursor:reason&&!loading?"pointer":"not-allowed" }}>
+            {loading ? "OPENING BILLING PORTAL..." : "CONFIRM CANCELLATION"}
           </button>
         </div>
       )}
     </SubShell>
+  );
+}
+
+// ── Stripe Elements appearance — matches dark app theme ──────────────────────
+const STRIPE_APPEARANCE = {
+  theme: "night",
+  variables: {
+    colorPrimary:           "#00A3FF",
+    colorBackground:        "#111111",
+    colorText:              "#ffffff",
+    colorTextSecondary:     "#888888",
+    colorTextPlaceholder:   "#444444",
+    colorDanger:            "#EF4444",
+    fontFamily:             "'Montserrat', system-ui, sans-serif",
+    fontSizeBase:           "15px",
+    spacingUnit:            "4px",
+    borderRadius:           "12px",
+  },
+  rules: {
+    ".Input": {
+      border:     "1px solid rgba(255,255,255,0.1)",
+      boxShadow:  "none",
+      background: "#1a1a1a",
+      color:      "#ffffff",
+      padding:    "14px 16px",
+    },
+    ".Input:focus": {
+      border:    "1px solid #00A3FF",
+      boxShadow: "0 0 0 3px rgba(0,163,255,0.15)",
+    },
+    ".Input--invalid": { border: "1px solid #EF4444" },
+    ".Label": {
+      fontWeight:    "700",
+      letterSpacing: "0.08em",
+      fontSize:      "11px",
+      color:         "#888888",
+    },
+    ".Tab": { border: "1px solid rgba(255,255,255,0.08)", background: "#1a1a1a" },
+    ".Tab--selected": { border: "1px solid #00A3FF", background: "rgba(0,163,255,0.08)" },
+    ".TabLabel--selected": { color: "#00A3FF" },
+    ".Block": { background: "#1a1a1a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "12px" },
+    ".CheckboxInput": { background: "#1a1a1a", border: "1px solid rgba(255,255,255,0.12)" },
+  },
+};
+
+// ── In-app payment bottom sheet ───────────────────────────────────────────────
+function PaymentSheet({ initialPlan = "monthly", onClose }) {
+  const [plan,         setPlan]         = useState(initialPlan);
+  const [clientSecret, setClientSecret] = useState(null);
+  const [isTrial,      setIsTrial]      = useState(false);
+  const [fetching,     setFetching]     = useState(false);
+  const [err,          setErr]          = useState("");
+
+  const PLANS = {
+    monthly: { label:"Monthly",  price:"$9.99",  period:"/month", sub:"Billed monthly" },
+    annual:  { label:"Annual",   price:"$69.99", period:"/year",  sub:"Save 41% · $5.83/mo", badge:"BEST VALUE" },
+  };
+
+  const trialEnd = new Date(Date.now() + 30 * 864e5).toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" });
+
+  const fetchIntent = async (p) => {
+    setFetching(true); setErr(""); setClientSecret(null);
+    try {
+      const res = await apiCall("/payments/create-subscription-intent", {
+        method: "POST",
+        body:   JSON.stringify({ plan: p }),
+      });
+      setClientSecret(res.data.clientSecret);
+      setIsTrial(res.data.isTrial || false);
+    } catch(e) {
+      setErr(e.message || "Couldn't load payment form. Try again.");
+    } finally {
+      setFetching(false);
+    }
+  };
+
+  return (
+    <div style={{ position:"fixed",inset:0,zIndex:400,display:"flex",flexDirection:"column",justifyContent:"flex-end" }}>
+      <div onClick={onClose} style={{ position:"absolute",inset:0,background:"rgba(0,0,0,0.88)" }}/>
+      <div style={{ position:"relative",background:"#0f0f0f",borderRadius:"26px 26px 0 0",maxHeight:"94vh",display:"flex",flexDirection:"column",animation:"slideUp 0.32s cubic-bezier(0.32,0.72,0,1) both" }}>
+        {/* Drag handle */}
+        <div style={{ flexShrink:0,display:"flex",justifyContent:"center",padding:"12px 0 6px" }}>
+          <div style={{ width:38,height:4,borderRadius:2,background:"rgba(255,255,255,0.15)" }}/>
+        </div>
+        {/* Header */}
+        <div style={{ flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 22px 0" }}>
+          <div style={{ fontFamily:FONT,fontWeight:900,fontSize:19,color:"#fff" }}>
+            {clientSecret?"Secure Checkout":"Upgrade to Premium"}
+          </div>
+          <button onClick={onClose} style={{ width:30,height:30,borderRadius:"50%",background:"rgba(255,255,255,0.08)",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center" }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+
+        <div style={{ flex:1,overflowY:"auto",padding:"18px 22px 44px" }}>
+          {!clientSecret ? (
+            <>
+              {/* Plan selector */}
+              <div style={{ display:"flex",gap:10,marginBottom:18 }}>
+                {Object.entries(PLANS).map(([key,p])=>(
+                  <button key={key} onClick={()=>{ setPlan(key); setErr(""); }}
+                    style={{ flex:1,padding:"16px 10px",borderRadius:18,border:`2px solid ${plan===key?PRIMARY:BORDER}`,background:plan===key?`${PRIMARY}14`:"#111",cursor:"pointer",textAlign:"center",position:"relative",transition:"all 0.18s",overflow:"hidden" }}>
+                    {p.badge&&<div style={{ position:"absolute",top:0,right:0,background:PRIMARY,padding:"3px 10px",borderRadius:"0 16px 0 12px",fontFamily:FONT,fontWeight:800,fontSize:9,color:"#fff",letterSpacing:0.8 }}>{p.badge}</div>}
+                    <div style={{ fontFamily:FONT,fontWeight:900,fontSize:22,color:plan===key?PRIMARY:"#fff",marginBottom:2 }}>{p.price}</div>
+                    <div style={{ fontFamily:FONT,fontSize:11,color:"#888" }}>{p.period}</div>
+                    <div style={{ fontFamily:FONT,fontSize:10,color:plan===key?"#00A3FF88":"#444",marginTop:3,lineHeight:1.3 }}>{p.sub}</div>
+                  </button>
+                ))}
+              </div>
+
+              {/* Trial notice */}
+              <div style={{ background:"rgba(0,163,255,0.07)",border:"1px solid rgba(0,163,255,0.2)",borderRadius:14,padding:"12px 16px",marginBottom:20,display:"flex",gap:12,alignItems:"flex-start" }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00A3FF" strokeWidth="2" style={{flexShrink:0,marginTop:1}}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                <div style={{ fontFamily:FONT,fontSize:12,color:"#aaa",lineHeight:1.55 }}>
+                  <span style={{ color:"#fff",fontWeight:700 }}>30-day free trial.</span> Your card is saved securely today but not charged until <span style={{ color:"#fff" }}>{trialEnd}</span>. Cancel anytime.
+                </div>
+              </div>
+
+              {/* Feature bullets */}
+              <div style={{ marginBottom:22 }}>
+                {["Unlimited workout videos & AI coaching","Full analytics, history & weekly AI report","Complete meal plans & grocery list","Apple Pay, Google Pay — saved for renewals","Cancel anytime from Account Settings"].map((f,i)=>(
+                  <div key={i} style={{ display:"flex",alignItems:"center",gap:12,marginBottom:i<4?10:0 }}>
+                    <div style={{ width:20,height:20,borderRadius:"50%",background:"rgba(0,163,255,0.1)",border:"1px solid rgba(0,163,255,0.3)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+                      <svg width="10" height="8" viewBox="0 0 10 8" fill="none" stroke={PRIMARY} strokeWidth="2.5"><polyline points="1,4 3.5,7 9,1"/></svg>
+                    </div>
+                    <span style={{ fontFamily:FONT,fontSize:13,color:"#bbb" }}>{f}</span>
+                  </div>
+                ))}
+              </div>
+
+              {err&&<div style={{ fontFamily:FONT,fontSize:13,color:"#EF4444",marginBottom:12,textAlign:"center" }}>{err}</div>}
+              <button onClick={()=>fetchIntent(plan)} disabled={fetching}
+                style={{ width:"100%",padding:"17px 0",borderRadius:50,background:fetching?"#1a1a1a":`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:fetching?`1px solid ${BORDER}`:"none",fontFamily:FONT,fontWeight:800,fontSize:15,color:fetching?"#555":"#fff",cursor:fetching?"not-allowed":"pointer",letterSpacing:0.5,transition:"all 0.2s" }}>
+                {fetching?"Loading secure form...":"Continue to Payment"}
+              </button>
+              <div style={{ fontFamily:FONT,fontSize:11,color:"#444",textAlign:"center",marginTop:10 }}>
+                🔒 Secured by Stripe · 256-bit SSL encryption
+              </div>
+            </>
+          ) : _stripePromise ? (
+            <Elements
+              stripe={_stripePromise}
+              options={{
+                clientSecret,
+                appearance: STRIPE_APPEARANCE,
+                fonts: [{ cssSrc: "https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&display=swap" }],
+              }}
+            >
+              <CheckoutForm
+                plan={plan}
+                isTrial={isTrial}
+                onSuccess={onClose}
+                onBack={()=>setClientSecret(null)}
+              />
+            </Elements>
+          ) : (
+            <div style={{ textAlign:"center",padding:"40px 0",fontFamily:FONT,fontSize:13,color:"#EF4444",lineHeight:1.6 }}>
+              Stripe is not configured.<br/>Add VITE_STRIPE_PUBLISHABLE_KEY to your Vercel environment variables.
+            </div>
+          )}
+        </div>
+      </div>
+      <style>{`@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}`}</style>
+    </div>
+  );
+}
+
+function CheckoutForm({ plan, isTrial, onSuccess, onBack }) {
+  const stripe    = useStripe();
+  const elements  = useElements();
+  const { setIsPremium } = useUser();
+  const [loading, setLoading] = useState(false);
+  const [err,     setErr]     = useState("");
+  const [done,    setDone]    = useState(false);
+
+  const PLAN_LABEL = { monthly:"$9.99 / month", annual:"$69.99 / year" };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!stripe || !elements) return;
+    setLoading(true); setErr("");
+
+    // SetupIntent (trial) → confirmSetup; PaymentIntent → confirmPayment
+    const confirmFn = isTrial
+      ? (opts) => stripe.confirmSetup(opts)
+      : (opts) => stripe.confirmPayment(opts);
+
+    const { error } = await confirmFn({
+      elements,
+      confirmParams: { return_url: window.location.origin },
+      redirect: "if_required",
+    });
+
+    if (error) {
+      setErr(error.message || "Payment failed. Please check your card details.");
+      setLoading(false);
+      return;
+    }
+
+    // Payment confirmed — update UI immediately; webhook syncs DB in background
+    setIsPremium(true);
+    setDone(true);
+    setTimeout(onSuccess, 2600);
+  };
+
+  if (done) return (
+    <div style={{ textAlign:"center",padding:"48px 0 24px" }}>
+      <div style={{ width:76,height:76,borderRadius:"50%",background:"rgba(34,197,94,0.1)",border:"2px solid rgba(34,197,94,0.4)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",animation:"fadeUp 0.4s ease both" }}>
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>
+      <div style={{ fontFamily:FONT,fontWeight:900,fontSize:23,color:"#fff",marginBottom:10 }}>Welcome to Premium!</div>
+      <div style={{ fontFamily:FONT,fontSize:14,color:"#888",lineHeight:1.65,maxWidth:260,margin:"0 auto" }}>
+        {isTrial
+          ? "Your 30-day free trial is now active. You won't be charged until the trial ends."
+          : "Your subscription is active. Enjoy full access to all features."}
+      </div>
+    </div>
+  );
+
+  return (
+    <form onSubmit={handleSubmit}>
+      {/* Back + plan summary */}
+      <div style={{ display:"flex",alignItems:"center",gap:12,marginBottom:18 }}>
+        <button type="button" onClick={onBack}
+          style={{ width:30,height:30,borderRadius:"50%",background:"rgba(255,255,255,0.06)",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <div style={{ flex:1,fontFamily:FONT,fontSize:13,color:"#888" }}>
+          {isTrial&&<span style={{ color:"#22C55E",fontWeight:700 }}>Free trial · </span>}
+          then <span style={{ color:"#fff",fontWeight:700 }}>{PLAN_LABEL[plan]}</span>
+        </div>
+      </div>
+
+      {/* Stripe Payment Element — handles card + Apple Pay + Google Pay */}
+      <PaymentElement
+        options={{
+          layout:  { type:"tabs", defaultCollapsed:false },
+          wallets: { applePay:"auto", googlePay:"auto" },
+          fields:  { billingDetails:{ name:"auto" } },
+        }}
+      />
+
+      {err&&<div style={{ fontFamily:FONT,fontSize:13,color:"#EF4444",marginTop:14,textAlign:"center",lineHeight:1.4 }}>{err}</div>}
+
+      <button type="submit" disabled={!stripe||loading}
+        style={{ width:"100%",marginTop:20,padding:"17px 0",borderRadius:50,background:!stripe||loading?"#1a1a1a":`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:!stripe||loading?`1px solid ${BORDER}`:"none",fontFamily:FONT,fontWeight:800,fontSize:15,color:!stripe||loading?"#444":"#fff",cursor:!stripe||loading?"not-allowed":"pointer",letterSpacing:0.5,transition:"all 0.2s" }}>
+        {loading?"Processing...":isTrial?"Start Free Trial":"Subscribe Now"}
+      </button>
+      <div style={{ fontFamily:FONT,fontSize:11,color:"#333",textAlign:"center",marginTop:12 }}>
+        🔒 Secured by Stripe · Your card details never touch our servers
+      </div>
+    </form>
   );
 }
 
@@ -4576,11 +4855,18 @@ function ConnectedAppIcon({ type }) {
   return <svg {...s}><circle cx="12" cy="12" r="10"/></svg>;
 }
 function AccountSettingsPage({ onBack, onLogout }) {
-  const { user, profileImg, setProfileImg } = useUser();
-  const [apps, setApps]   = useState({ appleHealth:true, fitbit:true, strava:false, myFitnessPal:true });
+  const { user, profileImg, setProfileImg, isPremium } = useUser();
+  const [apps,      setApps]      = useState({ appleHealth:true, fitbit:true, strava:false, myFitnessPal:true });
+  const [subStatus, setSubStatus] = useState(null);
   const acctScrollRef = useScrollPos("account-settings");
   const [subPage, setSubPage] = useState(null);
   const toggleApp = k => setApps(p=>({...p,[k]:!p[k]}));
+
+  useEffect(()=>{
+    apiCall("/payments/status")
+      .then(res=>setSubStatus(res?.data || null))
+      .catch(()=>{});
+  }, []);
 
 
   const SectionTitle = ({ label }) => (
@@ -4622,9 +4908,9 @@ function AccountSettingsPage({ onBack, onLogout }) {
               onChange={e=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=ev=>setProfileImg(ev.target.result); r.readAsDataURL(f); }}/>
           </div>
           <div>
-            <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff",letterSpacing:1,marginBottom:4 }}>{user.name.toUpperCase()}</div>
-            <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:PRIMARY,marginBottom:3 }}>Premium Member</div>
-            <div style={{ fontFamily:FONT,fontSize:12,color:"#888888" }}>Member since April 2024</div>
+            <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff",letterSpacing:1,marginBottom:4 }}>{(user.name||"").toUpperCase()}</div>
+            <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:isPremium?PRIMARY:"#888",marginBottom:3 }}>{isPremium?"Premium Member":"Free Plan"}</div>
+            {user.email&&<div style={{ fontFamily:FONT,fontSize:12,color:"#888" }}>{user.email}</div>}
           </div>
         </div>
 
@@ -4695,24 +4981,48 @@ function AccountSettingsPage({ onBack, onLogout }) {
 
         {/* Subscription & Billing */}
         <SectionTitle label="Subscription & Billing"/>
-        <div style={{ background:"#fff",borderRadius:20,padding:"18px",overflow:"hidden" }}>
-          <div style={{ background:PRIMARY,borderRadius:14,padding:"14px 18px",display:"flex",alignItems:"center",gap:14,marginBottom:6 }}>
-            <div style={{ width:36,height:36,borderRadius:"50%",background:"rgba(255,255,255,0.2)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}><svg width="18" height="18" viewBox="0 0 24 24" fill="#F59E0B" stroke="#F59E0B" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>
-            <div>
-              <div style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff" }}>Premium Plan</div>
-              <div style={{ fontFamily:FONT,fontSize:12,color:"rgba(255,255,255,0.82)",marginTop:2 }}>$9.83/month · Renews Apr 15, 2027</div>
+        <div style={{ background:CARD,borderRadius:20,padding:"18px",overflow:"hidden",border:`1px solid ${BORDER}` }}>
+          {/* Dynamic status card */}
+          {isPremium ? (
+            <div style={{ background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,borderRadius:14,padding:"16px 18px",display:"flex",alignItems:"center",gap:14,marginBottom:8 }}>
+              <div style={{ width:36,height:36,borderRadius:"50%",background:"rgba(255,255,255,0.2)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="#F59E0B" stroke="#F59E0B" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              </div>
+              <div style={{ flex:1 }}>
+                <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:2 }}>
+                  <div style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff" }}>{subStatus?.plan==="annual"?"Annual Premium":"Monthly Premium"}</div>
+                  <div style={{ background:"rgba(34,197,94,0.25)",border:"1px solid rgba(34,197,94,0.5)",borderRadius:20,padding:"2px 8px",fontFamily:FONT,fontWeight:700,fontSize:10,color:"#22C55E",letterSpacing:0.5 }}>ACTIVE</div>
+                </div>
+                <div style={{ fontFamily:FONT,fontSize:12,color:"rgba(255,255,255,0.8)",marginTop:2 }}>
+                  {subStatus?.plan==="annual"?"$69.99/year":"$9.99/month"}
+                  {subStatus?.currentPeriodEnd ? ` · Renews ${new Date(subStatus.currentPeriodEnd).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}` : ""}
+                  {subStatus?.cancelAtEnd ? " · Cancels at end of period" : ""}
+                </div>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div style={{ background:"rgba(255,255,255,0.04)",border:`1px solid ${BORDER}`,borderRadius:14,padding:"16px 18px",display:"flex",alignItems:"center",gap:14,marginBottom:8 }}>
+              <div style={{ width:36,height:36,borderRadius:"50%",background:"rgba(255,255,255,0.08)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              </div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff",marginBottom:2 }}>Freemium Plan</div>
+                <div style={{ fontFamily:FONT,fontSize:12,color:"#888" }}>Basic workouts &amp; logging · Upgrade to unlock all features</div>
+              </div>
+              <button onClick={()=>setSubPage("upgrade")} style={{ flexShrink:0,padding:"8px 14px",borderRadius:50,background:PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:12,color:"#fff",cursor:"pointer",whiteSpace:"nowrap" }}>Upgrade</button>
+            </div>
+          )}
+          {/* Billing menu rows */}
           {[
-            { ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="1.8"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>, label:"Payment Method",     color:"#111",    page:"payment"  },
-            { ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>, label:"Billing History", color:"#111",    page:"billing"  },
-            { ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.8"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>, label:"Upgrade Plan",     color:PRIMARY,   page:"upgrade"  },
-            { ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="1.8"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>, label:"Cancel Subscription", color:"#EF4444", page:"cancel" },
-          ].map((r,i,arr)=>(
-            <button key={i} onClick={()=>setSubPage(r.page)} style={{ width:"100%",display:"flex",alignItems:"center",gap:14,padding:"14px 0",background:"none",border:"none",cursor:"pointer",borderBottom:i<arr.length-1?"1px solid #f0f0f0":"none",textAlign:"left" }}>
+            { ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="1.8"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>, label:"Payment Method",  color:"#fff",    page:"payment" },
+            { ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>, label:"Billing History", color:"#fff",    page:"billing"  },
+            !isPremium && { ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.8"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>, label:"Upgrade Plan", color:PRIMARY, page:"upgrade" },
+            isPremium  && { ico:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="1.8"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>, label:"Cancel Subscription", color:"#EF4444", page:"cancel" },
+          ].filter(Boolean).map((r,i,arr)=>(
+            <button key={i} onClick={()=>setSubPage(r.page)} style={{ width:"100%",display:"flex",alignItems:"center",gap:14,padding:"14px 0",background:"none",border:"none",cursor:"pointer",borderTop:`1px solid ${BORDER}`,textAlign:"left" }}>
               <div style={{ width:28,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>{r.ico}</div>
               <div style={{ flex:1,fontFamily:FONT,fontWeight:600,fontSize:15,color:r.color }}>{r.label}</div>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={r.color==="111"?"#bbb":r.color} strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
             </button>
           ))}
         </div>
@@ -4944,7 +5254,7 @@ function ProgressPhotosPage({ onBack }) {
           <div style={{ fontFamily:FONT,fontWeight:900,fontSize:22,color:"#fff",marginBottom:10,textAlign:"center" }}>Progress Photos</div>
           <div style={{ fontFamily:FONT,fontSize:13,color:"#888",marginBottom:8,textAlign:"center",lineHeight:1.6 }}>Upload weekly photos and watch your transformation. Side-by-side comparison included.</div>
           <div style={{ fontFamily:FONT,fontSize:12,color:"#555",marginBottom:28,textAlign:"center" }}>Premium feature</div>
-          <button onClick={()=>setIsPremium(true)}
+          <button onClick={()=>openPaymentSheet()}
             style={{ width:"100%",maxWidth:280,padding:"15px 0",borderRadius:50,background:PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff",cursor:"pointer",boxShadow:"0 4px 24px rgba(0,163,255,0.4)" }}>
             Upgrade to Premium
           </button>
@@ -5655,13 +5965,7 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
         {subTab===2 && (
           isPremium ? (
             <GroceryTab checkedGrocery={checkedGrocery} setCheckedGrocery={setCheckedGrocery}/>
-          ) : <PremiumGate feature="Grocery List" onUpgrade={async ()=>{
-              try {
-                const res = await apiCall("/payments/create-checkout",{method:"POST",body:JSON.stringify({plan:"monthly"})});
-                if (res?.data?.url) window.location.href = res.data.url;
-                else setIsPremium(true); // demo fallback
-              } catch(_e){ setIsPremium(true); }
-            }}/>
+          ) : <PremiumGate feature="Grocery List"/>
         )}
 
         {subTab===3 && (
@@ -6158,9 +6462,9 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
 }
 
 
-function VTRXAppInner() {
+function VTRXAppInner({ setPaymentPlan }) {
 
-  const { user, profileImg, isPremium, setIsPremium } = useUser();
+  const { user, setUser, profileImg, isPremium, setIsPremium } = useUser();
 
   // ── Phase / onboarding state ──────────────────────────────────────────────
   const [phase, setPhase]           = useState("onboarding");
@@ -6251,6 +6555,8 @@ function VTRXAppInner() {
         if (u.streakDays)     setStreakDay(u.streakDays);
         if (u.workoutsTotal)  setWorkoutsTotal(u.workoutsTotal);
         if (u.isPremium)      setIsPremium(true);
+        // Valid token + profile loaded → restore dashboard without re-running onboarding
+        setPhase("dashboard");
       }
       // Also load weekly stats
       apiCall("/workouts/stats").then(sr=>{
@@ -6261,20 +6567,26 @@ function VTRXAppInner() {
 
   // ── Handle Stripe redirect on app load ─────────────────────────────────────
   useEffect(()=>{
-    const params = new URLSearchParams(window.location.search);
+    const params    = new URLSearchParams(window.location.search);
     const sessionId = params.get("session_id");
     if (sessionId && getAuthToken()) {
       apiCall("/payments/verify-session", {
         method: "POST",
-        body: JSON.stringify({ sessionId }),
+        body:   JSON.stringify({ sessionId }),
       }).then(res=>{
         if (res?.data?.isPremium) {
           setIsPremium(true);
-          // Clean URL
-          window.history.replaceState({}, "", window.location.pathname);
+          setPhase("dashboard");
+          window.history.replaceState({}, "", "/");
         }
       }).catch(()=>{});
     }
+  }, []);
+
+  // Register the module-level bridge so any component can call openPaymentSheet()
+  useEffect(()=>{
+    _openPaymentSheet = (plan) => setPaymentPlan(plan || "monthly");
+    return () => { _openPaymentSheet = null; };
   }, []);
 
   useEffect(()=>{
@@ -6371,8 +6683,14 @@ function VTRXAppInner() {
 
   if (phase==="preferences") {
     const SCREENS = [
-      <SignUpScreen              key={0} onContinue={(email)=>{ if(email){ setPendingEmail(email); setPhase("emailVerify"); } else goNext(); }} onBack={()=>setPhase("onboarding")} onLogin={()=>setPhase("login")}/>,
-      <EmailVerifyScreen   key={1} onContinue={goNext} onBack={goPrev}/>,
+      <SignUpScreen
+        key={0}
+        onContinue={(email)=>{ if(email){ setPendingEmail(email); setPhase("emailVerify"); } else goNext(); }}
+        onAlreadyVerified={()=>{ setScreen(2); }}
+        onBack={()=>setPhase("onboarding")}
+        onLogin={()=>setPhase("login")}
+      />,
+      <EmailVerifyScreen   key={1} email={pendingEmail} onVerified={()=>{ goNext(); }} onBack={goPrev}/>,
       <BodyScreen                key={2} onContinue={goNext} onBack={goPrev}/>,
       <WorkoutScreen             key={3} onContinue={goNext} onBack={goPrev}/>,
       <NutritionScreen           key={4} onContinue={goNext} onBack={goPrev}/>,
@@ -6395,6 +6713,8 @@ function VTRXAppInner() {
     } catch(_e){} finally {
       clearAuth();
     }
+    setUser({ name:"", age:"", gender:"", weight:"", height:"", goal:"", level:"", days:5 });
+    setIsPremium(false);
     setPhase("onboarding");
     setScreen(0);
     setActiveTab(0);
@@ -6577,9 +6897,11 @@ function VTRXApp() {
   const [user, setUser] = useState({ name:"", age:"", gender:"", weight:"", height:"", goal:"", level:"", days:5 });
   const [profileImg, setProfileImg] = useState(null);
   const [isPremium, setIsPremium] = useState(false);
+  const [paymentPlan, setPaymentPlan] = useState(null);
   return (
     <UserCtx.Provider value={{ user, setUser, profileImg, setProfileImg, isPremium, setIsPremium }}>
-      <VTRXAppInner/>
+      <VTRXAppInner setPaymentPlan={setPaymentPlan}/>
+      {paymentPlan && <PaymentSheet initialPlan={paymentPlan} onClose={()=>setPaymentPlan(null)}/>}
     </UserCtx.Provider>
   );
 }
