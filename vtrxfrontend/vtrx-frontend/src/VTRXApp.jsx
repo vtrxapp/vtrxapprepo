@@ -1388,13 +1388,8 @@ function AISummaryPage({ energyKey, onBack }) {
     { key:"pumped",  label:"Pumped",  color:PRIMARY   },
   ];
 
-  const handleUpgrade = async () => {
-    setUpgrading(true);
-    try {
-      const r = await apiCall("/payments/create-checkout", { method:"POST", body:JSON.stringify({ plan:"monthly" }) });
-      if (r.data?.url) { window.location.href = r.data.url; return; }
-    } catch(_e){}
-    setUpgrading(false);
+  const handleUpgrade = () => {
+    openPaymentSheet("monthly");
   };
 
   const cardBg = dark ? "linear-gradient(145deg,#0a0f1e,#141b35)" : "#ffffff";
@@ -2533,24 +2528,8 @@ function ChallengeScreen({ onContinue, onBack }) {
 
 
 function PricingScreen({ onContinue, onBack }) {
-  const [stripeLoading, setStripeLoading] = useState(false);
-  const [stripeErr,     setStripeErr]     = useState("");
-
-  const subscribe = async (plan) => {
-    setStripeLoading(true); setStripeErr("");
-    try {
-      const data = await apiCall("/payments/create-checkout", {
-        method: "POST",
-        body:   JSON.stringify({ plan }),
-      });
-      // Redirect to Stripe checkout — user pays, Stripe redirects back
-      if (data.data?.url) {
-        window.location.href = data.data.url;
-      }
-    } catch (e) {
-      setStripeErr(e.message || "Payment setup failed. Try again.");
-      setStripeLoading(false);
-    }
+  const subscribe = (plan) => {
+    openPaymentSheet(plan);
   };
   const { setIsPremium } = useUser();
   const [selected, setSelected] = useState("free");
@@ -4460,8 +4439,6 @@ function BillingHistoryPage({ onBack }) {
 // ─ Upgrade Plan ───────────────────────────────────────────────────────────────
 function UpgradePlanPage({ onBack }) {
   const [selected, setSelected] = useState("annual");
-  const [loading,  setLoading]  = useState(false);
-  const [err,      setErr]      = useState("");
 
   const plans = [
     { key:"monthly", label:"Monthly", price:"$9.99",  period:"/month", savings:null,        badge:null         },
@@ -4470,18 +4447,8 @@ function UpgradePlanPage({ onBack }) {
 
   const features = ["Unlimited workout videos","AI-powered summaries","Money-backed challenges","Advanced analytics","Priority support","Custom workout builder"];
 
-  const handleUpgrade = async () => {
-    setLoading(true); setErr("");
-    try {
-      const res = await apiCall("/payments/create-checkout", {
-        method: "POST",
-        body:   JSON.stringify({ plan: selected }),
-      });
-      if (res?.data?.url) window.location.href = res.data.url;
-    } catch(e) {
-      setErr(e.message || "Failed to start checkout. Please try again.");
-      setLoading(false);
-    }
+  const handleUpgrade = () => {
+    openPaymentSheet(selected);
   };
 
   return (
@@ -4514,10 +4481,9 @@ function UpgradePlanPage({ onBack }) {
         ))}
       </div>
 
-      {err&&<div style={{ fontFamily:FONT,fontSize:13,color:"#EF4444",marginBottom:12,textAlign:"center" }}>{err}</div>}
-      <button onClick={handleUpgrade} disabled={loading}
-        style={{ width:"100%",padding:"16px 0",borderRadius:50,background:loading?"#555":`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1,cursor:loading?"not-allowed":"pointer",boxShadow:loading?"none":`0 4px 24px ${PRIMARY}55`,opacity:loading?0.7:1 }}>
-        {loading?"REDIRECTING TO STRIPE...":"UPGRADE NOW →"}
+      <button onClick={handleUpgrade}
+        style={{ width:"100%",padding:"16px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1,cursor:"pointer",boxShadow:`0 4px 24px ${PRIMARY}55` }}>
+        UPGRADE NOW →
       </button>
       <div style={{ fontFamily:FONT,fontSize:11,color:"#444",textAlign:"center",marginTop:10 }}>Secure checkout powered by Stripe · Cancel anytime</div>
     </SubShell>
