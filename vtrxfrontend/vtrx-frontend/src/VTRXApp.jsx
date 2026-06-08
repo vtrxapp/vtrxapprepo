@@ -76,9 +76,21 @@ const getStoredUser = () => {
 const UserCtx = createContext(null);
 const useUser = () => useContext(UserCtx);
 
+// ── Shared Stripe checkout launcher ──────────────────────────────────────────
+// All "Upgrade" / "Unlock" buttons funnel through this — never setIsPremium(true) directly.
+const startCheckout = async (plan = "monthly") => {
+  try {
+    const data = await apiCall("/payments/create-checkout", {
+      method: "POST",
+      body:   JSON.stringify({ plan }),
+    });
+    if (data.data?.url) window.location.href = data.data.url;
+  } catch (_e) {}
+};
+
 // ── Premium gate component ────────────────────────────────────────────────────
 function PremiumGate({ feature, children, mini=false }) {
-  const { isPremium, setIsPremium } = useUser();
+  const { isPremium } = useUser();
   if (isPremium) return children;
   if (mini) return (
     <div style={{position:"relative",overflow:"hidden",borderRadius:16 }}>
@@ -86,7 +98,7 @@ function PremiumGate({ feature, children, mini=false }) {
       <div style={{ position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"rgba(10,10,10,0.75)",backdropFilter:"blur(2px)",borderRadius:16,padding:16 }}>
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00A3FF" strokeWidth="2" style={{marginBottom:8}}><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
         <div style={{ fontFamily:"'Montserrat',sans-serif",fontWeight:800,fontSize:12,color:"#fff",marginBottom:4,textAlign:"center" }}>Premium Feature</div>
-        <button onClick={()=>setIsPremium(true)} style={{ padding:"6px 16px",borderRadius:50,background:"#00A3FF",border:"none",fontFamily:"'Montserrat',sans-serif",fontWeight:700,fontSize:11,color:"#fff",cursor:"pointer" }}>Unlock</button>
+        <button onClick={()=>startCheckout()} style={{ padding:"6px 16px",borderRadius:50,background:"#00A3FF",border:"none",fontFamily:"'Montserrat',sans-serif",fontWeight:700,fontSize:11,color:"#fff",cursor:"pointer" }}>Unlock</button>
       </div>
     </div>
   );
@@ -98,7 +110,7 @@ function PremiumGate({ feature, children, mini=false }) {
       <div style={{ fontFamily:"'Montserrat',sans-serif",fontWeight:900,fontSize:22,color:"#fff",marginBottom:8,textAlign:"center" }}>Premium Feature</div>
       <div style={{ fontFamily:"'Montserrat',sans-serif",fontSize:13,color:"#888",marginBottom:6,textAlign:"center",lineHeight:1.6 }}>{feature}</div>
       <div style={{ fontFamily:"'Montserrat',sans-serif",fontSize:12,color:"#555",marginBottom:28,textAlign:"center" }}>Unlock with VTRX Premium</div>
-      <button onClick={()=>setIsPremium(true)}
+      <button onClick={()=>startCheckout()}
         style={{ width:"100%",maxWidth:280,padding:"15px 0",borderRadius:50,background:"#00A3FF",border:"none",fontFamily:"'Montserrat',sans-serif",fontWeight:800,fontSize:15,color:"#fff",cursor:"pointer",marginBottom:14,boxShadow:"0 4px 24px rgba(0,163,255,0.4)" }}>
         Upgrade to Premium
       </button>
@@ -389,7 +401,7 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
 
   const goTo = (next) => {
     if (next < 0 || next > MAX_WEEK) return; // boundary guard
-    if (!isPremium && next > 0) { setIsPremium(true); return; } // older weeks = premium only
+    if (!isPremium && next > 0) { startCheckout(); return; } // older weeks = premium only
     setDir(next > week ? 1 : -1);
     setAnimKey(k => k + 1);
     setWeek(next);
@@ -1466,7 +1478,7 @@ function AISummaryPage({ energyKey, onBack }) {
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
                       <span style={{ fontFamily:FONT,fontSize:12,color:"#fff",fontWeight:700 }}>Full analysis is a Premium feature</span>
                     </div>
-                    <button onClick={()=>setIsPremium(true)} style={{ padding:"8px 24px",borderRadius:50,background:PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:12,color:"#fff",cursor:"pointer",boxShadow:`0 4px 16px ${PRIMARY}44` }}>
+                    <button onClick={()=>startCheckout()} style={{ padding:"8px 24px",borderRadius:50,background:PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:12,color:"#fff",cursor:"pointer",boxShadow:`0 4px 16px ${PRIMARY}44` }}>
                       Unlock Premium
                     </button>
                   </div>
@@ -2674,7 +2686,7 @@ function PricingScreen({ onContinue, onBack }) {
         </div>
 
         {/* CTA Button */}
-        <button onClick={()=>{ if(selected==="premium") setIsPremium(true); onContinue(); }}
+        <button onClick={()=>{ if(selected==="premium") { startCheckout(billingAnnual?"annual":"monthly"); return; } onContinue(); }}
           style={{ width:"100%",padding:"16px 0",borderRadius:50,background:PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff",cursor:"pointer",boxShadow:`0 4px 24px ${PRIMARY}44`,marginTop:4,letterSpacing:0.5 }}>
           {selected==="free" ? "Continue with Free" : "Start Free — 1 Month On Us"}
         </button>
@@ -4960,7 +4972,7 @@ function ProgressPhotosPage({ onBack }) {
           <div style={{ fontFamily:FONT,fontWeight:900,fontSize:22,color:"#fff",marginBottom:10,textAlign:"center" }}>Progress Photos</div>
           <div style={{ fontFamily:FONT,fontSize:13,color:"#888",marginBottom:8,textAlign:"center",lineHeight:1.6 }}>Upload weekly photos and watch your transformation. Side-by-side comparison included.</div>
           <div style={{ fontFamily:FONT,fontSize:12,color:"#555",marginBottom:28,textAlign:"center" }}>Premium feature</div>
-          <button onClick={()=>setIsPremium(true)}
+          <button onClick={()=>startCheckout()}
             style={{ width:"100%",maxWidth:280,padding:"15px 0",borderRadius:50,background:PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff",cursor:"pointer",boxShadow:"0 4px 24px rgba(0,163,255,0.4)" }}>
             Upgrade to Premium
           </button>
@@ -5671,13 +5683,7 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
         {subTab===2 && (
           isPremium ? (
             <GroceryTab checkedGrocery={checkedGrocery} setCheckedGrocery={setCheckedGrocery}/>
-          ) : <PremiumGate feature="Grocery List" onUpgrade={async ()=>{
-              try {
-                const res = await apiCall("/payments/create-checkout",{method:"POST",body:JSON.stringify({plan:"monthly"})});
-                if (res?.data?.url) window.location.href = res.data.url;
-                else setIsPremium(true); // demo fallback
-              } catch(_e){ setIsPremium(true); }
-            }}/>
+          ) : <PremiumGate feature="Grocery List"/>
         )}
 
         {subTab===3 && (
