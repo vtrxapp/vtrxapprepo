@@ -124,4 +124,80 @@ const verifySession = async (req, res) => {
   }
 };
 
-module.exports = { createCheckout, createPortal, getStatus, webhook, verifySession };
+// ── GET /api/payments/methods ─────────────────────────────────────────────────
+// Returns the user's saved Stripe payment methods (cards only)
+const getPaymentMethods = async (req, res) => {
+  try {
+    const sub = await prisma.subscription.findUnique({ where: { userId: req.user.id } });
+
+    if (!sub?.stripeCustomerId) {
+      return res.json({ success: true, data: { methods: [] } });
+    }
+
+    const StripeSDK      = require('stripe');
+    const stripeClient   = new StripeSDK(process.env.STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
+
+    const [methodsList, customer] = await Promise.all([
+      stripeClient.paymentMethods.list({ customer: sub.stripeCustomerId, type: 'card' }),
+      stripeClient.customers.retrieve(sub.stripeCustomerId),
+    ]);
+
+    const defaultId = customer.invoice_settings?.default_payment_method;
+
+    const methods = methodsList.data.map(m => ({
+      id:        m.id,
+      brand:     m.card.brand,
+      last4:     m.card.last4,
+      expMonth:  m.card.exp_month,
+      expYear:   m.card.exp_year,
+      isDefault: m.id === defaultId,
+    }));
+
+    res.json({ success: true, data: { methods } });
+  } catch (err) {
+    logger.error('Get payment methods error:', err);
+    res.status(500).json({ success: false, message: 'Failed to fetch payment methods' });
+  }
+};
+
+// ── GET /api/payments/invoices ────────────────────────────────────────────────
+// Returns the user's Stripe invoice history
+const getBillingHistory = async (req, res) => {
+  try {
+    const sub = await prisma.subscription.findUnique({ where: { userId: req.user.id } });
+
+    if (!sub?.stripeCustomerId) {
+      return res.json({ success: true, data: { invoices: [] } });
+    }
+
+    const StripeSDK    = require('stripe');
+    const stripeClient = new StripeSDK(process.env.STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
+
+    const list = await stripeClient.invoices.list({
+      customer: sub.stripeCustomerId,
+      limit:    24,
+      status:   'paid',
+    });
+
+    const invoices = list.data.map(inv => {
+      const lineDesc = inv.lines?.data?.[0]?.description || 'Premium Plan';
+      const cleanDesc = lineDesc.replace(/\(.*?\)/g, '').trim() || 'Premium Plan';
+      return {
+        id:     inv.id,
+        date:   new Date(inv.created * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        desc:   cleanDesc,
+        amount: `$${(inv.amount_paid / 100).toFixed(2)}`,
+        method: inv.payment_intent ? (inv.charge?.payment_method_details?.card?.brand || '') : '',
+        last4:  inv.charge?.payment_method_details?.card?.last4 || '',
+        status: inv.status === 'paid' ? 'Paid' : inv.status === 'open' ? 'Due' : 'Failed',
+      };
+    });
+
+    res.json({ success: true, data: { invoices } });
+  } catch (err) {
+    logger.error('Get billing history error:', err);
+    res.status(500).json({ success: false, message: 'Failed to fetch billing history' });
+  }
+};
+
+module.exports = { createCheckout, createPortal, getStatus, webhook, verifySession, getPaymentMethods, getBillingHistory };

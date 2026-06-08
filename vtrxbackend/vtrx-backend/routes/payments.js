@@ -19,5 +19,7 @@ router.post('/create-checkout', payment.createCheckout);
 router.post('/portal',          payment.createPortal);
 router.get('/status',           payment.getStatus);
 router.post('/verify-session',  payment.verifySession);
+router.get('/methods',          payment.getPaymentMethods);
+router.get('/invoices',         payment.getBillingHistory);
 
 module.exports = router;
