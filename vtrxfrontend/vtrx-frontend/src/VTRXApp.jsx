@@ -1816,12 +1816,13 @@ function NavBar({ title, step, total, onBack, onSkip }) {
 
 // ─── Preference screens ───────────────────────────────────────────────────────
 function ForgotPasswordPage({ onBack }) {
-  const [step, setStep]       = useState("email"); // email → code → done
-  const [email, setEmail]     = useState("");
-  const [code,  setCode]      = useState("");
-  const [newPass, setNewPass] = useState("");
-  const [err, setErr]         = useState("");
-  const [loading, setLoading] = useState(false);
+  const [step, setStep]           = useState("email"); // email → code → done
+  const [email, setEmail]         = useState("");
+  const [code,  setCode]          = useState("");
+  const [newPass, setNewPass]     = useState("");
+  const [confirmPass, setConfirmPass] = useState("");
+  const [err, setErr]             = useState("");
+  const [loading, setLoading]     = useState(false);
 
   const sendCode = async () => {
     if (!email.trim()) { setErr("Please enter your email."); return; }
@@ -1833,9 +1834,15 @@ function ForgotPasswordPage({ onBack }) {
     finally { setLoading(false); }
   };
 
+  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+
   const resetPass = async () => {
     if (!code.trim())    { setErr("Enter the verification code."); return; }
-    if (newPass.length < 8) { setErr("Password must be at least 8 characters."); return; }
+    if (!passwordRegex.test(newPass)) {
+      setErr("Password must be at least 8 characters and include uppercase, lowercase, and a number.");
+      return;
+    }
+    if (newPass !== confirmPass) { setErr("Passwords do not match."); return; }
     setErr(""); setLoading(true);
     try {
       await apiCall("/auth/reset-password", { method:"POST", body:JSON.stringify({ email:email.trim().toLowerCase(), code:code.trim(), newPassword:newPass }) });
@@ -1889,7 +1896,10 @@ function ForgotPasswordPage({ onBack }) {
               inputMode="numeric" maxLength={6}
               style={{ width:"100%",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:14,padding:"15px 18px",fontFamily:FONT,fontSize:20,color:"#fff",outline:"none",boxSizing:"border-box",marginBottom:16,letterSpacing:6,textAlign:"center" }}/>
             <div style={{ fontFamily:FONT,fontSize:11,fontWeight:700,color:"#888",letterSpacing:1,marginBottom:6 }}>NEW PASSWORD</div>
-            <input value={newPass} onChange={e=>setNewPass(e.target.value)} placeholder="Min 8 characters" type="password"
+            <input value={newPass} onChange={e=>setNewPass(e.target.value)} placeholder="Min 8 chars, uppercase & number" type="password"
+              style={{ width:"100%",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:14,padding:"15px 18px",fontFamily:FONT,fontSize:16,color:"#fff",outline:"none",boxSizing:"border-box",marginBottom:16 }}/>
+            <div style={{ fontFamily:FONT,fontSize:11,fontWeight:700,color:"#888",letterSpacing:1,marginBottom:6 }}>CONFIRM NEW PASSWORD</div>
+            <input value={confirmPass} onChange={e=>setConfirmPass(e.target.value)} placeholder="Re-enter new password" type="password"
               style={{ width:"100%",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:14,padding:"15px 18px",fontFamily:FONT,fontSize:16,color:"#fff",outline:"none",boxSizing:"border-box",marginBottom:16 }}/>
             {err && <div style={{ fontFamily:FONT,fontSize:13,color:"#EF4444",marginBottom:12,textAlign:"center" }}>{err}</div>}
             <button onClick={resetPass} disabled={loading} style={{ width:"100%",padding:"16px 0",borderRadius:50,background:loading?"#555":PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff",cursor:loading?"not-allowed":"pointer",letterSpacing:1,opacity:loading?0.7:1 }}>
@@ -6160,7 +6170,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
 
 function VTRXAppInner() {
 
-  const { user, profileImg, isPremium, setIsPremium } = useUser();
+  const { user, setUser, profileImg, isPremium, setIsPremium } = useUser();
 
   // ── Phase / onboarding state ──────────────────────────────────────────────
   const [phase, setPhase]           = useState("onboarding");
@@ -6395,6 +6405,8 @@ function VTRXAppInner() {
     } catch(_e){} finally {
       clearAuth();
     }
+    setUser({ name:"", age:"", gender:"", weight:"", height:"", goal:"", level:"", days:5 });
+    setIsPremium(false);
     setPhase("onboarding");
     setScreen(0);
     setActiveTab(0);

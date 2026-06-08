@@ -144,7 +144,32 @@ const confirmSignUp = async ({ email, code, verificationId }) => {
 
     logger.error('Clerk confirmSignUp error:', JSON.stringify(err, null, 2));
     const firstError = err?.errors?.[0] || {};
-    const errorMsg   = firstError.longMessage || firstError.message || err.message || 'Verification failed';
+    // Clerk API returns snake_case in raw JSON (long_message), JS object may have either
+    const errorMsg = firstError.longMessage || firstError.long_message || firstError.message || err.message || 'Verification failed';
+
+    // strategy_for_user_invalid: no pending verification (e.g. Clerk auto-verified in dev mode)
+    // verification_already_verified: email already confirmed
+    if (
+      firstError.code === 'strategy_for_user_invalid' ||
+      firstError.code === 'verification_already_verified' ||
+      errorMsg.toLowerCase().includes('strategy')
+    ) {
+      // Re-check current verification status — if already verified, accept as success
+      try {
+        const recheck = await clerkAPI('GET', `/users?email_address=${encodeURIComponent(email)}`);
+        const recheckUsers = toArray(recheck);
+        if (recheckUsers.length) {
+          const addr = recheckUsers[0].email_addresses?.find(a => a.email_address === email);
+          if (addr?.verification?.status === 'verified') {
+            logger.info(`Email ${email} is already verified — treating confirmation as success`);
+            return { success: true };
+          }
+        }
+      } catch (_e) {}
+      const e = new Error('No pending verification found. Please request a new code.');
+      e.name = 'CodeMismatchException';
+      throw e;
+    }
 
     if (
       firstError.code === 'form_code_incorrect' ||
@@ -164,7 +189,7 @@ const confirmSignUp = async ({ email, code, verificationId }) => {
       throw e;
     }
 
-    const finalError = new Error(errorMsg);
+    const finalError = new Error(errorMsg || 'Verification failed. Please try again.');
     finalError.name  = 'VerificationFailedException';
     throw finalError;
   }
@@ -296,26 +321,120 @@ const resendConfirmationCode = async ({ email }) => {
 
 
 // ==================== FORGOT PASSWORD ====================
-// Clerk BAPI has no built-in "send password reset email" endpoint.
-// A production implementation would: generate a time-limited code, store it in
-// your DB, and send it via an email service (SendGrid, Resend, SES, etc.).
-// Then confirmForgotPassword would verify the code and PATCH /v1/users/{id}.
-//
-// For now this is a safe stub — the controller always returns a success message
-// regardless (security best practice: never confirm whether an email exists).
+// Uses Clerk's email_code verification flow: prepare_verification sends a code
+// to the user's email, which is then submitted in confirmForgotPassword.
+// No external email service required — Clerk delivers the code.
 const forgotPassword = async ({ email }) => {
-  logger.info(`Password reset requested for: ${email} (stub — email service not wired)`);
-  return { success: true };
+  try {
+    const searchResult = await clerkAPI('GET', `/users?email_address=${encodeURIComponent(email)}`);
+    const users        = toArray(searchResult);
+
+    if (!users.length) {
+      // Security: never reveal whether an email is registered
+      logger.info(`Password reset requested for unregistered email: ${email}`);
+      return { success: true };
+    }
+
+    const user      = users[0];
+    const emailAddr = user.email_addresses?.find(a => a.email_address === email);
+
+    if (!emailAddr) {
+      return { success: true };
+    }
+
+    await clerkAPI('POST', `/email_addresses/${emailAddr.id}/prepare_verification`, { strategy: 'email_code' });
+
+    logger.info(`Password reset code sent to ${email} via Clerk`);
+    return { success: true };
+  } catch (err) {
+    // Always return success — never reveal whether the email exists
+    logger.error(`forgotPassword error for ${email}: ${JSON.stringify(err)}`);
+    return { success: true };
+  }
 };
 
 
 // ==================== CONFIRM FORGOT PASSWORD ====================
-// Requires a custom code-storage + email service (see forgotPassword above).
+// 1. Find the user in Clerk by email
+// 2. Call attempt_verification to confirm code ownership
+// 3. PATCH /users/{id} to update the password
 const confirmForgotPassword = async ({ email, code, newPassword }) => {
-  logger.warn(`confirmForgotPassword called for ${email} but is not yet implemented`);
-  const e = new Error('Password reset by code is not yet implemented. Please contact support.');
-  e.name  = 'NotImplementedException';
-  throw e;
+  try {
+    const searchResult = await clerkAPI('GET', `/users?email_address=${encodeURIComponent(email)}`);
+    const users        = toArray(searchResult);
+
+    if (!users.length) {
+      const e = new Error('No account found with this email.');
+      e.name  = 'UserNotFoundException';
+      throw e;
+    }
+
+    const user      = users[0];
+    const emailAddr = user.email_addresses?.find(a => a.email_address === email);
+
+    if (!emailAddr) {
+      const e = new Error('No account found with this email.');
+      e.name  = 'UserNotFoundException';
+      throw e;
+    }
+
+    // Verify the reset code — proves the requester owns the email
+    const result = await clerkAPI(
+      'POST',
+      `/email_addresses/${emailAddr.id}/attempt_verification`,
+      { code: String(code) }
+    );
+
+    if (result?.verification?.status !== 'verified') {
+      const e = new Error('Invalid verification code.');
+      e.name  = 'CodeMismatchException';
+      throw e;
+    }
+
+    // Update the password in Clerk
+    await clerkAPI('PATCH', `/users/${user.id}`, { password: newPassword });
+
+    logger.info(`✅ Password reset successful for ${email}`);
+    return { success: true };
+  } catch (err) {
+    if (
+      err.name === 'CodeMismatchException' ||
+      err.name === 'ExpiredCodeException'  ||
+      err.name === 'UserNotFoundException'
+    ) throw err;
+
+    logger.error('confirmForgotPassword error:', JSON.stringify(err, null, 2));
+    const firstError = err?.errors?.[0] || {};
+    const errorMsg   = firstError.longMessage || firstError.long_message || firstError.message || err.message || 'Password reset failed';
+
+    if (
+      firstError.code === 'form_code_incorrect' ||
+      errorMsg.toLowerCase().includes('incorrect') ||
+      errorMsg.toLowerCase().includes('invalid code')
+    ) {
+      const e = new Error('Invalid verification code.');
+      e.name  = 'CodeMismatchException';
+      throw e;
+    }
+    if (
+      firstError.code === 'form_code_expired' ||
+      errorMsg.toLowerCase().includes('expired')
+    ) {
+      const e = new Error('Code expired. Please request a new one.');
+      e.name  = 'ExpiredCodeException';
+      throw e;
+    }
+    if (
+      firstError.code?.includes('password') ||
+      errorMsg.toLowerCase().includes('password')
+    ) {
+      const e = new Error(errorMsg || 'Password does not meet requirements.');
+      e.name  = 'InvalidPasswordException';
+      throw e;
+    }
+
+    throw new Error(errorMsg);
+  }
 };
 
 
