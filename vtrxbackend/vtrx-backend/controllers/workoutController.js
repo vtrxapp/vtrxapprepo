@@ -109,6 +109,7 @@ const logWorkout = async (req, res) => {
         caloriesBurned: caloriesBurned ? parseInt(caloriesBurned) : null,
         volume:        volume ? parseFloat(volume) : null,
         notes,
+        energyLevel:   energyLevel || null,
         // Create exercise sets in the same transaction
         sets: {
           create: exercises?.flatMap(ex =>
@@ -259,7 +260,7 @@ const generateAndSaveAISummary = async ({
   userGoal,
   streakDays,
 }) => {
-  const { summary, tokensUsed, model } = await aiService.generateWorkoutSummary({
+  const { summary, keyInsights, recommendations, tokensUsed, model } = await aiService.generateWorkoutSummary({
     workoutName,
     workoutType,
     duration,
@@ -274,8 +275,8 @@ const generateAndSaveAISummary = async ({
     data: {
       workoutLogId,
       summary,
-      keyInsights:     [],
-      recommendations: [],
+      keyInsights:     keyInsights     || [],
+      recommendations: recommendations || [],
       energyKey:       energyLevel,
       model,
       tokensUsed,
@@ -318,6 +319,259 @@ const getWeeklyStats = async (req, res) => {
   }
 };
 
+// ── Energy-level adaptation matrix ───────────────────────────────────────────
+const ENERGY_ADAPTATION = {
+  empty: {
+    label:          'Recovery Day',
+    description:    'Low energy detected — switching to a gentle recovery session.',
+    durationFactor: 0.5,
+    intensityLock:  'Beginner',
+    preferredTypes: ['RECOVERY', 'MOBILITY'],
+  },
+  low: {
+    label:          'Reduced Intensity',
+    description:    'Low energy — shorter duration and reduced intensity.',
+    durationFactor: 0.7,
+    intensityLock:  null,
+    preferredTypes: ['CARDIO', 'MOBILITY'],
+  },
+  okay: {
+    label:          'Standard Workout',
+    description:    'Normal energy — full workout as planned.',
+    durationFactor: 1.0,
+    intensityLock:  null,
+    preferredTypes: null,
+  },
+  good: {
+    label:          'Full Intensity',
+    description:    'Good energy — pushing to full effort today.',
+    durationFactor: 1.0,
+    intensityLock:  null,
+    preferredTypes: null,
+  },
+  peak: {
+    label:          'Max Performance',
+    description:    'Peak energy — high-intensity session unlocked.',
+    durationFactor: 1.2,
+    intensityLock:  null,
+    preferredTypes: ['HIIT', 'STRENGTH'],
+  },
+};
+
+// ── GET /api/workouts/recommend — Personalised workout recommendation ─────────
+const getRecommendation = async (req, res) => {
+  const { energyLevel = 'okay' } = req.query;
+  const user = req.user;
+
+  try {
+    const adaptation = ENERGY_ADAPTATION[energyLevel] || ENERGY_ADAPTATION.okay;
+    const goal       = (user.goal || 'general fitness').toLowerCase();
+    const level      = user.fitnessLevel || 'Intermediate';
+    const equipment  = user.equipment    || [];
+    const location   = user.location     || 'Full Gym';
+    const daysPerWeek = user.daysPerWeek || 3;
+
+    // ── Determine preferred workout type from goal ──────────────────────────
+    let workoutType = 'STRENGTH';
+    if (goal.includes('weight') || goal.includes('fat') || goal.includes('loss')) workoutType = 'HIIT';
+    else if (goal.includes('cardio') || goal.includes('endurance'))               workoutType = 'CARDIO';
+    else if (goal.includes('mobility') || goal.includes('flex'))                  workoutType = 'MOBILITY';
+
+    // Energy adaptation overrides type
+    if (adaptation.preferredTypes) workoutType = adaptation.preferredTypes[0];
+
+    const targetDuration = Math.round(
+      (user.workoutTime
+        ? parseInt((user.workoutTime || '45').match(/\d+/)?.[0]) || 45
+        : 45) * adaptation.durationFactor
+    );
+
+    const difficulty = adaptation.intensityLock || level;
+
+    // ── Try to find a matching workout in the database ──────────────────────
+    const dbWorkout = await prisma.workout.findFirst({
+      where: {
+        isPublic:   true,
+        type:       workoutType,
+        difficulty: { in: [difficulty, level] },
+      },
+      include: {
+        exercises: {
+          include:  { exercise: true },
+          orderBy:  { order: 'asc' },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // ── Build recommendation object ─────────────────────────────────────────
+    const recommendation = dbWorkout
+      ? {
+          source:       'database',
+          workoutId:    dbWorkout.id,
+          name:         dbWorkout.name,
+          type:         dbWorkout.type,
+          duration:     targetDuration,
+          calories:     dbWorkout.calories || Math.round(targetDuration * 7),
+          difficulty:   dbWorkout.difficulty,
+          description:  dbWorkout.description,
+          imageUrl:     dbWorkout.imageUrl,
+          exercises:    dbWorkout.exercises.map(we => ({
+            id:         we.exercise.id,
+            name:       we.exercise.name,
+            muscleGroup: we.exercise.muscleGroup,
+            equipment:  we.exercise.equipment,
+            sets:       we.sets,
+            reps:       we.reps,
+            restSecs:   we.restSecs,
+            videoUrl:   we.exercise.videoUrl,
+            ymoveId:    we.exercise.ymoveId,
+            thumbnailUrl: we.exercise.thumbnailUrl,
+          })),
+        }
+      : {
+          source:      'generated',
+          name:        buildWorkoutName(workoutType, level, energyLevel),
+          type:        workoutType,
+          duration:    targetDuration,
+          calories:    Math.round(targetDuration * 7),
+          difficulty:  difficulty,
+          description: adaptation.description,
+          exercises:   [],
+        };
+
+    // ── Build alternatives for each energy swap ─────────────────────────────
+    const alternativeTypes = {
+      machine:  'STRENGTH',
+      short:    'CARDIO',
+      mobility: 'MOBILITY',
+      recovery: 'RECOVERY',
+    };
+
+    const alternatives = await Promise.all(
+      Object.entries(alternativeTypes).map(async ([key, type]) => {
+        const alt = await prisma.workout.findFirst({
+          where: { isPublic: true, type },
+          select: { id: true, name: true, type: true, duration: true, calories: true, difficulty: true },
+        });
+        return alt
+          ? { ...alt, swapReason: key, duration: Math.round(alt.duration * adaptation.durationFactor) }
+          : null;
+      })
+    );
+
+    res.json({
+      success: true,
+      data: {
+        recommendation,
+        energyAdaptation: {
+          level:       energyLevel,
+          label:       adaptation.label,
+          description: adaptation.description,
+        },
+        userContext: {
+          goal:       user.goal,
+          level:      user.fitnessLevel,
+          equipment,
+          location,
+          daysPerWeek,
+        },
+        alternatives: alternatives.filter(Boolean),
+      },
+    });
+  } catch (error) {
+    logger.error('getRecommendation error:', error);
+    res.status(500).json({ success: false, message: 'Failed to generate recommendation' });
+  }
+};
+
+const buildWorkoutName = (type, level, energy) => {
+  const prefix = energy === 'empty' ? 'Recovery' : energy === 'peak' ? 'Power' : '';
+  const names = {
+    STRENGTH: `${prefix} Strength Session`.trim(),
+    HIIT:     `${prefix} HIIT Circuit`.trim(),
+    CARDIO:   `${prefix} Cardio Burn`.trim(),
+    MOBILITY: 'Mobility & Stretch Flow',
+    RECOVERY: 'Active Recovery Session',
+  };
+  return names[type] || 'Custom Workout';
+};
+
+// ── POST /api/workouts/video-progress — Save video watch position ─────────────
+const saveVideoProgress = async (req, res) => {
+  const { ymoveId, exerciseId, positionSecs, durationSecs, completed } = req.body;
+
+  if (!ymoveId && !exerciseId) {
+    return res.status(400).json({ success: false, message: 'ymoveId or exerciseId required' });
+  }
+
+  try {
+    const progress = await prisma.videoProgress.upsert({
+      where: ymoveId
+        ? { userId_ymoveId: { userId: req.user.id, ymoveId } }
+        : { userId_ymoveId: { userId: req.user.id, ymoveId: exerciseId } },
+      update: {
+        positionSecs: positionSecs ?? 0,
+        durationSecs: durationSecs ?? null,
+        completed:    completed    ?? false,
+      },
+      create: {
+        userId:      req.user.id,
+        ymoveId:     ymoveId || exerciseId,
+        exerciseId:  exerciseId || null,
+        positionSecs: positionSecs ?? 0,
+        durationSecs: durationSecs ?? null,
+        completed:    completed    ?? false,
+      },
+    });
+    res.json({ success: true, data: { progress } });
+  } catch (error) {
+    logger.error('saveVideoProgress error:', error);
+    res.status(500).json({ success: false, message: 'Failed to save progress' });
+  }
+};
+
+// ── GET /api/workouts/video-progress — Get video progress for exercises ────────
+const getVideoProgress = async (req, res) => {
+  const { ids } = req.query; // comma-separated ymove IDs
+
+  try {
+    const ymoveIds = ids ? ids.split(',').filter(Boolean) : [];
+
+    const progressRecords = await prisma.videoProgress.findMany({
+      where: {
+        userId:  req.user.id,
+        ...(ymoveIds.length > 0 && { ymoveId: { in: ymoveIds } }),
+      },
+    });
+
+    const progressMap = progressRecords.reduce((acc, p) => {
+      if (p.ymoveId) acc[p.ymoveId] = p;
+      return acc;
+    }, {});
+
+    res.json({ success: true, data: { progress: progressMap } });
+  } catch (error) {
+    logger.error('getVideoProgress error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch progress' });
+  }
+};
+
+// ── GET /api/workouts/exercise-video/:ymoveId — Fresh video URL proxy ─────────
+const getExerciseVideoUrl = async (req, res) => {
+  const { ymoveId } = req.params;
+  try {
+    const url = await ymove.getExerciseVideoUrl(ymoveId);
+    if (!url) {
+      return res.status(404).json({ success: false, message: 'Video not available' });
+    }
+    res.json({ success: true, data: { videoUrl: url, expiresIn: 48 * 3600 } });
+  } catch (error) {
+    logger.error('getExerciseVideoUrl error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch video URL' });
+  }
+};
+
 module.exports = {
   getWorkouts,
   getWorkoutById,
@@ -325,4 +579,8 @@ module.exports = {
   getWorkoutHistory,
   getAISummary,
   getWeeklyStats,
+  getRecommendation,
+  saveVideoProgress,
+  getVideoProgress,
+  getExerciseVideoUrl,
 };
