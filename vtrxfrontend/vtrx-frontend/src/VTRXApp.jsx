@@ -4488,9 +4488,24 @@ function UpgradePlanPage({ onBack }) {
 
 // ─ Cancel Subscription ────────────────────────────────────────────────────────
 function CancelSubscriptionPage({ onBack }) {
-  const [step, setStep]     = useState(0); // 0=confirm 1=reason 2=done
-  const [reason, setReason] = useState("");
+  const [step, setStep]       = useState(0); // 0=confirm 1=reason 2=redirecting
+  const [reason, setReason]   = useState("");
+  const [loading, setLoading] = useState(false);
+  const [err, setErr]         = useState("");
   const reasons = ["Too expensive","Not using it enough","Missing features I need","Found a better app","Technical issues","Other"];
+
+  const openPortal = async () => {
+    setLoading(true); setErr("");
+    try {
+      const data = await apiCall("/payments/portal", { method:"POST" });
+      if (data.data?.url) {
+        window.location.href = data.data.url;
+      }
+    } catch(e) {
+      setErr(e.message || "Could not open billing portal. Please try again.");
+      setLoading(false);
+    }
+  };
 
   return (
     <SubShell title="CANCEL SUBSCRIPTION" onBack={onBack}>
@@ -4499,9 +4514,9 @@ function CancelSubscriptionPage({ onBack }) {
           <div style={{ background:"#1c0c0c",border:"1px solid #EF444433",borderRadius:20,padding:"24px 20px",textAlign:"center",marginBottom:20 }}>
             <div style={{ width:64,height:64,borderRadius:"50%",background:"#EF444422",border:"1px solid #EF444455",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 12px" }}><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></div>
             <div style={{ fontFamily:FONT,fontWeight:800,fontSize:18,color:"#fff",marginBottom:8 }}>We're sorry to see you go</div>
-            <div style={{ fontFamily:FONT,fontSize:14,color:"#888888",lineHeight:1.65 }}>Cancelling will end your Premium access on Dec 15, 2024. You'll lose access to AI summaries, unlimited videos, and challenges.</div>
+            <div style={{ fontFamily:FONT,fontSize:14,color:"#888888",lineHeight:1.65 }}>Cancelling will end your Premium access at the end of your current billing period. You'll lose access to AI summaries, unlimited videos, and challenges.</div>
           </div>
-          <div style={{ background:"#ffffff",borderRadius:20,border:"1px solid #e8e8e8",padding:"18px",marginBottom:16 }}>
+          <div style={{ background:"rgba(255,255,255,0.05)",borderRadius:20,border:`1px solid ${BORDER}`,padding:"18px",marginBottom:16 }}>
             <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#888888",marginBottom:14 }}>BEFORE YOU GO, YOU'LL LOSE:</div>
             {["Unlimited workout videos","AI-powered summaries","Money-backed challenges","Advanced analytics"].map((f,i)=>(
               <div key={i} style={{ display:"flex",alignItems:"center",gap:12,marginBottom:i<3?12:0 }}>
@@ -4535,19 +4550,10 @@ function CancelSubscriptionPage({ onBack }) {
               </button>
             ))}
           </div>
-          <button onClick={()=>reason&&setStep(2)} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:reason?"#EF4444":"#1a1a1a",border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:reason?"#fff":"#333",letterSpacing:1,cursor:reason?"pointer":"not-allowed" }}>
-            CONFIRM CANCELLATION
-          </button>
-        </div>
-      )}
-
-      {step === 2 && (
-        <div style={{ textAlign:"center",paddingTop:40,animation:"fadeUp 0.4s ease both" }}>
-          <div style={{ width:72,height:72,borderRadius:"50%",background:"#22C55E22",border:"2px solid #22C55E55",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px" }}><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg></div>
-          <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff",marginBottom:8 }}>Subscription Cancelled</div>
-          <div style={{ fontFamily:FONT,fontSize:14,color:"#888888",lineHeight:1.65,marginBottom:32 }}>Your Premium access continues until Dec 15, 2024. We hope to see you back soon.</div>
-          <button onClick={onBack} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1,cursor:"pointer" }}>
-            Back to Account
+          {err && <div style={{ fontFamily:FONT,fontSize:13,color:"#EF4444",marginBottom:12,textAlign:"center" }}>{err}</div>}
+          <button onClick={()=>reason&&openPortal()} disabled={loading||!reason}
+            style={{ width:"100%",padding:"15px 0",borderRadius:50,background:reason&&!loading?"#EF4444":"#1a1a1a",border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:reason&&!loading?"#fff":"#333",letterSpacing:1,cursor:reason&&!loading?"pointer":"not-allowed" }}>
+            {loading ? "OPENING BILLING PORTAL..." : "CONFIRM CANCELLATION"}
           </button>
         </div>
       )}
@@ -6261,6 +6267,8 @@ function VTRXAppInner() {
         if (u.streakDays)     setStreakDay(u.streakDays);
         if (u.workoutsTotal)  setWorkoutsTotal(u.workoutsTotal);
         if (u.isPremium)      setIsPremium(true);
+        // Valid token + profile loaded → restore dashboard without re-running onboarding
+        setPhase("dashboard");
       }
       // Also load weekly stats
       apiCall("/workouts/stats").then(sr=>{
@@ -6271,17 +6279,17 @@ function VTRXAppInner() {
 
   // ── Handle Stripe redirect on app load ─────────────────────────────────────
   useEffect(()=>{
-    const params = new URLSearchParams(window.location.search);
+    const params    = new URLSearchParams(window.location.search);
     const sessionId = params.get("session_id");
     if (sessionId && getAuthToken()) {
       apiCall("/payments/verify-session", {
         method: "POST",
-        body: JSON.stringify({ sessionId }),
+        body:   JSON.stringify({ sessionId }),
       }).then(res=>{
         if (res?.data?.isPremium) {
           setIsPremium(true);
-          // Clean URL
-          window.history.replaceState({}, "", window.location.pathname);
+          setPhase("dashboard");
+          window.history.replaceState({}, "", "/");
         }
       }).catch(()=>{});
     }
