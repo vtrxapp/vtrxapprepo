@@ -459,21 +459,22 @@ const getRecommendation = async (req, res) => {
 
     const difficulty = adaptation.intensityLock || level;
 
-    // ── Try to find a matching workout in the database ──────────────────────
-    const dbWorkout = await prisma.workout.findFirst({
-      where: {
-        isPublic:   true,
-        type:       workoutType,
-        difficulty: { in: [difficulty, level] },
-      },
+    // ── Find all matching workouts, then pick one by energy level for variety ──
+    const allMatching = await prisma.workout.findMany({
+      where: { isPublic: true, type: workoutType },
       include: {
         exercises: {
           include:  { exercise: true },
           orderBy:  { order: 'asc' },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { name: 'asc' },
     });
+
+    // Each energy level picks a different workout index so exercises visibly change
+    const ENERGY_PICK = { empty: 0, low: 0, okay: 0, good: 1, peak: 2 };
+    const pickIdx = ENERGY_PICK[energyLevel] ?? 0;
+    const dbWorkout = allMatching[Math.min(pickIdx, Math.max(allMatching.length - 1, 0))] || allMatching[0] || null;
 
     // ── Build recommendation object ─────────────────────────────────────────
     const recommendation = dbWorkout

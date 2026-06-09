@@ -262,8 +262,8 @@ function EnergyFaceIcon({ type, color, size=28 }) {
   if (type==="low")   return <svg {...s}><circle cx="12" cy="12" r="10"/><line x1="8" y1="15" x2="16" y2="15"/><line x1="9" y1="9" x2="9.01" y2="9" strokeWidth="3" strokeLinecap="round"/><line x1="15" y1="9" x2="15.01" y2="9" strokeWidth="3" strokeLinecap="round"/></svg>;
   if (type==="okay")  return <svg {...s}><circle cx="12" cy="12" r="10"/><path d="M8 14s1 1.5 4 1.5 4-1.5 4-1.5"/><line x1="9" y1="9" x2="9.01" y2="9" strokeWidth="3" strokeLinecap="round"/><line x1="15" y1="9" x2="15.01" y2="9" strokeWidth="3" strokeLinecap="round"/></svg>;
   if (type==="good")  return <svg {...s}><circle cx="12" cy="12" r="10"/><path d="M8 13s1 3 4 3 4-3 4-3"/><line x1="9" y1="9" x2="9.01" y2="9" strokeWidth="3" strokeLinecap="round"/><line x1="15" y1="9" x2="15.01" y2="9" strokeWidth="3" strokeLinecap="round"/></svg>;
-  // peak — flame icon
-  return <svg {...s} stroke={color}><path d="M12 2c0 6-6 8-6 14a6 6 0 0012 0c0-6-6-8-6-14z"/><path d="M12 12c0 3-2 4-2 6a2 2 0 004 0c0-2-2-3-2-6z" opacity="0.5"/></svg>;
+  // peak — lightning bolt (maximum effort / explosive energy)
+  return <svg {...s} stroke={color} fill={color}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>;
 }
 
 const ENERGY_LEVELS = [
@@ -6725,12 +6725,19 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
   const greeting    = hr < 12 ? "Good Morning" : hr < 17 ? "Good Afternoon" : "Good Evening";
   const displayName = (user?.name || "").split(" ")[0] || "Athlete";
 
-  const exThumbs = apiWorkout?.exercises?.filter(e=>e.thumbnailUrl).slice(0,3).map(e=>e.thumbnailUrl) || [];
-  const THUMBS = exThumbs.length >= 3 ? exThumbs : [
-    "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=200&q=70",
-    "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=200&q=70",
-    "https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?w=200&q=70",
-  ];
+  // Workout-type banner images for the card header
+  const WORKOUT_BANNERS = {
+    STRENGTH: "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=300&q=70",
+    CARDIO:   "https://images.unsplash.com/photo-1538805060514-97d9cc17730c?w=300&q=70",
+    HIIT:     "https://images.unsplash.com/photo-1549060279-7e168fcee0c2?w=300&q=70",
+    MOBILITY: "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=300&q=70",
+    RECOVERY: "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=300&q=70",
+  };
+  const workoutBanner = WORKOUT_BANNERS[workout.type] || WORKOUT_BANNERS.STRENGTH;
+  // Exercise list for preview — uses actual API exercises, padded to min 4
+  const exList   = apiWorkout?.exercises || [];
+  const padCount = Math.max(4, exList.length);
+  const exPreview = Array.from({length: padCount}, (_, i) => exList[i] || null);
 
   return (
     <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column" }}>
@@ -6901,8 +6908,10 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
           </div>
           <div style={{ display:"flex",gap:13,marginBottom:15 }}>
             <div style={{ width:88,height:88,borderRadius:14,overflow:"hidden",flexShrink:0,position:"relative" }}>
-              <img src={THUMBS[0]} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
-              <div style={{ position:"absolute",inset:0,background:"rgba(0,0,0,0.25)" }}/>
+              <img src={workoutBanner} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+              <div style={{ position:"absolute",inset:0,background:"rgba(0,0,0,0.3)",display:"flex",alignItems:"center",justifyContent:"center" }}>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>
+              </div>
             </div>
             <div style={{ flex:1 }}>
               <div style={{ fontFamily:FONT,fontWeight:800,fontSize:17,color:"#fff",marginBottom:3 }}>{workout.name}</div>
@@ -6921,15 +6930,21 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
             <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#fff" }}>Exercise Preview</div>
             <span onClick={()=>onNavigate("workoutDetail")} style={{ fontFamily:FONT,fontSize:12,color:PRIMARY,cursor:"pointer",fontWeight:600 }}>View All</span>
           </div>
-          <div style={{ display:"flex",gap:9,marginBottom:16 }}>
-            {THUMBS.map((src,i)=>(
-              <div key={i} onClick={()=>onNavigate("workoutDetail")} style={{ position:"relative",width:76,height:76,borderRadius:12,overflow:"hidden",flexShrink:0,cursor:"pointer" }}>
-                <img src={src} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
-                <div style={{ position:"absolute",inset:0,background:"rgba(0,0,0,0.3)",display:"flex",alignItems:"center",justifyContent:"center" }}>
-                  <div style={{ width:28,height:28,borderRadius:"50%",background:PRIMARY,display:"flex",alignItems:"center",justifyContent:"center" }}>
-                    <svg width="10" height="12" viewBox="0 0 10 12" fill="white"><polygon points="0,0 10,6 0,12"/></svg>
-                  </div>
+          <div style={{ display:"flex",gap:9,marginBottom:16,overflowX:"auto" }}>
+            {exPreview.map((ex, i) => ex ? (
+              <div key={i} onClick={()=>onNavigate("workoutDetail")} style={{ position:"relative",minWidth:76,width:76,height:76,borderRadius:12,overflow:"hidden",flexShrink:0,cursor:"pointer" }}>
+                {ex.thumbnailUrl
+                  ? <img src={ex.thumbnailUrl} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+                  : <div style={{ width:"100%",height:"100%",background:`${lvl?lvl.color:PRIMARY}22` }}/>
+                }
+                <div style={{ position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"4px 3px",gap:3 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>
+                  <span style={{ fontFamily:FONT,fontSize:8,color:"#fff",fontWeight:700,textAlign:"center",lineHeight:1.2,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",maxWidth:70 }}>{ex.name?.split(' ').slice(0,3).join(' ')}</span>
                 </div>
+              </div>
+            ) : (
+              <div key={i} onClick={()=>onNavigate("workoutDetail")} style={{ minWidth:76,width:76,height:76,borderRadius:12,background:`${PRIMARY}0d`,border:`1px dashed ${PRIMARY}33`,flexShrink:0,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center" }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.5" opacity="0.4"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>
               </div>
             ))}
           </div>
