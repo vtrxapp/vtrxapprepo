@@ -448,20 +448,48 @@ const getRecommendation = async (req, res) => {
           difficulty:   dbWorkout.difficulty,
           description:  dbWorkout.description,
           imageUrl:     dbWorkout.imageUrl,
-          exercises:    dbWorkout.exercises
-            .filter(we => we.exercise.videoUrl)
-            .map(we => ({
-              id:          we.exercise.id,
-              name:        we.exercise.name,
-              muscleGroup: we.exercise.muscleGroup,
-              equipment:   we.exercise.equipment,
-              sets:        we.sets,
-              reps:        we.reps,
-              restSecs:    we.restSecs,
-              videoUrl:    we.exercise.videoUrl,
-              ymoveId:     we.exercise.ymoveId,
-              thumbnailUrl: we.exercise.thumbnailUrl,
-            })),
+          exercises:    await (async () => {
+            const MIN_VIDEOS = 5;
+            const linked = dbWorkout.exercises
+              .filter(we => we.exercise.videoUrl)
+              .map(we => ({
+                id:          we.exercise.id,
+                name:        we.exercise.name,
+                muscleGroup: we.exercise.muscleGroup,
+                equipment:   we.exercise.equipment,
+                sets:        we.sets,
+                reps:        we.reps,
+                restSecs:    we.restSecs,
+                videoUrl:    we.exercise.videoUrl,
+                ymoveId:     we.exercise.ymoveId,
+                thumbnailUrl: we.exercise.thumbnailUrl,
+              }));
+
+            // Pad to MIN_VIDEOS if the linked exercises don't cover it
+            if (linked.length < MIN_VIDEOS) {
+              const linkedIds = linked.map(e => e.id);
+              const extra = await prisma.exercise.findMany({
+                where: {
+                  videoUrl: { not: null },
+                  id:       { notIn: linkedIds },
+                },
+                take: MIN_VIDEOS - linked.length,
+              });
+              extra.forEach(e => linked.push({
+                id:          e.id,
+                name:        e.name,
+                muscleGroup: e.muscleGroup,
+                equipment:   e.equipment,
+                sets:        3,
+                reps:        '10',
+                restSecs:    60,
+                videoUrl:    e.videoUrl,
+                ymoveId:     e.ymoveId,
+                thumbnailUrl: e.thumbnailUrl,
+              }));
+            }
+            return linked;
+          })(),
         }
       : {
           source:      'generated',
@@ -606,7 +634,7 @@ const getUpcomingWorkouts = async (req, res) => {
           where:   { exercise: { videoUrl: { not: null } } },
           include: { exercise: true },
           orderBy: { order: 'asc' },
-          take: 6,
+          take: 12,
         },
       },
       orderBy: { createdAt: 'asc' },
@@ -638,7 +666,7 @@ const getUpcomingWorkouts = async (req, res) => {
           duration:   Math.round(workout.duration * adaptation.durationFactor),
           calories:   Math.round(workout.calories * adaptation.durationFactor),
           difficulty: workout.difficulty,
-          exercises:  workout.exercises.slice(0, 4).map(we => ({
+          exercises:  workout.exercises.slice(0, 6).map(we => ({
             name: we.exercise.name,
             sets: we.sets,
             reps: we.reps,
