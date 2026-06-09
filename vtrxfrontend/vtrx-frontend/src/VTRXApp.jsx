@@ -406,8 +406,29 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
   const [week, setWeek]     = useState(0); // 0 = current week, cannot go below 0
   const [dir, setDir]       = useState(0); // -1 left, 1 right for animation
   const [animKey, setAnimKey] = useState(0);
+  const [apiStats, setApiStats] = useState(null);
   const touchStartX = useRef(null);
-  const MAX_WEEK = WEEKS_DATA.length - 1;
+
+  useEffect(()=>{
+    apiCall('/workouts/stats')
+      .then(d=>{ if(d?.data?.stats) setApiStats(d.data.stats); })
+      .catch(()=>{});
+  }, []);
+
+  // Build weeks array: current week from API, older weeks from static data
+  const getWeekLabel = () => {
+    const d = new Date();
+    const dow = d.getDay() === 0 ? 6 : d.getDay() - 1;
+    const start = new Date(d); start.setDate(d.getDate() - dow);
+    const end   = new Date(start); end.setDate(start.getDate() + 6);
+    const fmt = x => x.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    return `${fmt(start)} – ${fmt(end)}`;
+  };
+  const liveWeek = apiStats?.dailyBreakdown
+    ? { label: getWeekLabel(), days: apiStats.dailyBreakdown, bestDays: [], improvement: "Live" }
+    : WEEKS_DATA[0];
+  const allWeeks  = [liveWeek, ...WEEKS_DATA.slice(1)];
+  const MAX_WEEK  = allWeeks.length - 1;
 
   const goTo = (next) => {
     if (next < 0 || next > MAX_WEEK) return; // boundary guard
@@ -425,25 +446,7 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
     touchStartX.current = null;
   };
 
-  // Patch today's workout into current week if logged
-  const patchedWeeksData = WEEKS_DATA.map((wk, wi) => {
-    if (wi !== 0) return wk; // only patch current week
-    const today = new Date();
-    const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-    const todayName = dayNames[today.getDay()];
-    const patchedDays = wk.days.map(d => {
-      if (d.day !== todayName) return d;
-      // Find any workout logged today
-      const todayLog = loggedWorkouts.find(lw => {
-        const wd = new Date(lw.date);
-        return wd.toDateString() === today.toDateString();
-      });
-      if (!todayLog) return d;
-      return { ...d, cal: todayLog.cal || 300, type: todayLog.type || "strength" };
-    });
-    return { ...wk, days: patchedDays };
-  });
-  const w = patchedWeeksData[week];
+  const w = allWeeks[week] || allWeeks[0];
   const calDays  = w.days.filter(d => d.cal > 0);
   const maxCal   = Math.max(...w.days.map(d => d.cal), 1);
   const minCal   = calDays.length ? Math.min(...calDays.map(d => d.cal)) : 0;
@@ -478,7 +481,7 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
           <div style={{ display:"flex",alignItems:"center",gap:6 }}>
             {/* Dots indicator */}
             <div style={{ display:"flex",gap:5,marginRight:8 }}>
-              {WEEKS_DATA.map((_,i)=>(
+              {allWeeks.map((_,i)=>(
                 <div key={i} style={{ width:i===(MAX_WEEK-week)?18:6,height:6,borderRadius:3,background:i===(MAX_WEEK-week)?PRIMARY:"#2a2a2a",transition:"all 0.2s" }}/>
               ))}
             </div>
@@ -3297,8 +3300,15 @@ function CalendarPage({ onBack, loggedWorkouts=[] }) {
   const [selectedDay, setSelectedDay] = useState(null);
   const [animKey, setAnimKey]         = useState(0);
   const [slideDir, setSlideDir]       = useState(0);
+  const [calHistory, setCalHistory]   = useState([]);
   const touchStartX = useRef(null);
   const MAX_PAST = 3; // can go back 3 months, not forward past current
+
+  useEffect(()=>{
+    apiCall('/workouts/history?limit=90')
+      .then(d=>{ if(d?.data?.history) setCalHistory(d.data.history); })
+      .catch(()=>{});
+  }, []);
 
   const changeMonth = (next) => {
     if (next > 0 || next < -MAX_PAST) return; // 0=current, -MAX_PAST=oldest
@@ -3316,7 +3326,7 @@ function CalendarPage({ onBack, loggedWorkouts=[] }) {
     touchStartX.current = null;
   };
 
-  const now = new Date(2026, 3, 1); // April 2026
+  const now = new Date();
   const displayDate = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
   const monthName = displayDate.toLocaleString("default", { month: "long", year: "numeric" });
 
@@ -3329,20 +3339,27 @@ function CalendarPage({ onBack, loggedWorkouts=[] }) {
 
   const dayData = selectedDay ? DAY_STATS[selectedDay] : null;
 
-  // Monthly averages
-  // Merge real logged workouts into calendar for current month
-    // (using existing now variable)
-  const liveCalData = {...CAL_DATA};
+  // Merge API history into calendar for displayed month
+  const liveCalData = {};
+  calHistory.forEach(h => {
+    const d = new Date(h.completedAt || h.date);
+    if (d.getMonth() === displayDate.getMonth() && d.getFullYear() === displayDate.getFullYear()) {
+      liveCalData[d.getDate()] = (h.type || 'strength').toLowerCase();
+    }
+  });
+  // Merge in-session logged workouts too
   loggedWorkouts.forEach(lw => {
     const d = new Date(lw.date);
-    if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) {
+    if (d.getMonth() === displayDate.getMonth() && d.getFullYear() === displayDate.getFullYear()) {
       liveCalData[d.getDate()] = lw.type || "strength";
     }
   });
 
   const monthlyWorkouts = Object.keys(liveCalData).length;
-  const totalCal = Object.values(DAY_STATS).reduce((s,d)=>s+d.cal,0);
-  const avgCal = Math.round(totalCal / monthlyWorkouts);
+  const totalCal = calHistory
+    .filter(h => { const d=new Date(h.completedAt||h.date); return d.getMonth()===displayDate.getMonth()&&d.getFullYear()===displayDate.getFullYear(); })
+    .reduce((s,h) => s + (h.caloriesBurned || 0), 0);
+  const avgCal = monthlyWorkouts > 0 ? Math.round(totalCal / monthlyWorkouts) : 0;
   const restDays = daysInMonth - monthlyWorkouts;
 
   return (
@@ -3506,7 +3523,7 @@ function WorkoutHistoryPage({ onBack }) {
   const [filter, setFilter] = useState("all");
   const filters = ["all","strength","cardio","hiit"];
   const { isPremium: histPremium } = useUser();
-  const allHistory = filter==="all" ? HISTORY : mapped.filter(h=>h.type===filter);
+  const allHistory = filter==="all" ? mapped : mapped.filter(h=>h.type===filter);
   const filtered   = histPremium ? allHistory : allHistory.slice(0, 4); // free: last 4 entries (~14 days)
 
   return (
@@ -3983,9 +4000,17 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
   const [subPage, setSubPage] = useState(null);
   const [wIdx, setWIdx] = useState(TODAY_IDX);
   const [upcomingWorkouts, setUpcomingWorkouts] = useState([]);
+  const [hubStats,         setHubStats]         = useState(null);
+  const [previewPRs,       setPreviewPRs]       = useState([]);
   useEffect(()=>{
     apiCall('/workouts/upcoming?days=4')
       .then(d=>{ if(d?.data?.upcoming) setUpcomingWorkouts(d.data.upcoming); })
+      .catch(()=>{});
+    apiCall('/workouts/stats')
+      .then(d=>{ if(d?.data?.stats) setHubStats(d.data.stats); })
+      .catch(()=>{});
+    apiCall('/users/personal-records')
+      .then(d=>{ if(d?.data?.records) setPreviewPRs(d.data.records); })
       .catch(()=>{});
   }, []);
   const weightsScrollRef = useScrollPos("weights-hub");
@@ -4004,17 +4029,28 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
   const swipeStartX = useRef(null);
 
   const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-  const currentMonthIdx = (3 + monthOffset + 12) % 12; // April = 3
+  const currentMonthIdx = (new Date().getMonth() + monthOffset + 120) % 12;
   const monthName = months[currentMonthIdx];
 
-  // Per-month stats data — offset 0 = Nov (current), -1 = Oct (prev), etc.
-  const MONTH_STATS = {
-     0: { days:"12/16", streak:"3 week", rate:"75%",  pct:75,  label:"In progress" },
+  // Per-month stats — current month from API, older months from static fallback
+  const MONTH_STATS_FALLBACK = {
     "-1": { days:"16/16", streak:"4 week", rate:"100%", pct:100, label:"Completed!" },
     "-2": { days:"14/16", streak:"2 week", rate:"88%",  pct:88,  label:"Great month" },
     "-3": { days:"11/16", streak:"1 week", rate:"69%",  pct:69,  label:"Keep going"  },
   };
-  const stats = MONTH_STATS[String(monthOffset)] || { days:"0/16", streak:"0 week", rate:"0%", pct:0, label:"No data" };
+  const stats = monthOffset === 0 && hubStats ? (() => {
+    const completed = hubStats.monthlyCompletedDays || 0;
+    const target    = Math.max(1, (hubStats.daysPerWeek || 3) * 4);
+    const pct       = Math.min(100, Math.round((completed / target) * 100));
+    const streak    = hubStats.currentStreak || 0;
+    return {
+      days:   `${completed}/${target}`,
+      streak: `${streak} day${streak !== 1 ? 's' : ''}`,
+      rate:   `${pct}%`,
+      pct,
+      label:  pct >= 100 ? "Completed!" : "In progress",
+    };
+  })() : MONTH_STATS_FALLBACK[String(monthOffset)] || { days:"0/16", streak:"0 day", rate:"0%", pct:0, label:"No data" };
 
   // Swipe handlers for monthly card
   const onMonthSwipeStart = (e) => { swipeStartX.current = e.touches[0].clientX; };
@@ -4166,19 +4202,33 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
             <div style={{ fontFamily:FONT,fontWeight:800,fontSize:17,color:"#fff" }}>Personal Records</div>
             <button onClick={()=>setSubPage("records")} style={{ background:"none",border:"none",cursor:"pointer",fontFamily:FONT,fontWeight:700,fontSize:13,color:PRIMARY }}>View All</button>
           </div>
-          {RECORDS.slice(0,3).map((r,i)=>(
-            <div key={i} onClick={()=>setSubPage("records")} style={{ background:CARD2,borderRadius:14,padding:"14px 16px",marginBottom:i<2?10:0,display:"flex",alignItems:"center",gap:14,cursor:"pointer" }}>
-              <div style={{ width:44,height:44,borderRadius:"50%",background:r.bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}><RecordIcon name={r.name}/></div>
-              <div style={{ flex:1 }}>
-                <div style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:"#fff",marginBottom:2 }}>{r.name}</div>
-                <div style={{ fontFamily:FONT,fontSize:12,color:"#888888" }}>Personal Best</div>
-              </div>
-              <div style={{ textAlign:"right" }}>
-                <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:r.color }}>{r.val}</div>
-                <div style={{ fontFamily:FONT,fontSize:11,color:"#444",marginTop:2 }}>{r.when}</div>
-              </div>
-            </div>
-          ))}
+          {(()=>{
+            const PR_COLORS=["#EF4444","#22C55E","#00A3FF","#F97316","#8B5CF6","#EAB308"];
+            const displayPRs = previewPRs.length > 0
+              ? previewPRs.slice(0,3).map((r,i)=>({
+                  name:  r.exerciseName || r.name || "Exercise",
+                  color: PR_COLORS[i%PR_COLORS.length],
+                  bg:    `${PR_COLORS[i%PR_COLORS.length]}22`,
+                  val:   r.weight ? `${r.weight} lbs` : (r.reps ? `${r.reps} reps` : "—"),
+                  when:  r.achievedAt ? new Date(r.achievedAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : "—",
+                }))
+              : RECORDS.slice(0,3);
+            return displayPRs.length === 0
+              ? <div style={{fontFamily:FONT,fontSize:13,color:"#555",textAlign:"center",padding:"16px 0"}}>Complete workouts to earn personal records</div>
+              : displayPRs.map((r,i)=>(
+                <div key={i} onClick={()=>setSubPage("records")} style={{ background:CARD2,borderRadius:14,padding:"14px 16px",marginBottom:i<displayPRs.length-1?10:0,display:"flex",alignItems:"center",gap:14,cursor:"pointer" }}>
+                  <div style={{ width:44,height:44,borderRadius:"50%",background:r.bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}><RecordIcon name={r.name}/></div>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:"#fff",marginBottom:2 }}>{r.name}</div>
+                    <div style={{ fontFamily:FONT,fontSize:12,color:"#888888" }}>Personal Best</div>
+                  </div>
+                  <div style={{ textAlign:"right" }}>
+                    <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:r.color }}>{r.val}</div>
+                    <div style={{ fontFamily:FONT,fontSize:11,color:"#444",marginTop:2 }}>{r.when}</div>
+                  </div>
+                </div>
+              ));
+          })()}
         </div>
 
       </div>
@@ -6947,7 +6997,7 @@ function VTRXAppInner({ setPaymentPlan }) {
   }, [innerPage, workoutStarted, workoutDone, workoutPaused]);
   const [showComplete, setShowComplete] = useState(false);
   const [mealIdx, setMealIdx] = useState(0);
-  const [streakDay, setStreakDay] = useState(7);
+  const [streakDay, setStreakDay] = useState(0);
   const [workoutsTotal,setWorkoutsTotal]= useState(0);
   const [energyKey, setEnergyKey] = useState(()=>{
     try {
@@ -6992,15 +7042,22 @@ function VTRXAppInner({ setPaymentPlan }) {
           height:       u.height      || prev.height,
           gender:       u.gender      || prev.gender,
         }));
-        if (u.streakDays)     setStreakDay(u.streakDays);
-        if (u.workoutsTotal)  setWorkoutsTotal(u.workoutsTotal);
+        if (u.streakDays)             setStreakDay(u.streakDays);
+        if (u._count?.workoutLogs)   setWorkoutsTotal(u._count.workoutLogs);
         if (u.isPremium)      setIsPremium(true);
         // Valid token + profile loaded → restore dashboard without re-running onboarding
         setPhase("dashboard");
       }
       // Also load weekly stats
       apiCall("/workouts/stats").then(sr=>{
-        if (sr?.data?.stats?.currentStreak) setStreakDay(sr.data.stats.currentStreak);
+        if (sr?.data?.stats) {
+          const s = sr.data.stats;
+          if (s.currentStreak)               setStreakDay(s.currentStreak);
+          if (s.workoutsCompleted !== undefined) setWeeklyWorkoutDays(s.workoutsCompleted);
+          if (s.avgCalories)                 setWeeklyAvgCal(s.avgCalories);
+          if (s.avgMinutes)                  setWeeklyAvgMin(s.avgMinutes);
+          if (s.totalWorkouts)               setWorkoutsTotal(s.totalWorkouts);
+        }
       }).catch(()=>{});
     }).catch(()=>{});
   }, []);
@@ -7226,7 +7283,8 @@ function VTRXAppInner({ setPaymentPlan }) {
             }),
           });
           const today   = new Date();
-          setLoggedWorkouts(prev => [...prev, { date:today, type:(activeW.type||"strength").toLowerCase(), cal:Math.round(300*(pct/100)), duration:mins, name:activeW.name }]);
+          const calBurned = Math.round((activeW.calories||activeW.cal||300)*(pct/100));
+          setLoggedWorkouts(prev => [...prev, { date:today, type:(activeW.type||"strength").toLowerCase(), cal:calBurned, duration:mins, name:activeW.name }]);
         } catch(_e){}
         setInnerPage(null);
         setActiveTab(0);
@@ -7237,9 +7295,10 @@ function VTRXAppInner({ setPaymentPlan }) {
         setWorkoutsTotal(t=>t+1);
         const mins = Math.max(1, Math.round(elapsedSeconds / 60));
         setWeeklyWorkoutDays(d=>d+1);
+        const actCal = activeW.calories || activeW.cal || 300;
         setWeeklyAvgCal(prev=>{
           const prevTotal = prev !== null ? prev * weeklyWorkoutDays : 0;
-          return Math.round((prevTotal + 300) / (weeklyWorkoutDays + 1));
+          return Math.round((prevTotal + actCal) / (weeklyWorkoutDays + 1));
         });
         setWeeklyAvgMin(prev=>{
           const prevTotal = prev !== null ? prev * weeklyWorkoutDays : 0;
@@ -7265,11 +7324,19 @@ function VTRXAppInner({ setPaymentPlan }) {
           });
           const me = await apiCall("/users/profile");
           if (me?.data?.user?.streakDays) setStreakDay(me.data.user.streakDays);
+          if (me?.data?.user?._count?.workoutLogs) setWorkoutsTotal(me.data.user._count.workoutLogs);
+          const sr = await apiCall("/workouts/stats");
+          if (sr?.data?.stats) {
+            const s = sr.data.stats;
+            if (s.workoutsCompleted !== undefined) setWeeklyWorkoutDays(s.workoutsCompleted);
+            if (s.avgCalories) setWeeklyAvgCal(s.avgCalories);
+            if (s.avgMinutes)  setWeeklyAvgMin(s.avgMinutes);
+          }
         } catch(_e){}
         const today   = new Date();
         const dateStr = today.toLocaleDateString("en-GB", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
         const timeStr = today.toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit" });
-        setLoggedWorkouts(prev => [...prev, { date:today, type:(activeW.type||"strength").toLowerCase(), cal:300, duration:mins, name:activeW.name }]);
+        setLoggedWorkouts(prev => [...prev, { date:today, type:(activeW.type||"strength").toLowerCase(), cal:actCal, duration:mins, name:activeW.name }]);
         setLastWorkoutStats({
           calories:  activeW.calories || activeW.cal || 300,
           duration:  mins,
