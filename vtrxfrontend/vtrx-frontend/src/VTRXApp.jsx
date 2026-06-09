@@ -6932,15 +6932,11 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
           </div>
           <div style={{ display:"flex",gap:9,marginBottom:16,overflowX:"auto" }}>
             {exPreview.map((ex, i) => ex ? (
-              <div key={i} onClick={()=>onNavigate("workoutDetail")} style={{ position:"relative",minWidth:76,width:76,height:76,borderRadius:12,overflow:"hidden",flexShrink:0,cursor:"pointer" }}>
+              <div key={i} onClick={()=>onNavigate("workoutDetail")} style={{ minWidth:76,width:76,height:76,borderRadius:12,overflow:"hidden",flexShrink:0,cursor:"pointer" }}>
                 {ex.thumbnailUrl
                   ? <img src={ex.thumbnailUrl} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
                   : <div style={{ width:"100%",height:"100%",background:`${lvl?lvl.color:PRIMARY}22` }}/>
                 }
-                <div style={{ position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"4px 3px",gap:3 }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>
-                  <span style={{ fontFamily:FONT,fontSize:8,color:"#fff",fontWeight:700,textAlign:"center",lineHeight:1.2,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",maxWidth:70 }}>{ex.name?.split(' ').slice(0,3).join(' ')}</span>
-                </div>
               </div>
             ) : (
               <div key={i} onClick={()=>onNavigate("workoutDetail")} style={{ minWidth:76,width:76,height:76,borderRadius:12,background:`${PRIMARY}0d`,border:`1px dashed ${PRIMARY}33`,flexShrink:0,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center" }}>
