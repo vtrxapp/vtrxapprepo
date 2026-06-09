@@ -6907,11 +6907,8 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
             </div>
           </div>
           <div style={{ display:"flex",gap:13,marginBottom:15 }}>
-            <div style={{ width:88,height:88,borderRadius:14,overflow:"hidden",flexShrink:0,position:"relative" }}>
+            <div style={{ width:88,height:88,borderRadius:14,overflow:"hidden",flexShrink:0 }}>
               <img src={workoutBanner} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
-              <div style={{ position:"absolute",inset:0,background:"rgba(0,0,0,0.3)",display:"flex",alignItems:"center",justifyContent:"center" }}>
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>
-              </div>
             </div>
             <div style={{ flex:1 }}>
               <div style={{ fontFamily:FONT,fontWeight:800,fontSize:17,color:"#fff",marginBottom:3 }}>{workout.name}</div>
