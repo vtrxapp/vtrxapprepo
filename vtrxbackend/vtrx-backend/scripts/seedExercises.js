@@ -18,7 +18,9 @@ const normalise = (ex) => ({
   name:         ex.name             || ex.title       || 'Unknown Exercise',
   muscleGroup:  ex.muscle_group     || ex.muscleGroup || ex.target || 'Full Body',
   equipment:    ex.equipment        || ex.equipment_type || null,
-  instructions: ex.instructions     || ex.description || null,
+  instructions: Array.isArray(ex.instructions)
+    ? ex.instructions.join('\n')
+    : (ex.instructions || ex.description || null),
   videoUrl:     ex.video_url        || ex.videoUrl    || null,
   thumbnailUrl: ex.thumbnail_url    || ex.thumbnailUrl || ex.gif_url || null,
 });
