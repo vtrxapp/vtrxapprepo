@@ -766,6 +766,172 @@ const getExerciseVideoUrl = async (req, res) => {
   }
 };
 
+// ── Helper: format a WorkoutSchedule row for API response ─────────────────────
+const DAY_NAMES_FULL = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const DAY_NAMES_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+const formatScheduleEntry = (s) => ({
+  id:            s.id,
+  scheduledDate: s.scheduledDate,
+  status:        s.status,
+  originalDate:  s.originalDate || null,
+  dayName:       DAY_NAMES_FULL[new Date(s.scheduledDate).getDay()],
+  dayShort:      DAY_NAMES_SHORT[new Date(s.scheduledDate).getDay()],
+  workout: {
+    id:         s.workout.id,
+    name:       s.workout.name,
+    type:       s.workout.type,
+    duration:   s.workout.duration,
+    calories:   s.workout.calories || 0,
+    difficulty: s.workout.difficulty,
+    exercises:  (s.workout.exercises || []).slice(0, 6).map(we => ({
+      id:           we.exercise.id,
+      name:         we.exercise.name,
+      muscleGroup:  we.exercise.muscleGroup,
+      sets:         we.sets,
+      reps:         we.reps,
+      thumbnailUrl: we.exercise.thumbnailUrl || null,
+    })),
+  },
+});
+
+// ── Helper: auto-generate one week's schedule and persist it ──────────────────
+const autoGenerateWeekSchedule = async (userId, weekStart) => {
+  const workouts = await prisma.workout.findMany({
+    where: { isPublic: true },
+    include: {
+      exercises: {
+        include: { exercise: true },
+        orderBy: { order: 'asc' },
+        take: 6,
+      },
+    },
+    orderBy: { name: 'asc' },
+  });
+  if (!workouts.length) return [];
+
+  // Mon-Fri active, Sat = lighter, Sun = rest (no entry)
+  const DAY_WORKOUT_COUNT = [1, 1, 1, 1, 1, 1, 0]; // Mon=0...Sun=6; 0=rest
+  const entries = [];
+
+  for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
+    if (!DAY_WORKOUT_COUNT[dayOffset]) continue; // Sunday = rest
+    const date = new Date(weekStart);
+    date.setDate(weekStart.getDate() + dayOffset);
+    date.setHours(0, 0, 0, 0);
+
+    const workout = workouts[dayOffset % workouts.length];
+    try {
+      const entry = await prisma.workoutSchedule.upsert({
+        where:  { userId_scheduledDate: { userId, scheduledDate: date } },
+        create: { userId, workoutId: workout.id, scheduledDate: date, status: 'SCHEDULED' },
+        update: {},
+        include: {
+          workout: {
+            include: { exercises: { include: { exercise: true }, orderBy: { order: 'asc' }, take: 6 } },
+          },
+        },
+      });
+      entries.push(entry);
+    } catch (_) {}
+  }
+  return entries;
+};
+
+// ── GET /api/workouts/schedule — Current week's schedule ──────────────────────
+const getSchedule = async (req, res) => {
+  const today    = new Date();
+  const dow      = today.getDay() === 0 ? 6 : today.getDay() - 1; // 0=Mon
+  const weekStart = new Date(today);
+  weekStart.setDate(today.getDate() - dow);
+  weekStart.setHours(0, 0, 0, 0);
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 6);
+  weekEnd.setHours(23, 59, 59, 999);
+
+  try {
+    let schedules = await prisma.workoutSchedule.findMany({
+      where: {
+        userId:        req.user.id,
+        scheduledDate: { gte: weekStart, lte: weekEnd },
+      },
+      include: {
+        workout: {
+          include: { exercises: { include: { exercise: true }, orderBy: { order: 'asc' }, take: 6 } },
+        },
+      },
+      orderBy: { scheduledDate: 'asc' },
+    });
+
+    if (schedules.length === 0) {
+      schedules = await autoGenerateWeekSchedule(req.user.id, weekStart);
+    }
+
+    res.json({ success: true, data: { schedule: schedules.map(formatScheduleEntry) } });
+  } catch (error) {
+    logger.error('getSchedule error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch schedule' });
+  }
+};
+
+// ── PATCH /api/workouts/schedule/:id/move — Move/swap to a different date ─────
+const moveScheduleEntry = async (req, res) => {
+  const { id } = req.params;
+  const { targetDate } = req.body; // "YYYY-MM-DD"
+
+  try {
+    const entry = await prisma.workoutSchedule.findFirst({
+      where: { id, userId: req.user.id },
+    });
+    if (!entry) return res.status(404).json({ success: false, message: 'Not found' });
+
+    const target = new Date(targetDate);
+    target.setHours(0, 0, 0, 0);
+
+    const occupant = await prisma.workoutSchedule.findFirst({
+      where: { userId: req.user.id, scheduledDate: target, id: { not: id } },
+    });
+
+    await prisma.$transaction(async (tx) => {
+      if (occupant) {
+        // Swap dates between the two entries
+        await tx.workoutSchedule.update({
+          where: { id: occupant.id },
+          data:  { scheduledDate: entry.scheduledDate, originalDate: occupant.originalDate || occupant.scheduledDate },
+        });
+      }
+      await tx.workoutSchedule.update({
+        where: { id },
+        data:  { scheduledDate: target, originalDate: entry.originalDate || entry.scheduledDate },
+      });
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('moveScheduleEntry error:', error);
+    res.status(500).json({ success: false, message: 'Failed to move workout' });
+  }
+};
+
+// ── PATCH /api/workouts/schedule/:id/replace — Swap workout template ──────────
+const replaceScheduleEntry = async (req, res) => {
+  const { id } = req.params;
+  const { workoutId } = req.body;
+
+  try {
+    const entry = await prisma.workoutSchedule.findFirst({
+      where: { id, userId: req.user.id },
+    });
+    if (!entry) return res.status(404).json({ success: false, message: 'Not found' });
+
+    await prisma.workoutSchedule.update({ where: { id }, data: { workoutId } });
+    res.json({ success: true });
+  } catch (error) {
+    logger.error('replaceScheduleEntry error:', error);
+    res.status(500).json({ success: false, message: 'Failed to replace workout' });
+  }
+};
+
 module.exports = {
   getWorkouts,
   getWorkoutById,
@@ -778,4 +944,7 @@ module.exports = {
   getVideoProgress,
   getExerciseVideoUrl,
   getUpcomingWorkouts,
+  getSchedule,
+  moveScheduleEntry,
+  replaceScheduleEntry,
 };

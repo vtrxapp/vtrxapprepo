@@ -56,6 +56,7 @@ model User {
   personalRecords PersonalRecord[]
   waterLogs       WaterLog[]
   videoProgress   VideoProgress[]
+  schedules       WorkoutSchedule[]
 
   @@map("users")
 }
@@ -80,6 +81,7 @@ model Workout {
   exercises   WorkoutExercise[]
   logs        WorkoutLog[]
   savedBy     SavedWorkout[]
+  schedules   WorkoutSchedule[]
 
   @@map("workouts")
 }
@@ -374,6 +376,22 @@ model PersonalRecord {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("personal_records")
+}
+
+// ── WORKOUT_SCHEDULE ──────────────────────────────────────────────────────────
+model WorkoutSchedule {
+  id            String    @id @default(uuid())
+  userId        String
+  workoutId     String
+  scheduledDate DateTime  // midnight UTC of the scheduled day
+  originalDate  DateTime? // set when moved — tracks original planned date
+  status        String    @default("SCHEDULED") // SCHEDULED | COMPLETED | SKIPPED
+
+  user    User    @relation(fields: [userId],    references: [id], onDelete: Cascade)
+  workout Workout @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, scheduledDate])
+  @@map("workout_schedules")
 }
 
 // ── VIDEO_PROGRESS ────────────────────────────────────────────────────────────
