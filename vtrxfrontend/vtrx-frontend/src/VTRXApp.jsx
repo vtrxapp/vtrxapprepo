@@ -823,17 +823,35 @@ function AiTipIcon({ type }) {
   if (type==="lightbulb") return <svg {...s}><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 017 7c0 2.38-1.19 4.47-3 5.74V17H8v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 017-7z"/></svg>;
   return <svg {...s}><circle cx="12" cy="12" r="10"/></svg>;
 }
+// Normalise an exercise from either the API shape or the hardcoded EXERCISES shape
+function normaliseExercise(ex) {
+  return {
+    id:          ex.id          || null,
+    name:        ex.name        || 'Exercise',
+    sets:        ex.sets        || 3,
+    reps:        ex.reps        || '8-12',
+    muscles:     ex.muscleGroup || ex.muscles || '',
+    cal:         ex.cal         || 0,
+    img:         ex.thumbnailUrl || ex.img     || '',
+    videoUrl:    ex.videoUrl    || null,
+    ymoveId:     ex.ymoveId     || null,
+    thumbnailUrl: ex.thumbnailUrl || ex.img    || null,
+    restSecs:    ex.restSecs    || 60,
+  };
+}
+
 function WorkoutDetailPage({ workout, onBack, onComplete, onExercise, completedExercises=[], elapsed=0, started=false, onStart }) {
   const wdpScrollRef = useScrollPos("workout-detail");
   const [completedEx, setCompletedEx] = useState([]);
 
-  // Auto-start timer when component first mounts
-  // Don't auto-start — wait for user to tap START WORKOUT button
-  // Timer is started explicitly via the start button
+  // Use exercises from the workout object when available (API data), fall back to hardcoded
+  const exercises = (Array.isArray(workout?.exercises) && workout.exercises.length > 0)
+    ? workout.exercises.map(normaliseExercise)
+    : EXERCISES.map(normaliseExercise);
 
   const fmt = (s) => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
   const toggleEx = (i) => setCompletedEx(p => p.includes(i) ? p.filter(x=>x!==i) : [...p,i]);
-  const allDone = completedEx.length === EXERCISES.length;
+  const allDone = completedEx.length === exercises.length;
 
   return (
     <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column" }}>
@@ -892,7 +910,7 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onExercise, completedE
 
         {/* Exercise list */}
         <div style={{ padding:"0 16px" }}>
-          {EXERCISES.map((ex,i)=>{
+          {exercises.map((ex,i)=>{
             const done = completedEx.includes(i) || completedExercises.includes(ex.name);
             const skipped = completedEx.includes(`skip_${i}`);
             return (
@@ -900,7 +918,7 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onExercise, completedE
                 <div style={{ display:"flex",alignItems:"center" }}>
                   {/* Thumb */}
                   <div onClick={()=>onExercise&&onExercise(ex)} style={{ position:"relative",width:90,height:90,flexShrink:0,cursor:"pointer" }}>
-                    <img src={ex.img} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+                    <img src={ex.thumbnailUrl || ex.img || "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=200&q=70"} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
                     <div style={{ position:"absolute",inset:0,background:"rgba(0,0,0,0.2)",display:"flex",alignItems:"center",justifyContent:"center" }}>
                       <div style={{ width:36,height:36,borderRadius:"50%",background:PRIMARY,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 0 12px ${PRIMARY}99` }}>
                         <svg width="11" height="13" viewBox="0 0 11 13" fill="white"><polygon points="0,0 11,6.5 0,13"/></svg>
@@ -949,7 +967,7 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onExercise, completedE
           </button>
         ) : (
           <div style={{ background:"#111",borderRadius:50,padding:"14px 18px",textAlign:"center" }}>
-            <span style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#888888" }}>{completedEx.filter(x=>!String(x).startsWith("skip_")).length}/{EXERCISES.length} exercises done</span>
+            <span style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#888888" }}>{completedEx.filter(x=>!String(x).startsWith("skip_")).length}/{exercises.length} exercises done</span>
           </div>
         )}
       </div>
@@ -1340,7 +1358,28 @@ function VideoPlayer({ videoUrl, thumbnailUrl, exerciseName, onProgress, onVideo
 // ─────────────────────────────────────────────────────────────────────────────
 function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutFmt, onAutoStartWorkout }) {
   const exScrollRef = useScrollPos("exercise-" + (exercise?.name||""));
-  const ex = exercise || EXERCISES[0];
+  const ex = exercise ? normaliseExercise(exercise) : normaliseExercise(EXERCISES[0]);
+
+  // Fetch a fresh (non-expired) video URL from our proxy endpoint when this
+  // exercise has a ymove ID but no pre-loaded URL in the exercise object.
+  const [resolvedVideoUrl, setResolvedVideoUrl] = useState(ex.videoUrl || null);
+  useEffect(()=>{
+    setResolvedVideoUrl(ex.videoUrl || null); // reset when exercise changes
+    if (!ex.ymoveId || ex.videoUrl) return;
+    const token = getAuthToken();
+    if (!token) return;
+    // Check localStorage resume position for this exercise
+    try {
+      const saved = JSON.parse(localStorage.getItem('vtrx_vidprog_' + ex.ymoveId) || 'null');
+      if (saved?.pos > 5) setResumePos(saved.pos);
+    } catch(_e){}
+    apiCall(`/workouts/exercise-video/${ex.ymoveId}`)
+      .then(d => { if (d?.data?.videoUrl) setResolvedVideoUrl(d.data.videoUrl); })
+      .catch(()=>{});
+  }, [ex.ymoveId, ex.videoUrl]);
+
+  const [resumePos, setResumePos] = useState(0);
+
   const [sets, setSets] = useState([{reps:"",weight:"",done:false},{reps:"",weight:"",done:false}]);
   const MIN_SETS = 2; // first 2 sets cannot be deleted
   const [started, setStarted] = useState(false);
@@ -1416,10 +1455,10 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
 
         {/* ── VIDEO PLAYER ── */}
         <VideoPlayer
-          videoUrl={ex.videoUrl || null}
+          videoUrl={resolvedVideoUrl}
           thumbnailUrl={ex.thumbnailUrl || ex.img || null}
           exerciseName={ex.name}
-          initialPositionSecs={ex.resumePositionSecs || 0}
+          initialPositionSecs={resumePos}
           onProgress={(pos, dur) => {
             if (ex.ymoveId || ex.id) {
               const KEY = 'vtrx_vidprog_' + (ex.ymoveId || ex.id);
@@ -6819,10 +6858,20 @@ function VTRXAppInner({ setPaymentPlan }) {
   });
   const [notifCount,    setNotifCount]    = useState(0);
   const [liveUser,      setLiveUser]      = useState(null);
+  const [apiWorkout,    setApiWorkout]    = useState(null);
   const dashScrollRef  = useRef(null);
   const savedScrollPos = useRef(0);
   const mouseStart     = useRef(null);
   const touchStart     = useRef(null);
+
+  // Fetch personalised workout recommendation whenever energy level changes
+  useEffect(()=>{
+    const token = getAuthToken();
+    if (!token) return;
+    apiCall(`/workouts/recommend?energyLevel=${energyKey || 'okay'}`)
+      .then(d => { if (d?.data?.recommendation) setApiWorkout(d.data.recommendation); })
+      .catch(()=>{});
+  }, [energyKey]);
 
   // Load real data on mount
     // ── Load user profile from backend on mount ─────────────────────────────
@@ -7040,68 +7089,69 @@ function VTRXAppInner({ setPaymentPlan }) {
   if (innerPage==="fitnessStats")  return <FitnessStatsPage onBack={goBack} loggedWorkouts={loggedWorkouts}/>;
   if (innerPage==="notifications") return <NotificationsPage onBack={goBack}/>;
   if (innerPage==="profile") return <ProfilePage onBack={goBack} onLogout={handleLogout} streakDay={streakDay} workoutsTotal={workoutsTotal}/>;
-  if (innerPage==="workoutDetail") return <WorkoutDetailPage workout={WEEKLY_WORKOUTS[TODAY_IDX % WEEKLY_WORKOUTS.length]} onBack={goBack}
-    elapsed={workoutElapsed} started={workoutStarted}
-    onStart={()=>setWorkoutStarted(true)}
-    onComplete={async (elapsedSeconds=0)=>{
-      setWorkoutDone(true);
-      setStreakDay(s=>s+1);
-      setWorkoutsTotal(t=>t+1);
-      // Update weekly stats
-      const mins = Math.max(1, Math.round(elapsedSeconds / 60));
-      setWeeklyWorkoutDays(d=>d+1);
-      setWeeklyAvgCal(prev=>{
-        const prevTotal = prev !== null ? prev * weeklyWorkoutDays : 0;
-        return Math.round((prevTotal + 300) / (weeklyWorkoutDays + 1));
-      });
-      setWeeklyAvgMin(prev=>{
-        const prevTotal = prev !== null ? prev * weeklyWorkoutDays : 0;
-        return Math.round((prevTotal + mins) / (weeklyWorkoutDays + 1));
-      });
-      const w = WEEKLY_WORKOUTS[TODAY_IDX % WEEKLY_WORKOUTS.length];
-      try {
-        await apiCall("/workouts/log", {
-          method: "POST",
-          body: JSON.stringify({
-            name:           w.name,
-            type:           w.type,
-            duration:       w.duration,
-            caloriesBurned: w.cal,
-            energyLevel:    energyKey || "okay",
-            exercises:      (w.exercises||[]).map(e=>({ name:e.name, sets:[{ setNumber:1, reps:e.detail }] })),
-          }),
+  if (innerPage==="workoutDetail") {
+    const fallbackW = WEEKLY_WORKOUTS[TODAY_IDX % WEEKLY_WORKOUTS.length];
+    const activeW   = apiWorkout || fallbackW;
+    return <WorkoutDetailPage
+      workout={activeW}
+      elapsed={workoutElapsed} started={workoutStarted}
+      onBack={goBack}
+      onStart={()=>setWorkoutStarted(true)}
+      onComplete={async (elapsedSeconds=0)=>{
+        setWorkoutDone(true);
+        setStreakDay(s=>s+1);
+        setWorkoutsTotal(t=>t+1);
+        const mins = Math.max(1, Math.round(elapsedSeconds / 60));
+        setWeeklyWorkoutDays(d=>d+1);
+        setWeeklyAvgCal(prev=>{
+          const prevTotal = prev !== null ? prev * weeklyWorkoutDays : 0;
+          return Math.round((prevTotal + 300) / (weeklyWorkoutDays + 1));
         });
-        // Refresh streak from backend
-        const me = await apiCall("/users/profile");
-        if (me?.data?.user?.streakDays) setStreakDay(me.data.user.streakDays);
-      } catch(_e){}
-      // Show workout complete screen instead of going straight to AI
-      const today = new Date();
-      const dateStr = today.toLocaleDateString("en-GB", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
-      const timeStr = today.toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit" });
-      const newLog = {
-        date:     today,
-        type:     (w.type||"strength").toLowerCase(),
-        cal:      300,
-        duration: Math.max(1, Math.round(elapsedSeconds / 60)),
-        name:     w.name || "Workout",
-      };
-      setLoggedWorkouts(prev => [...prev, newLog]);
-      setLastWorkoutStats({
-        calories: 300,
-        duration: Math.max(1, Math.round(elapsedSeconds / 60)),
-        exercises: w.exercises ? (Array.isArray(w.exercises) ? w.exercises.length : w.exercises) : 3,
-        name: w.name || "Workout",
-        date: dateStr,
-        time: timeStr,
-      });
-      setWorkoutStarted(false);
-      setWorkoutElapsed(0);
-      setShowComplete(true);
-      setInnerPage(null);
-      setActiveTab(0);
-    }}
-    onExercise={(ex)=>{ setSelectedExercise(ex); setInnerPage("exerciseDetail"); }}/>;
+        setWeeklyAvgMin(prev=>{
+          const prevTotal = prev !== null ? prev * weeklyWorkoutDays : 0;
+          return Math.round((prevTotal + mins) / (weeklyWorkoutDays + 1));
+        });
+        try {
+          const exPayload = (activeW.exercises || []).map(e => ({
+            exerciseId: e.id || undefined,
+            name:       e.name,
+            sets:       [{ setNumber:1, reps: e.reps || e.detail || '8' }],
+          }));
+          await apiCall("/workouts/log", {
+            method: "POST",
+            body: JSON.stringify({
+              workoutId:      activeW.workoutId || undefined,
+              name:           activeW.name,
+              type:           activeW.type,
+              duration:       activeW.duration || activeW.mins || 45,
+              caloriesBurned: activeW.calories || activeW.cal || 300,
+              energyLevel:    energyKey || "okay",
+              exercises:      exPayload,
+            }),
+          });
+          const me = await apiCall("/users/profile");
+          if (me?.data?.user?.streakDays) setStreakDay(me.data.user.streakDays);
+        } catch(_e){}
+        const today   = new Date();
+        const dateStr = today.toLocaleDateString("en-GB", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
+        const timeStr = today.toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit" });
+        setLoggedWorkouts(prev => [...prev, { date:today, type:(activeW.type||"strength").toLowerCase(), cal:300, duration:mins, name:activeW.name }]);
+        setLastWorkoutStats({
+          calories:  activeW.calories || activeW.cal || 300,
+          duration:  mins,
+          exercises: Array.isArray(activeW.exercises) ? activeW.exercises.length : (activeW.exercises || 3),
+          name:      activeW.name || "Workout",
+          date:      dateStr,
+          time:      timeStr,
+        });
+        setWorkoutStarted(false);
+        setWorkoutElapsed(0);
+        setShowComplete(true);
+        setInnerPage(null);
+        setActiveTab(0);
+      }}
+      onExercise={(ex)=>{ setSelectedExercise(ex); setInnerPage("exerciseDetail"); }}/>;
+  };
   if (innerPage==="exerciseDetail"&&selectedExercise) return <ExercisePage exercise={selectedExercise} onBack={()=>setInnerPage("workoutDetail")} onComplete={()=>setInnerPage("workoutDetail")}/>;
 
   return (
