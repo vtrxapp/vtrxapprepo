@@ -3999,12 +3999,24 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
   const T = dark ? DARK : LIGHT;
   const [subPage, setSubPage] = useState(null);
   const [wIdx, setWIdx] = useState(TODAY_IDX);
-  const [upcomingWorkouts, setUpcomingWorkouts] = useState([]);
+  const [weekSchedule,    setWeekSchedule]    = useState([]);
+  const [expandedId,      setExpandedId]      = useState(null);
+  const [moveEntry,       setMoveEntry]       = useState(null);
+  const [replaceEntry,    setReplaceEntry]    = useState(null);
+  const [allWorkouts,     setAllWorkouts]     = useState([]);
+  const [replaceSelected, setReplaceSelected] = useState(null);
+  const [moveTargetDate,  setMoveTargetDate]  = useState(null);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
   const [hubStats,         setHubStats]         = useState(null);
   const [previewPRs,       setPreviewPRs]       = useState([]);
   useEffect(()=>{
-    apiCall('/workouts/upcoming?days=7')
-      .then(d=>{ if(d?.data?.upcoming) setUpcomingWorkouts(d.data.upcoming); })
+    setScheduleLoading(true);
+    apiCall('/workouts/schedule')
+      .then(d=>{ if(d?.data?.schedule) setWeekSchedule(d.data.schedule); })
+      .catch(()=>{})
+      .finally(()=>setScheduleLoading(false));
+    apiCall('/workouts?limit=20')
+      .then(d=>{ if(d?.data?.workouts) setAllWorkouts(d.data.workouts); })
       .catch(()=>{});
     apiCall('/workouts/stats')
       .then(d=>{ if(d?.data?.stats) setHubStats(d.data.stats); })
@@ -4126,91 +4138,272 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
         {/* ── WEEKLY PLAN ── */}
         {(()=>{
           const TYPE_C = { STRENGTH:PRIMARY, CARDIO:"#F59E0B", HIIT:"#6366F1", RECOVERY:"#22C55E", MOBILITY:"#22C55E" };
-          const ENERGY_C = { peak:PRIMARY, good:"#22C55E", okay:"#EAB308", low:"#F97316", empty:"#EF4444" };
-          if (upcomingWorkouts.length === 0) return (
-            <div style={{ background:"#fff",borderRadius:20,padding:"20px",marginBottom:14 }}>
-              <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4 }}>
-                <div>
-                  <div style={{ fontFamily:FONT,fontSize:11,color:"#888",fontWeight:600,marginBottom:2 }}>NEXT SESSION</div>
-                  <div style={{ fontFamily:FONT,fontWeight:800,fontSize:18,color:"#111" }}>{w.name}</div>
-                </div>
-                <div style={{ background:tc,borderRadius:20,padding:"5px 12px" }}>
-                  <span style={{ fontFamily:FONT,fontWeight:800,fontSize:10,color:"#fff",letterSpacing:1 }}>{w.type}</span>
-                </div>
-              </div>
-              <div style={{ fontFamily:FONT,fontSize:12,color:"#888",marginBottom:14 }}>{w.duration} min · {w.cal} cal</div>
-              <button onClick={()=>{ if(w.type!=="REST") onNavigate&&onNavigate("workoutDetail"); }} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:w.type==="REST"?"#f0f0f0":tc,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:w.type==="REST"?"#888":"#fff",cursor:w.type==="REST"?"default":"pointer",letterSpacing:1 }}>
-                {w.type==="REST"?"REST DAY":"START WORKOUT"}
-              </button>
-            </div>
-          );
-          const next = upcomingWorkouts[0];
-          const rest = upcomingWorkouts.slice(1);
-          const nc = TYPE_C[next.workout.type] || PRIMARY;
-          const ne = ENERGY_C[next.predictedEnergy] || "#888";
+
+          const refreshSchedule = () => {
+            apiCall('/workouts/schedule')
+              .then(d=>{ if(d?.data?.schedule) setWeekSchedule(d.data.schedule); })
+              .catch(()=>{});
+          };
+
+          const handleMove = async () => {
+            if (!moveEntry || !moveTargetDate) return;
+            try {
+              await apiCall(`/workouts/schedule/${moveEntry.id}/move`, { method:'PATCH', body:JSON.stringify({ targetDate: moveTargetDate }) });
+              refreshSchedule();
+            } catch {}
+            setMoveEntry(null);
+            setMoveTargetDate(null);
+          };
+
+          const handleReplace = async () => {
+            if (!replaceEntry || !replaceSelected) return;
+            try {
+              await apiCall(`/workouts/schedule/${replaceEntry.id}/replace`, { method:'PATCH', body:JSON.stringify({ workoutId: replaceSelected }) });
+              refreshSchedule();
+            } catch {}
+            setReplaceEntry(null);
+            setReplaceSelected(null);
+          };
+
+          const today = new Date();
+          today.setHours(0,0,0,0);
+          const upcoming2 = weekSchedule.filter(s=>{ const d=new Date(s.scheduledDate); d.setHours(0,0,0,0); return d>=today; });
+          const past2     = weekSchedule.filter(s=>{ const d=new Date(s.scheduledDate); d.setHours(0,0,0,0); return d<today; });
+          const nextEntry = upcoming2[0] || null;
+          const otherEntries = [...(nextEntry ? upcoming2.slice(1) : []), ...past2];
+
           return (
             <>
-              {/* ── Next session — expanded ── */}
-              <div style={{ background:"#fff",borderRadius:20,padding:"20px",marginBottom:10 }}>
-                <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4 }}>
-                  <div>
-                    <div style={{ fontFamily:FONT,fontSize:11,color:"#888",fontWeight:600,marginBottom:2 }}>NEXT SESSION · {next.dayName.toUpperCase()}</div>
-                    <div style={{ fontFamily:FONT,fontWeight:800,fontSize:18,color:"#111" }}>{next.workout.name}</div>
-                  </div>
-                  <div style={{ background:nc,borderRadius:20,padding:"5px 12px" }}>
-                    <span style={{ fontFamily:FONT,fontWeight:800,fontSize:10,color:"#fff",letterSpacing:1 }}>{next.workout.type}</span>
-                  </div>
-                </div>
-                <div style={{ fontFamily:FONT,fontSize:12,color:"#888",marginBottom:8 }}>{next.workout.duration} min · {next.workout.calories} cal</div>
-                <div style={{ display:"flex",alignItems:"center",gap:6,marginBottom:14,background:`${ne}15`,borderRadius:10,padding:"6px 10px",border:`1px solid ${ne}33` }}>
-                  <div style={{ width:8,height:8,borderRadius:"50%",background:ne,flexShrink:0 }}/>
-                  <div style={{ fontFamily:FONT,fontSize:11,color:ne,fontWeight:600 }}>Predicted energy: {next.energyLabel}</div>
-                </div>
-                <div style={{ display:"flex",flexDirection:"column",gap:8,marginBottom:16 }}>
-                  {(next.workout.exercises||[]).map((ex,j)=>(
-                    <div key={j} style={{ background:"#f3f4f6",borderRadius:14,padding:"12px 16px",display:"flex",alignItems:"center",gap:12 }}>
-                      <div style={{ width:34,height:34,borderRadius:10,background:nc,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontFamily:FONT,fontWeight:800,fontSize:12 }}>{j+1}</div>
-                      <div style={{ flex:1 }}>
-                        <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#111" }}>{ex.name}</div>
-                        <div style={{ fontFamily:FONT,fontSize:12,color:"#888",marginTop:1 }}>{ex.sets} sets × {parseReps(ex.reps)} reps</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <button onClick={()=>onNavigate&&onNavigate("workoutDetail")} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:nc,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",letterSpacing:1 }}>
-                  START WORKOUT
+              {/* Section header */}
+              <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12 }}>
+                <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#fff",letterSpacing:1 }}>THIS WEEK'S PLAN</div>
+                <button onClick={refreshSchedule} style={{ background:"none",border:"none",cursor:"pointer",padding:4 }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15"/></svg>
                 </button>
               </div>
 
-              {/* ── Remaining days — compact rows ── */}
-              {rest.length > 0 && (
-                <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"16px 18px",marginBottom:14 }}>
-                  <div style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff",marginBottom:14 }}>Upcoming Week</div>
-                  {rest.map((up, i) => {
-                    const uc = TYPE_C[up.workout.type] || PRIMARY;
-                    const ec2 = ENERGY_C[up.predictedEnergy] || "#888";
+              {/* Empty state */}
+              {weekSchedule.length===0 && !scheduleLoading && (
+                <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"28px 20px",marginBottom:14,textAlign:"center" }}>
+                  <div style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff",marginBottom:8 }}>No Workouts Scheduled</div>
+                  <div style={{ fontFamily:FONT,fontSize:13,color:"#555" }}>Your weekly plan will appear here</div>
+                </div>
+              )}
+              {weekSchedule.length===0 && scheduleLoading && (
+                <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"28px 20px",marginBottom:14,textAlign:"center" }}>
+                  <div style={{ fontFamily:FONT,fontSize:13,color:"#555" }}>Loading schedule...</div>
+                </div>
+              )}
+
+              {/* UP NEXT card */}
+              {nextEntry && (()=>{
+                const nc = TYPE_C[nextEntry.workout.type] || PRIMARY;
+                const exs = nextEntry.workout.exercises || [];
+                return (
+                  <div style={{ background:CARD,borderRadius:20,border:`1px solid ${nc}44`,marginBottom:12,overflow:"hidden" }}>
+                    <div style={{ background:`linear-gradient(135deg,${nc}22,${nc}08)`,padding:"16px 16px 12px" }}>
+                      <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6 }}>
+                        <div>
+                          <div style={{ fontFamily:FONT,fontWeight:600,fontSize:10,color:nc,letterSpacing:1.5,marginBottom:3 }}>UP NEXT · {(nextEntry.dayShort||"").toUpperCase()}</div>
+                          <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff" }}>{nextEntry.workout.name}</div>
+                        </div>
+                        <div style={{ background:nc,borderRadius:20,padding:"5px 12px",flexShrink:0 }}>
+                          <span style={{ fontFamily:FONT,fontWeight:800,fontSize:10,color:"#fff",letterSpacing:1 }}>{nextEntry.workout.type}</span>
+                        </div>
+                      </div>
+                      <div style={{ fontFamily:FONT,fontSize:12,color:"#888" }}>{nextEntry.dayName} · {nextEntry.workout.duration} min · {nextEntry.workout.calories} cal</div>
+                    </div>
+                    {exs.length>0 && (
+                      <div style={{ display:"flex",gap:4,padding:"12px 16px 0" }}>
+                        {exs.slice(0,4).map((ex,i)=>(
+                          <div key={i} style={{ flex:1,aspectRatio:"1",borderRadius:10,overflow:"hidden",background:"#1a1a1a" }}>
+                            {ex.thumbnailUrl
+                              ? <img src={ex.thumbnailUrl} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+                              : <div style={{ width:"100%",height:"100%",background:`${nc}22` }}/>
+                            }
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div style={{ padding:"12px 16px" }}>
+                      {exs.map((ex,j)=>(
+                        <div key={j} style={{ display:"flex",alignItems:"center",gap:10,paddingBottom:j<exs.length-1?10:0,marginBottom:j<exs.length-1?10:0,borderBottom:j<exs.length-1?`1px solid ${BORDER}`:"none" }}>
+                          <div style={{ width:28,height:28,borderRadius:8,background:nc,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:FONT,fontWeight:800,fontSize:11,color:"#fff" }}>{j+1}</div>
+                          <div style={{ flex:1,minWidth:0 }}>
+                            <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{ex.name}</div>
+                            <div style={{ fontFamily:FONT,fontSize:11,color:"#666" }}>{ex.sets} sets × {parseReps(ex.reps)} reps</div>
+                          </div>
+                          {ex.muscleGroup && <div style={{ fontFamily:FONT,fontSize:10,color:"#444",flexShrink:0 }}>{ex.muscleGroup}</div>}
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ padding:"0 16px 16px" }}>
+                      <button onClick={()=>onNavigate&&onNavigate("workoutDetail")} style={{ width:"100%",padding:"14px 0",borderRadius:50,background:nc,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",letterSpacing:1,marginBottom:8 }}>
+                        START WORKOUT
+                      </button>
+                      <div style={{ display:"flex",gap:8 }}>
+                        <button onClick={()=>{ setMoveEntry(nextEntry); setMoveTargetDate(null); }} style={{ flex:1,padding:"10px 0",borderRadius:50,background:"#1a1a1a",border:`1px solid ${BORDER}`,fontFamily:FONT,fontWeight:700,fontSize:12,color:"#ccc",cursor:"pointer" }}>
+                          MOVE
+                        </button>
+                        <button onClick={()=>{ setReplaceEntry(nextEntry); setReplaceSelected(null); }} style={{ flex:1,padding:"10px 0",borderRadius:50,background:"#1a1a1a",border:`1px solid ${BORDER}`,fontFamily:FONT,fontWeight:700,fontSize:12,color:"#ccc",cursor:"pointer" }}>
+                          REPLACE
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Other days */}
+              {otherEntries.length>0 && (
+                <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,overflow:"hidden",marginBottom:14 }}>
+                  {otherEntries.map((entry,i)=>{
+                    const ec = TYPE_C[entry.workout.type] || PRIMARY;
+                    const isExpanded = expandedId===entry.id;
+                    const exs = entry.workout.exercises || [];
+                    const entryDate = new Date(entry.scheduledDate);
+                    entryDate.setHours(0,0,0,0);
+                    const isPast = entryDate<today;
                     return (
-                      <div key={i} style={{ display:"flex",alignItems:"center",gap:12,paddingBottom:i<rest.length-1?14:0,marginBottom:i<rest.length-1?14:0,borderBottom:i<rest.length-1?`1px solid ${BORDER}`:"none" }}>
-                        <div style={{ width:44,flexShrink:0,textAlign:"center" }}>
-                          <div style={{ fontFamily:FONT,fontWeight:800,fontSize:13,color:"#fff" }}>{up.dayName.slice(0,3)}</div>
-                          <div style={{ fontFamily:FONT,fontSize:10,color:"#555",marginTop:1 }}>{up.date?new Date(up.date).toLocaleDateString('en-US',{month:'short',day:'numeric'}):""}</div>
-                        </div>
-                        <div style={{ flex:1,minWidth:0 }}>
-                          <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#fff",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{up.workout.name}</div>
-                          <div style={{ fontFamily:FONT,fontSize:11,color:"#555" }}>{up.workout.duration} min · {up.workout.calories} cal</div>
-                        </div>
-                        <div style={{ display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4,flexShrink:0 }}>
-                          <div style={{ background:uc,borderRadius:20,padding:"3px 10px" }}>
-                            <span style={{ fontFamily:FONT,fontWeight:800,fontSize:9,color:"#fff",letterSpacing:0.5 }}>{up.workout.type}</span>
+                      <div key={entry.id} style={{ borderBottom:i<otherEntries.length-1?`1px solid ${BORDER}`:"none" }}>
+                        <div onClick={()=>setExpandedId(isExpanded?null:entry.id)} style={{ padding:"14px 16px",cursor:"pointer" }}>
+                          <div style={{ display:"flex",alignItems:"center",gap:12 }}>
+                            <div style={{ width:44,flexShrink:0,textAlign:"center" }}>
+                              <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:isPast?"#444":"#fff" }}>{entry.dayShort}</div>
+                              <div style={{ fontFamily:FONT,fontSize:10,color:"#444",marginTop:1 }}>{entryDate.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>
+                            </div>
+                            <div style={{ display:"flex",gap:3,flexShrink:0 }}>
+                              {exs.slice(0,3).map((ex,j)=>(
+                                <div key={j} style={{ width:32,height:32,borderRadius:8,overflow:"hidden",background:"#1a1a1a" }}>
+                                  {ex.thumbnailUrl
+                                    ? <img src={ex.thumbnailUrl} alt="" style={{ width:"100%",height:"100%",objectFit:"cover",opacity:isPast?0.5:1 }}/>
+                                    : <div style={{ width:"100%",height:"100%",background:`${ec}22` }}/>
+                                  }
+                                </div>
+                              ))}
+                            </div>
+                            <div style={{ flex:1,minWidth:0 }}>
+                              <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:isPast?"#555":"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{entry.workout.name}</div>
+                              <div style={{ fontFamily:FONT,fontSize:11,color:"#444",marginTop:1 }}>{entry.workout.duration} min · {entry.workout.calories} cal</div>
+                            </div>
+                            <div style={{ display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4,flexShrink:0 }}>
+                              <div style={{ background:isPast?"#333":ec,borderRadius:20,padding:"3px 10px" }}>
+                                <span style={{ fontFamily:FONT,fontWeight:800,fontSize:9,color:isPast?"#555":"#fff",letterSpacing:0.5 }}>{entry.workout.type}</span>
+                              </div>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" style={{ transform:isExpanded?"rotate(180deg)":"none",transition:"transform 0.2s" }}>
+                                <polyline points="6 9 12 15 18 9"/>
+                              </svg>
+                            </div>
                           </div>
-                          <div style={{ display:"flex",alignItems:"center",gap:4 }}>
-                            <div style={{ width:6,height:6,borderRadius:"50%",background:ec2 }}/>
-                            <span style={{ fontFamily:FONT,fontSize:10,color:ec2,fontWeight:600 }}>{up.energyLabel}</span>
-                          </div>
                         </div>
+                        {isExpanded && (
+                          <div style={{ paddingBottom:14 }}>
+                            <div style={{ padding:"0 16px",marginBottom:12 }}>
+                              {exs.map((ex,j)=>(
+                                <div key={j} style={{ display:"flex",alignItems:"center",gap:10,paddingBottom:j<exs.length-1?10:0,marginBottom:j<exs.length-1?10:0,borderBottom:j<exs.length-1?`1px solid ${BORDER}`:"none" }}>
+                                  <div style={{ width:26,height:26,borderRadius:7,background:isPast?"#333":ec,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:FONT,fontWeight:800,fontSize:10,color:isPast?"#555":"#fff" }}>{j+1}</div>
+                                  <div style={{ flex:1,minWidth:0 }}>
+                                    <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:isPast?"#555":"#fff" }}>{ex.name}</div>
+                                    <div style={{ fontFamily:FONT,fontSize:11,color:"#444" }}>{ex.sets} sets × {parseReps(ex.reps)} reps</div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                            {!isPast && (
+                              <div style={{ display:"flex",gap:8,padding:"0 16px" }}>
+                                <button onClick={()=>onNavigate&&onNavigate("workoutDetail")} style={{ flex:1,padding:"10px 0",borderRadius:50,background:ec,border:"none",fontFamily:FONT,fontWeight:800,fontSize:11,color:"#fff",cursor:"pointer",letterSpacing:0.5 }}>
+                                  START
+                                </button>
+                                <button onClick={e=>{ e.stopPropagation(); setMoveEntry(entry); setMoveTargetDate(null); }} style={{ flex:1,padding:"10px 0",borderRadius:50,background:"#1a1a1a",border:`1px solid ${BORDER}`,fontFamily:FONT,fontWeight:700,fontSize:11,color:"#ccc",cursor:"pointer" }}>
+                                  MOVE
+                                </button>
+                                <button onClick={e=>{ e.stopPropagation(); setReplaceEntry(entry); setReplaceSelected(null); }} style={{ flex:1,padding:"10px 0",borderRadius:50,background:"#1a1a1a",border:`1px solid ${BORDER}`,fontFamily:FONT,fontWeight:700,fontSize:11,color:"#ccc",cursor:"pointer" }}>
+                                  REPLACE
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
+                </div>
+              )}
+
+              {/* MOVE MODAL */}
+              {moveEntry && (
+                <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:200,display:"flex",alignItems:"flex-end" }} onClick={()=>{ setMoveEntry(null); setMoveTargetDate(null); }}>
+                  <div onClick={e=>e.stopPropagation()} style={{ width:"100%",background:"#111",borderRadius:"24px 24px 0 0",padding:"24px 20px 40px",maxHeight:"80vh",overflowY:"auto" }}>
+                    <div style={{ width:40,height:4,borderRadius:2,background:"#333",margin:"0 auto 20px" }}/>
+                    <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:"#fff",marginBottom:4 }}>Move Workout</div>
+                    <div style={{ fontFamily:FONT,fontSize:13,color:"#555",marginBottom:20 }}>{moveEntry.workout.name}</div>
+                    <div style={{ fontFamily:FONT,fontWeight:700,fontSize:12,color:"#666",letterSpacing:1,marginBottom:12 }}>SELECT TARGET DAY</div>
+                    {weekSchedule.filter(s=>s.id!==moveEntry.id).map(s=>{
+                      const sd = new Date(s.scheduledDate);
+                      const sc = TYPE_C[s.workout.type]||PRIMARY;
+                      const isMoveTarget = moveTargetDate===s.scheduledDate.split('T')[0];
+                      return (
+                        <div key={s.id} onClick={()=>setMoveTargetDate(s.scheduledDate.split('T')[0])} style={{ display:"flex",alignItems:"center",gap:12,padding:"14px 16px",borderRadius:14,marginBottom:8,background:isMoveTarget?`${sc}22`:"#1a1a1a",border:isMoveTarget?`1px solid ${sc}`:"1px solid #222",cursor:"pointer" }}>
+                          <div style={{ width:44,textAlign:"center",flexShrink:0 }}>
+                            <div style={{ fontFamily:FONT,fontWeight:800,fontSize:13,color:isMoveTarget?"#fff":"#888" }}>{s.dayShort}</div>
+                            <div style={{ fontFamily:FONT,fontSize:10,color:"#444" }}>{sd.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>
+                          </div>
+                          <div style={{ flex:1,minWidth:0 }}>
+                            <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:isMoveTarget?"#fff":"#666",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{s.workout.name}</div>
+                            <div style={{ fontFamily:FONT,fontSize:11,color:"#555" }}>Will swap ↔</div>
+                          </div>
+                          {isMoveTarget && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={sc} strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+                        </div>
+                      );
+                    })}
+                    <div style={{ display:"flex",gap:10,marginTop:8 }}>
+                      <button onClick={()=>{ setMoveEntry(null); setMoveTargetDate(null); }} style={{ flex:1,padding:"14px 0",borderRadius:50,background:"#1a1a1a",border:"1px solid #333",fontFamily:FONT,fontWeight:700,fontSize:14,color:"#888",cursor:"pointer" }}>
+                        CANCEL
+                      </button>
+                      <button onClick={handleMove} disabled={!moveTargetDate} style={{ flex:2,padding:"14px 0",borderRadius:50,background:moveTargetDate?PRIMARY:"#222",border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:moveTargetDate?"#fff":"#444",cursor:moveTargetDate?"pointer":"default",letterSpacing:1 }}>
+                        CONFIRM MOVE
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* REPLACE MODAL */}
+              {replaceEntry && (
+                <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:200,display:"flex",alignItems:"flex-end" }} onClick={()=>{ setReplaceEntry(null); setReplaceSelected(null); }}>
+                  <div onClick={e=>e.stopPropagation()} style={{ width:"100%",background:"#111",borderRadius:"24px 24px 0 0",padding:"24px 20px 40px",maxHeight:"80vh",overflowY:"auto" }}>
+                    <div style={{ width:40,height:4,borderRadius:2,background:"#333",margin:"0 auto 20px" }}/>
+                    <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:"#fff",marginBottom:4 }}>Replace Workout</div>
+                    <div style={{ fontFamily:FONT,fontSize:13,color:"#555",marginBottom:20 }}>{replaceEntry.workout.name}</div>
+                    <div style={{ fontFamily:FONT,fontWeight:700,fontSize:12,color:"#666",letterSpacing:1,marginBottom:12 }}>SELECT NEW WORKOUT</div>
+                    {allWorkouts.map(w=>{
+                      const wc = TYPE_C[w.type]||PRIMARY;
+                      const isSelected = replaceSelected===w.id;
+                      return (
+                        <div key={w.id} onClick={()=>setReplaceSelected(w.id)} style={{ display:"flex",alignItems:"center",gap:12,padding:"14px 16px",borderRadius:14,marginBottom:8,background:isSelected?`${wc}22`:"#1a1a1a",border:isSelected?`1px solid ${wc}`:"1px solid #222",cursor:"pointer" }}>
+                          <div style={{ flex:1,minWidth:0 }}>
+                            <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:isSelected?"#fff":"#888",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{w.name}</div>
+                            <div style={{ fontFamily:FONT,fontSize:11,color:"#444",marginTop:2 }}>{w.duration} min · {w.calories} cal</div>
+                          </div>
+                          <div style={{ display:"flex",alignItems:"center",gap:8,flexShrink:0 }}>
+                            <div style={{ background:wc,borderRadius:20,padding:"3px 10px" }}>
+                              <span style={{ fontFamily:FONT,fontWeight:800,fontSize:9,color:"#fff",letterSpacing:0.5 }}>{w.type}</span>
+                            </div>
+                            {isSelected && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={wc} strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {allWorkouts.length===0 && <div style={{ fontFamily:FONT,fontSize:13,color:"#444",textAlign:"center",padding:"20px 0" }}>Loading workouts...</div>}
+                    <div style={{ display:"flex",gap:10,marginTop:8 }}>
+                      <button onClick={()=>{ setReplaceEntry(null); setReplaceSelected(null); }} style={{ flex:1,padding:"14px 0",borderRadius:50,background:"#1a1a1a",border:"1px solid #333",fontFamily:FONT,fontWeight:700,fontSize:14,color:"#888",cursor:"pointer" }}>
+                        CANCEL
+                      </button>
+                      <button onClick={handleReplace} disabled={!replaceSelected} style={{ flex:2,padding:"14px 0",borderRadius:50,background:replaceSelected?PRIMARY:"#222",border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:replaceSelected?"#fff":"#444",cursor:replaceSelected?"pointer":"default",letterSpacing:1 }}>
+                        CONFIRM REPLACE
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
             </>
