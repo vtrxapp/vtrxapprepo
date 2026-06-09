@@ -6936,6 +6936,7 @@ function VTRXAppInner({ setPaymentPlan }) {
   const [weeklyAvgMin,     setWeeklyAvgMin]     = useState(null);
   const [workoutElapsed,   setWorkoutElapsed]   = useState(0);
   const [workoutStarted,   setWorkoutStarted]   = useState(false);
+  const [workoutPaused,    setWorkoutPaused]    = useState(false);
   const workoutTimerRef = useRef(null);
 
   useEffect(()=>{
@@ -6958,7 +6959,6 @@ function VTRXAppInner({ setPaymentPlan }) {
   const [notifCount,    setNotifCount]    = useState(0);
   const [liveUser,      setLiveUser]      = useState(null);
   const [apiWorkout,    setApiWorkout]    = useState(null);
-  const [workoutPaused, setWorkoutPaused] = useState(false);
   const dashScrollRef  = useRef(null);
   const savedScrollPos = useRef(0);
   const mouseStart     = useRef(null);
