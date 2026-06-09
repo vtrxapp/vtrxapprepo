@@ -4003,7 +4003,7 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
   const [hubStats,         setHubStats]         = useState(null);
   const [previewPRs,       setPreviewPRs]       = useState([]);
   useEffect(()=>{
-    apiCall('/workouts/upcoming?days=4')
+    apiCall('/workouts/upcoming?days=7')
       .then(d=>{ if(d?.data?.upcoming) setUpcomingWorkouts(d.data.upcoming); })
       .catch(()=>{});
     apiCall('/workouts/stats')
@@ -4123,60 +4123,99 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
           <div style={{ fontFamily:FONT,fontSize:10,color:"#444",marginTop:6,textAlign:"right" }}>Swipe to change month</div>
         </div>
 
-        {/* ── NEXT WORKOUT ── */}
-        {upcomingWorkouts.length > 0 ? upcomingWorkouts.slice(0,1).map((up,i)=>{
-          const utc = { STRENGTH:PRIMARY, CARDIO:"#F59E0B", HIIT:"#6366F1", RECOVERY:"#22C55E", MOBILITY:"#22C55E" }[up.workout.type] || PRIMARY;
-          const energyColors = { peak:PRIMARY, good:"#22C55E", okay:"#EAB308", low:"#F97316", empty:"#EF4444" };
-          const ec = energyColors[up.predictedEnergy] || "#888";
-          return (
-            <div key={i} style={{ background:"#fff",borderRadius:20,padding:"20px",marginBottom:14 }}>
+        {/* ── WEEKLY PLAN ── */}
+        {(()=>{
+          const TYPE_C = { STRENGTH:PRIMARY, CARDIO:"#F59E0B", HIIT:"#6366F1", RECOVERY:"#22C55E", MOBILITY:"#22C55E" };
+          const ENERGY_C = { peak:PRIMARY, good:"#22C55E", okay:"#EAB308", low:"#F97316", empty:"#EF4444" };
+          if (upcomingWorkouts.length === 0) return (
+            <div style={{ background:"#fff",borderRadius:20,padding:"20px",marginBottom:14 }}>
               <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4 }}>
                 <div>
-                  <div style={{ fontFamily:FONT,fontSize:11,color:"#888",fontWeight:600,marginBottom:2 }}>NEXT SESSION · {up.dayName.toUpperCase()}</div>
-                  <div style={{ fontFamily:FONT,fontWeight:800,fontSize:18,color:"#111" }}>{up.workout.name}</div>
+                  <div style={{ fontFamily:FONT,fontSize:11,color:"#888",fontWeight:600,marginBottom:2 }}>NEXT SESSION</div>
+                  <div style={{ fontFamily:FONT,fontWeight:800,fontSize:18,color:"#111" }}>{w.name}</div>
                 </div>
-                <div style={{ background:utc,borderRadius:20,padding:"5px 12px" }}>
-                  <span style={{ fontFamily:FONT,fontWeight:800,fontSize:10,color:"#fff",letterSpacing:1 }}>{up.workout.type}</span>
+                <div style={{ background:tc,borderRadius:20,padding:"5px 12px" }}>
+                  <span style={{ fontFamily:FONT,fontWeight:800,fontSize:10,color:"#fff",letterSpacing:1 }}>{w.type}</span>
                 </div>
               </div>
-              <div style={{ fontFamily:FONT,fontSize:12,color:"#888",marginBottom:8 }}>{up.workout.duration} min · {up.workout.calories} cal</div>
-              <div style={{ display:"flex",alignItems:"center",gap:6,marginBottom:14,background:`${ec}15`,borderRadius:10,padding:"6px 10px",border:`1px solid ${ec}33` }}>
-                <div style={{ width:8,height:8,borderRadius:"50%",background:ec,flexShrink:0 }}/>
-                <div style={{ fontFamily:FONT,fontSize:11,color:ec,fontWeight:600 }}>Predicted energy: {up.energyLabel}</div>
-              </div>
-              <div style={{ display:"flex",flexDirection:"column",gap:8,marginBottom:16 }}>
-                {up.workout.exercises.map((ex,j)=>(
-                  <div key={j} style={{ background:"#f3f4f6",borderRadius:14,padding:"12px 16px",display:"flex",alignItems:"center",gap:12 }}>
-                    <div style={{ width:34,height:34,borderRadius:10,background:utc,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontFamily:FONT,fontWeight:800,fontSize:12 }}>{j+1}</div>
-                    <div style={{ flex:1 }}>
-                      <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#111" }}>{ex.name}</div>
-                      <div style={{ fontFamily:FONT,fontSize:12,color:"#888",marginTop:1 }}>{ex.sets} sets × {parseReps(ex.reps)} reps</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <button onClick={()=>onNavigate&&onNavigate("workoutDetail")} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:utc,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",letterSpacing:1 }}>
-                START WORKOUT
+              <div style={{ fontFamily:FONT,fontSize:12,color:"#888",marginBottom:14 }}>{w.duration} min · {w.cal} cal</div>
+              <button onClick={()=>{ if(w.type!=="REST") onNavigate&&onNavigate("workoutDetail"); }} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:w.type==="REST"?"#f0f0f0":tc,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:w.type==="REST"?"#888":"#fff",cursor:w.type==="REST"?"default":"pointer",letterSpacing:1 }}>
+                {w.type==="REST"?"REST DAY":"START WORKOUT"}
               </button>
             </div>
           );
-        }) : (
-          <div style={{ background:"#fff",borderRadius:20,padding:"20px",marginBottom:14 }}>
-            <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4 }}>
-              <div>
-                <div style={{ fontFamily:FONT,fontSize:11,color:"#888",fontWeight:600,marginBottom:2 }}>NEXT SESSION</div>
-                <div style={{ fontFamily:FONT,fontWeight:800,fontSize:18,color:"#111" }}>{w.name}</div>
+          const next = upcomingWorkouts[0];
+          const rest = upcomingWorkouts.slice(1);
+          const nc = TYPE_C[next.workout.type] || PRIMARY;
+          const ne = ENERGY_C[next.predictedEnergy] || "#888";
+          return (
+            <>
+              {/* ── Next session — expanded ── */}
+              <div style={{ background:"#fff",borderRadius:20,padding:"20px",marginBottom:10 }}>
+                <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4 }}>
+                  <div>
+                    <div style={{ fontFamily:FONT,fontSize:11,color:"#888",fontWeight:600,marginBottom:2 }}>NEXT SESSION · {next.dayName.toUpperCase()}</div>
+                    <div style={{ fontFamily:FONT,fontWeight:800,fontSize:18,color:"#111" }}>{next.workout.name}</div>
+                  </div>
+                  <div style={{ background:nc,borderRadius:20,padding:"5px 12px" }}>
+                    <span style={{ fontFamily:FONT,fontWeight:800,fontSize:10,color:"#fff",letterSpacing:1 }}>{next.workout.type}</span>
+                  </div>
+                </div>
+                <div style={{ fontFamily:FONT,fontSize:12,color:"#888",marginBottom:8 }}>{next.workout.duration} min · {next.workout.calories} cal</div>
+                <div style={{ display:"flex",alignItems:"center",gap:6,marginBottom:14,background:`${ne}15`,borderRadius:10,padding:"6px 10px",border:`1px solid ${ne}33` }}>
+                  <div style={{ width:8,height:8,borderRadius:"50%",background:ne,flexShrink:0 }}/>
+                  <div style={{ fontFamily:FONT,fontSize:11,color:ne,fontWeight:600 }}>Predicted energy: {next.energyLabel}</div>
+                </div>
+                <div style={{ display:"flex",flexDirection:"column",gap:8,marginBottom:16 }}>
+                  {(next.workout.exercises||[]).map((ex,j)=>(
+                    <div key={j} style={{ background:"#f3f4f6",borderRadius:14,padding:"12px 16px",display:"flex",alignItems:"center",gap:12 }}>
+                      <div style={{ width:34,height:34,borderRadius:10,background:nc,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontFamily:FONT,fontWeight:800,fontSize:12 }}>{j+1}</div>
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#111" }}>{ex.name}</div>
+                        <div style={{ fontFamily:FONT,fontSize:12,color:"#888",marginTop:1 }}>{ex.sets} sets × {parseReps(ex.reps)} reps</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={()=>onNavigate&&onNavigate("workoutDetail")} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:nc,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",letterSpacing:1 }}>
+                  START WORKOUT
+                </button>
               </div>
-              <div style={{ background:tc,borderRadius:20,padding:"5px 12px" }}>
-                <span style={{ fontFamily:FONT,fontWeight:800,fontSize:10,color:"#fff",letterSpacing:1 }}>{w.type}</span>
-              </div>
-            </div>
-            <div style={{ fontFamily:FONT,fontSize:12,color:"#888",marginBottom:14 }}>{w.duration} min · {w.cal} cal · {w.day}</div>
-            <button onClick={()=>{ if(w.type!=="REST") onNavigate&&onNavigate("workoutDetail"); }} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:w.type==="REST"?"#f0f0f0":tc,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:w.type==="REST"?"#888":"#fff",cursor:w.type==="REST"?"default":"pointer",letterSpacing:1 }}>
-              {w.type==="REST"?"REST DAY":"START WORKOUT"}
-            </button>
-          </div>
-        )}
+
+              {/* ── Remaining days — compact rows ── */}
+              {rest.length > 0 && (
+                <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"16px 18px",marginBottom:14 }}>
+                  <div style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff",marginBottom:14 }}>Upcoming Week</div>
+                  {rest.map((up, i) => {
+                    const uc = TYPE_C[up.workout.type] || PRIMARY;
+                    const ec2 = ENERGY_C[up.predictedEnergy] || "#888";
+                    return (
+                      <div key={i} style={{ display:"flex",alignItems:"center",gap:12,paddingBottom:i<rest.length-1?14:0,marginBottom:i<rest.length-1?14:0,borderBottom:i<rest.length-1?`1px solid ${BORDER}`:"none" }}>
+                        <div style={{ width:44,flexShrink:0,textAlign:"center" }}>
+                          <div style={{ fontFamily:FONT,fontWeight:800,fontSize:13,color:"#fff" }}>{up.dayName.slice(0,3)}</div>
+                          <div style={{ fontFamily:FONT,fontSize:10,color:"#555",marginTop:1 }}>{up.date?new Date(up.date).toLocaleDateString('en-US',{month:'short',day:'numeric'}):""}</div>
+                        </div>
+                        <div style={{ flex:1,minWidth:0 }}>
+                          <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#fff",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{up.workout.name}</div>
+                          <div style={{ fontFamily:FONT,fontSize:11,color:"#555" }}>{up.workout.duration} min · {up.workout.calories} cal</div>
+                        </div>
+                        <div style={{ display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4,flexShrink:0 }}>
+                          <div style={{ background:uc,borderRadius:20,padding:"3px 10px" }}>
+                            <span style={{ fontFamily:FONT,fontWeight:800,fontSize:9,color:"#fff",letterSpacing:0.5 }}>{up.workout.type}</span>
+                          </div>
+                          <div style={{ display:"flex",alignItems:"center",gap:4 }}>
+                            <div style={{ width:6,height:6,borderRadius:"50%",background:ec2 }}/>
+                            <span style={{ fontFamily:FONT,fontSize:10,color:ec2,fontWeight:600 }}>{up.energyLabel}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          );
+        })()}
 
         {/* ── QUICK ACCESS GRID ── */}
         <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14 }}>
