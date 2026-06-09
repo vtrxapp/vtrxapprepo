@@ -823,6 +823,16 @@ function AiTipIcon({ type }) {
   if (type==="lightbulb") return <svg {...s}><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 017 7c0 2.38-1.19 4.47-3 5.74V17H8v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 017-7z"/></svg>;
   return <svg {...s}><circle cx="12" cy="12" r="10"/></svg>;
 }
+// Convert reps range "8-12" → single target "10" (midpoint)
+function parseReps(repsStr) {
+  if (!repsStr) return '10';
+  const s = String(repsStr);
+  if (s.includes('s')) return s; // timed e.g. "45s"
+  const m = s.match(/^(\d+)\s*[-–]\s*(\d+)$/);
+  if (m) return String(Math.round((parseInt(m[1]) + parseInt(m[2])) / 2));
+  return s;
+}
+
 // Normalise an exercise from either the API shape or the hardcoded EXERCISES shape
 function normaliseExercise(ex) {
   return {
@@ -840,25 +850,57 @@ function normaliseExercise(ex) {
   };
 }
 
-function WorkoutDetailPage({ workout, onBack, onComplete, onExercise, completedExercises=[], elapsed=0, started=false, onStart }) {
+function WorkoutDetailPage({ workout, onBack, onComplete, onStop, onExercise, completedExercises=[], elapsed=0, started=false, onStart, paused=false, onTogglePause }) {
   const wdpScrollRef = useScrollPos("workout-detail");
   const [completedEx, setCompletedEx] = useState([]);
+  const [showStopModal, setShowStopModal] = useState(false);
 
-  // Use exercises from the workout object when available (API data), fall back to hardcoded
+  // Use exercises from workout API data, filter to video-only, fall back to hardcoded
   const exercises = (Array.isArray(workout?.exercises) && workout.exercises.length > 0)
-    ? workout.exercises.map(normaliseExercise)
-    : EXERCISES.map(normaliseExercise);
+    ? workout.exercises.map(normaliseExercise).filter(ex => ex.videoUrl)
+    : EXERCISES.map(normaliseExercise).filter(ex => ex.videoUrl);
 
-  const fmt = (s) => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+  const fmt     = (s) => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
   const toggleEx = (i) => setCompletedEx(p => p.includes(i) ? p.filter(x=>x!==i) : [...p,i]);
-  const allDone = completedEx.length === exercises.length;
+  const doneCt  = completedEx.filter(x => !String(x).startsWith('skip_')).length;
+  const allDone = doneCt === exercises.length && exercises.length > 0;
+
+  const handleStop = () => {
+    setShowStopModal(false);
+    const pct = exercises.length > 0 ? Math.round((doneCt / exercises.length) * 100) : 0;
+    if (onStop) onStop(elapsed, completedEx, pct);
+  };
 
   return (
     <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column" }}>
 
+      {/* Stop confirmation modal */}
+      {showStopModal && (
+        <>
+          <div onClick={()=>setShowStopModal(false)} style={{ position:"absolute",inset:0,background:"rgba(0,0,0,0.82)",zIndex:90 }}/>
+          <div style={{ position:"absolute",bottom:0,left:0,right:0,background:CARD,borderRadius:"24px 24px 0 0",padding:"28px 24px 44px",zIndex:91,border:`1px solid ${BORDER}`,borderBottom:"none" }}>
+            <div style={{ display:"flex",justifyContent:"center",marginBottom:20 }}><div style={{ width:40,height:4,borderRadius:2,background:"#2a2a2a" }}/></div>
+            <div style={{ textAlign:"center",marginBottom:24 }}>
+              <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff",marginBottom:10 }}>End this workout?</div>
+              <div style={{ fontFamily:FONT,fontSize:14,color:"#888",lineHeight:1.6 }}>
+                {doneCt > 0
+                  ? `You've completed ${doneCt} of ${exercises.length} exercises. Your progress will be saved.`
+                  : "Your progress will be saved to history."}
+              </div>
+            </div>
+            <button onClick={()=>setShowStopModal(false)} style={{ width:"100%",padding:"16px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1.5,cursor:"pointer",marginBottom:10,boxShadow:`0 4px 24px ${PRIMARY}55` }}>
+              CONTINUE WORKOUT
+            </button>
+            <button onClick={handleStop} style={{ width:"100%",padding:"14px 0",borderRadius:50,background:"transparent",border:"1px solid #333",fontFamily:FONT,fontWeight:700,fontSize:14,color:"#aaa",cursor:"pointer" }}>
+              End Workout
+            </button>
+          </div>
+        </>
+      )}
+
       {/* ── HEADER with live timer + pause/play ── */}
       <div style={{ padding:"50px 18px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0,background:BG }}>
-        <button onClick={onBack} style={{ width:38,height:38,borderRadius:"50%",background:CARD,border:`1px solid ${BORDER}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}>
+        <button onClick={()=>{ if(started) setShowStopModal(true); else onBack(); }} style={{ width:38,height:38,borderRadius:"50%",background:CARD,border:`1px solid ${BORDER}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#aaa" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
 
@@ -867,21 +909,24 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onExercise, completedE
           <div style={{ fontFamily:FONT,fontWeight:900,fontSize:15,color:"#fff",letterSpacing:2 }}>WORKOUT</div>
           {started && (
             <div style={{ display:"flex",alignItems:"center",gap:8,justifyContent:"center",marginTop:4 }}>
-              <div style={{ fontFamily:FONT,fontWeight:900,fontSize:22,color:PRIMARY,letterSpacing:3,transition:"color 0.2s" }}>{fmt(elapsed)}</div>
-              
+              <div style={{ fontFamily:FONT,fontWeight:900,fontSize:22,color:paused?"#888":PRIMARY,letterSpacing:3,transition:"color 0.2s" }}>{fmt(elapsed)}</div>
+              {paused && <div style={{ fontFamily:FONT,fontSize:10,color:"#888",letterSpacing:1 }}>PAUSED</div>}
             </div>
           )}
         </div>
 
         {/* Pause/Play button — only when started */}
         {started && !allDone ? (
-          <button onClick={()=>setPaused(p=>!p)}
-            style={{ width:42,height:42,borderRadius:"50%",background:CARD,border:`2px solid #333`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.2s" }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill={PRIMARY}><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+          <button onClick={()=>{ if(onTogglePause) onTogglePause(); }}
+            style={{ width:42,height:42,borderRadius:"50%",background:CARD,border:`2px solid ${paused?"#22C55E":"#333"}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.2s" }}>
+            {paused
+              ? <svg width="16" height="16" viewBox="0 0 24 24" fill="#22C55E"><polygon points="5 3 19 12 5 21"/></svg>
+              : <svg width="16" height="16" viewBox="0 0 24 24" fill={PRIMARY}><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            }
           </button>
         ) : (
           <div style={{ width:42,height:42,borderRadius:"50%",background:PRIMARY,display:"flex",alignItems:"center",justifyContent:"center" }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>
           </div>
         )}
       </div>
@@ -893,9 +938,9 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onExercise, completedE
           <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#aaa",textAlign:"center",marginBottom:18 }}>{workout.name}</div>
           <div style={{ display:"flex",justifyContent:"space-around" }}>
             {[
-              {val:Array.isArray(workout.exercises)?workout.exercises.length:workout.exercises,lbl:"Exercises",col:"#FF6B35",svg:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FF6B35" strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>},
-              {val:workout.cal,lbl:"Calories",col:"#EF4444",svg:<svg width="18" height="18" viewBox="0 0 24 24" fill="#EF4444"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>},
-              {val:workout.mins||workout.duration||0,lbl:"Minutes",col:"#22C55E",svg:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>},
+              {val:exercises.length,                            lbl:"Exercises",col:"#FF6B35",svg:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FF6B35" strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>},
+              {val:workout.calories||workout.cal||0,            lbl:"Calories",col:"#EF4444",svg:<svg width="18" height="18" viewBox="0 0 24 24" fill="#EF4444"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>},
+              {val:workout.duration||workout.mins||0,           lbl:"Minutes",col:"#22C55E",svg:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>},
             ].map(s=>(
               <div key={s.lbl} style={{ textAlign:"center" }}>
                 <div style={{ display:"flex",alignItems:"center",justifyContent:"center",gap:5,marginBottom:4 }}>
@@ -910,13 +955,17 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onExercise, completedE
 
         {/* Exercise list */}
         <div style={{ padding:"0 16px" }}>
+          {exercises.length === 0 && (
+            <div style={{ textAlign:"center",padding:"40px 20px" }}>
+              <div style={{ fontFamily:FONT,fontSize:14,color:"#666" }}>No exercises with video available for this workout.</div>
+            </div>
+          )}
           {exercises.map((ex,i)=>{
-            const done = completedEx.includes(i) || completedExercises.includes(ex.name);
+            const done    = completedEx.includes(i) || completedExercises.includes(ex.name);
             const skipped = completedEx.includes(`skip_${i}`);
             return (
               <div key={i} style={{ background:"#fff",borderRadius:18,marginBottom:12,overflow:"hidden",border:done?`2px solid #22C55E`:skipped?`2px solid #F9731633`:`2px solid transparent`,transition:"border-color 0.2s" }}>
                 <div style={{ display:"flex",alignItems:"center" }}>
-                  {/* Thumb */}
                   <div onClick={()=>onExercise&&onExercise(ex)} style={{ position:"relative",width:90,height:90,flexShrink:0,cursor:"pointer" }}>
                     <img src={ex.thumbnailUrl || ex.img || "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=200&q=70"} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
                     <div style={{ position:"absolute",inset:0,background:"rgba(0,0,0,0.2)",display:"flex",alignItems:"center",justifyContent:"center" }}>
@@ -925,21 +974,17 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onExercise, completedE
                       </div>
                     </div>
                   </div>
-                  {/* Info */}
                   <div onClick={()=>onExercise&&onExercise(ex)} style={{ flex:1,padding:"12px 10px",cursor:"pointer" }}>
                     <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:"#111",marginBottom:2 }}>{ex.name}</div>
-                    <div style={{ fontFamily:FONT,fontSize:12,color:"#888888",marginBottom:3 }}>{ex.sets} sets × {ex.reps} reps</div>
+                    <div style={{ fontFamily:FONT,fontSize:12,color:"#888888",marginBottom:3 }}>{ex.sets} sets × {parseReps(ex.reps)} reps</div>
                     <div style={{ fontFamily:FONT,fontSize:11,color:PRIMARY }}>{ex.muscles}</div>
                     {skipped && <div style={{ fontFamily:FONT,fontSize:10,color:"#F97316",marginTop:2,fontWeight:600 }}>Skipped</div>}
                   </div>
-                  {/* Action buttons */}
                   <div style={{ padding:"0 12px 0 4px",display:"flex",flexDirection:"column",gap:6,alignItems:"center" }}>
-                    {/* Complete / done */}
                     <button onClick={(e)=>{e.stopPropagation(); if(!skipped) toggleEx(i);}}
                       style={{ width:34,height:34,borderRadius:"50%",background:done?"#22C55E":PRIMARY,border:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"background 0.2s",opacity:skipped?0.3:1 }}>
                       <svg width="14" height="11" viewBox="0 0 14 11" fill="none" stroke="#fff" strokeWidth="2.5"><polyline points="1,5.5 5,9.5 13,1"/></svg>
                     </button>
-                    {/* Skip this exercise */}
                     {!done && (
                       <button onClick={(e)=>{e.stopPropagation(); setCompletedEx(p => p.includes(`skip_${i}`) ? p.filter(x=>x!==`skip_${i}`) : [...p,`skip_${i}`]);}}
                         style={{ width:34,height:34,borderRadius:"50%",background:skipped?"#F9731633":"#f5f5f5",border:`1px solid ${skipped?"#F97316":"#e0e0e0"}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.2s" }}>
@@ -967,7 +1012,7 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onExercise, completedE
           </button>
         ) : (
           <div style={{ background:"#111",borderRadius:50,padding:"14px 18px",textAlign:"center" }}>
-            <span style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#888888" }}>{completedEx.filter(x=>!String(x).startsWith("skip_")).length}/{exercises.length} exercises done</span>
+            <span style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#888888" }}>{doneCt}/{exercises.length} exercises done</span>
           </div>
         )}
       </div>
@@ -3632,80 +3677,116 @@ function LineGraph({ data, dates, color }) {
 
 function PersonalRecordsPage({ onBack }) {
   const { dark } = useTheme();
-  const recScrollRef = useScrollPos("personal-records");
   const T = dark ? DARK : LIGHT;
-  const [search, setSearch] = useState("");
+  const recScrollRef = useScrollPos("personal-records");
+  const [search, setSearch]   = useState("");
   const [selected, setSelected] = useState(null);
+  const [records, setRecords]   = useState([]);
+  const [loading, setLoading]   = useState(true);
 
-  const filtered = RECORDS.filter(r=>r.name.toLowerCase().includes(search.toLowerCase()));
-  const rec = selected ? RECORDS.find(r=>r.name===selected) : null;
+  useEffect(()=>{
+    apiCall('/users/personal-records')
+      .then(d=>{ if(d?.data?.records) setRecords(d.data.records); })
+      .catch(()=>{})
+      .finally(()=>setLoading(false));
+  }, []);
+
+  const filtered = records.filter(r => r.exerciseName.toLowerCase().includes(search.toLowerCase()));
+  const rec      = selected ? records.find(r => r.exerciseName === selected) : null;
+
+  const fmtWeight = (w) => w ? `${w} lbs` : '—';
+  const fmtDate   = (d) => d ? new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : '—';
+  const RECORD_COLORS = ['#00A3FF','#22C55E','#F59E0B','#EF4444','#8B5CF6','#F97316','#06B6D4'];
 
   return (
     <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column" }}>
       <div style={{ padding:"50px 18px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0 }}>
-        {rec
-          ? <BackBtn onBack={()=>setSelected(null)}/>
-          : <BackBtn onBack={onBack}/>
-        }
+        {rec ? <BackBtn onBack={()=>setSelected(null)}/> : <BackBtn onBack={onBack}/>}
         <div style={{ fontFamily:FONT,fontWeight:900,fontSize:15,color:"#fff",letterSpacing:2 }}>{rec?"RECORD DETAIL":"PERSONAL RECORDS"}</div>
         <div style={{ width:38 }}/>
       </div>
 
       {!rec ? (
         <div ref={recScrollRef} style={{ flex:1,overflowY:"auto",padding:"0 16px 32px" }}>
-          {/* Search */}
-          <div style={{ background:CARD2,borderRadius:50,border:`1px solid ${BORDER}`,display:"flex",alignItems:"center",padding:"0 18px",height:50,marginBottom:20 }}>
+          <div style={{ background:CARD,borderRadius:50,border:`1px solid ${BORDER}`,display:"flex",alignItems:"center",padding:"0 18px",height:50,marginBottom:20 }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search exercises..." style={{ flex:1,background:"none",border:"none",fontFamily:FONT,fontSize:14,color:"#fff",outline:"none",marginLeft:10 }}/>
           </div>
 
           <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#444",letterSpacing:1,marginBottom:12 }}>YOUR BEST PERFORMANCES</div>
 
-          {filtered.map((r,i)=>(
-            <div key={i} onClick={()=>setSelected(r.name)}
-              style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"16px 18px",marginBottom:12,display:"flex",alignItems:"center",gap:14,cursor:"pointer",animation:`fadeUp 0.3s ease ${i*0.06}s both` }}>
-              <div style={{ width:46,height:46,borderRadius:"50%",background:r.bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>{<RecordIcon name={r.name}/>||"•"}</div>
-              <div style={{ flex:1 }}>
-                <div style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:"#fff",marginBottom:3 }}>{r.name}</div>
-                <div style={{ fontFamily:FONT,fontSize:12,color:"#888888" }}>Personal Best · {r.when}</div>
+          {loading && (
+            <div style={{ textAlign:"center",padding:"40px 0" }}>
+              <div style={{ width:32,height:32,border:`3px solid ${BORDER}`,borderTop:`3px solid ${PRIMARY}`,borderRadius:"50%",margin:"0 auto",animation:"spin 0.8s linear infinite" }}/>
+            </div>
+          )}
+
+          {!loading && filtered.length === 0 && (
+            <div style={{ textAlign:"center",padding:"60px 20px" }}>
+              <div style={{ width:64,height:64,borderRadius:"50%",background:`${PRIMARY}18`,border:`1px solid ${PRIMARY}33`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px" }}>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.8"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>
               </div>
-              <div style={{ textAlign:"right" }}>
-                <div style={{ fontFamily:FONT,fontWeight:900,fontSize:18,color:r.color }}>{r.val}</div>
+              <div style={{ fontFamily:FONT,fontWeight:800,fontSize:17,color:"#fff",marginBottom:8 }}>No records yet</div>
+              <div style={{ fontFamily:FONT,fontSize:14,color:"#666",lineHeight:1.6 }}>
+                {records.length === 0
+                  ? "Complete your first workout to set your baseline personal records."
+                  : "No records match your search."}
               </div>
             </div>
-          ))}
+          )}
+
+          {!loading && filtered.map((r,i)=>{
+            const color = RECORD_COLORS[i % RECORD_COLORS.length];
+            return (
+              <div key={r.id} onClick={()=>setSelected(r.exerciseName)}
+                style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"16px 18px",marginBottom:12,display:"flex",alignItems:"center",gap:14,cursor:"pointer",animation:`fadeUp 0.3s ease ${i*0.06}s both` }}>
+                <div style={{ width:46,height:46,borderRadius:"50%",background:`${color}22`,border:`1px solid ${color}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:"#fff",marginBottom:3 }}>{r.exerciseName}</div>
+                  <div style={{ fontFamily:FONT,fontSize:12,color:"#888888" }}>Personal Best · {fmtDate(r.achievedAt)}</div>
+                </div>
+                <div style={{ textAlign:"right" }}>
+                  <div style={{ fontFamily:FONT,fontWeight:900,fontSize:18,color }}>{fmtWeight(r.weight)}</div>
+                  {r.reps && <div style={{ fontFamily:FONT,fontSize:11,color:"#555",marginTop:2 }}>{r.reps} reps</div>}
+                </div>
+              </div>
+            );
+          })}
         </div>
       ) : (
         <div style={{ flex:1,overflowY:"auto",padding:"0 16px 32px",animation:"fadeUp 0.3s ease both" }}>
-          {/* Record hero */}
-          <div style={{ background:`linear-gradient(135deg,${rec.bg},${rec.bg.slice(0,-2)}44)`,border:`1.5px solid ${rec.color}44`,borderRadius:22,padding:"28px 24px",textAlign:"center",marginBottom:16 }}>
-            <div style={{ width:64,height:64,borderRadius:"50%",background:rec.bg,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto",marginBottom:12 }}><RecordIcon name={rec.name}/></div>
-            <div style={{ fontFamily:FONT,fontWeight:900,fontSize:22,color:"#fff",marginBottom:6 }}>{rec.name}</div>
-            <div style={{ fontFamily:FONT,fontWeight:900,fontSize:48,color:rec.color,lineHeight:1,marginBottom:8 }}>{rec.val}</div>
-            <div style={{ fontFamily:FONT,fontSize:13,color:"rgba(255,255,255,0.5)" }}>Achieved {rec.when}</div>
-          </div>
-
-          {/* Progress over time — SVG Line Graph */}
-          <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"18px",marginBottom:14 }}>
-            <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#444",letterSpacing:1,marginBottom:16 }}>PROGRESS OVER TIME</div>
-            <LineGraph data={rec.history} dates={rec.dates} color={rec.color}/>
-          </div>
-
-          {/* Stats */}
-          <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"18px" }}>
-            <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#444",letterSpacing:1,marginBottom:14 }}>STATS</div>
-            {[
-              {lbl:"Personal Best",       val:rec.val,  c:rec.color},
-              {lbl:"Last Achieved",       val:rec.when, c:"#fff"},
-              {lbl:"Total Sessions",      val:"24",     c:"#22C55E"},
-              {lbl:"Improvement (30d)",   val:"+8%",    c:"#22C55E"},
-            ].map((s,i,arr)=>(
-              <div key={i} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",paddingBottom:i<arr.length-1?12:0,borderBottom:i<arr.length-1?`1px solid ${BORDER}`:0,marginBottom:i<arr.length-1?12:0 }}>
-                <span style={{ fontFamily:FONT,fontSize:14,color:"#aaa" }}>{s.lbl}</span>
-                <span style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:s.c }}>{s.val}</span>
-              </div>
-            ))}
-          </div>
+          {(() => {
+            const idx   = records.findIndex(r=>r.exerciseName===selected);
+            const color = RECORD_COLORS[idx % RECORD_COLORS.length] || PRIMARY;
+            return (
+              <>
+                <div style={{ background:`linear-gradient(135deg,${color}22,${color}11)`,border:`1.5px solid ${color}44`,borderRadius:22,padding:"28px 24px",textAlign:"center",marginBottom:16 }}>
+                  <div style={{ width:64,height:64,borderRadius:"50%",background:`${color}22`,border:`1px solid ${color}44`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 12px" }}>
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>
+                  </div>
+                  <div style={{ fontFamily:FONT,fontWeight:900,fontSize:22,color:"#fff",marginBottom:6 }}>{rec.exerciseName}</div>
+                  <div style={{ fontFamily:FONT,fontWeight:900,fontSize:48,color,lineHeight:1,marginBottom:8 }}>{fmtWeight(rec.weight)}</div>
+                  {rec.reps && <div style={{ fontFamily:FONT,fontSize:14,color:"rgba(255,255,255,0.6)",marginBottom:4 }}>{rec.reps} reps</div>}
+                  <div style={{ fontFamily:FONT,fontSize:13,color:"rgba(255,255,255,0.5)" }}>Achieved {fmtDate(rec.achievedAt)}</div>
+                </div>
+                <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"18px" }}>
+                  <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#444",letterSpacing:1,marginBottom:14 }}>STATS</div>
+                  {[
+                    {lbl:"Personal Best",  val:fmtWeight(rec.weight), c:color},
+                    {lbl:"Best Reps",      val:rec.reps ? `${rec.reps} reps` : '—', c:"#fff"},
+                    {lbl:"Last Achieved",  val:fmtDate(rec.achievedAt), c:"#fff"},
+                  ].map((s,i,arr)=>(
+                    <div key={i} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",paddingBottom:i<arr.length-1?12:0,borderBottom:i<arr.length-1?`1px solid ${BORDER}`:0,marginBottom:i<arr.length-1?12:0 }}>
+                      <span style={{ fontFamily:FONT,fontSize:14,color:"#aaa" }}>{s.lbl}</span>
+                      <span style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:s.c }}>{s.val}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            );
+          })()}
         </div>
       )}
     </div>
@@ -3901,6 +3982,12 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
   const T = dark ? DARK : LIGHT;
   const [subPage, setSubPage] = useState(null);
   const [wIdx, setWIdx] = useState(TODAY_IDX);
+  const [upcomingWorkouts, setUpcomingWorkouts] = useState([]);
+  useEffect(()=>{
+    apiCall('/workouts/upcoming?days=4')
+      .then(d=>{ if(d?.data?.upcoming) setUpcomingWorkouts(d.data.upcoming); })
+      .catch(()=>{});
+  }, []);
   const weightsScrollRef = useScrollPos("weights-hub");
   const goBack = () => {
     setSubPage(null);
@@ -4001,47 +4088,59 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
         </div>
 
         {/* ── NEXT WORKOUT ── */}
-        <div style={{ background:"#fff",borderRadius:20,padding:"20px",marginBottom:14 }}>
+        {upcomingWorkouts.length > 0 ? upcomingWorkouts.slice(0,1).map((up,i)=>{
+          const utc = { STRENGTH:PRIMARY, CARDIO:"#F59E0B", HIIT:"#6366F1", RECOVERY:"#22C55E", MOBILITY:"#22C55E" }[up.workout.type] || PRIMARY;
+          const energyColors = { peak:PRIMARY, good:"#22C55E", okay:"#EAB308", low:"#F97316", empty:"#EF4444" };
+          const ec = energyColors[up.predictedEnergy] || "#888";
+          return (
+            <div key={i} style={{ background:"#fff",borderRadius:20,padding:"20px",marginBottom:14 }}>
               <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4 }}>
                 <div>
-                  <div style={{ fontFamily:FONT,fontSize:11,color:"#888",fontWeight:600,marginBottom:2 }}>NEXT SESSION</div>
-                  <div style={{ fontFamily:FONT,fontWeight:800,fontSize:18,color:"#111" }}>{w.name}</div>
+                  <div style={{ fontFamily:FONT,fontSize:11,color:"#888",fontWeight:600,marginBottom:2 }}>NEXT SESSION · {up.dayName.toUpperCase()}</div>
+                  <div style={{ fontFamily:FONT,fontWeight:800,fontSize:18,color:"#111" }}>{up.workout.name}</div>
                 </div>
-                <div style={{ background:tc,borderRadius:20,padding:"5px 12px" }}>
-                  <span style={{ fontFamily:FONT,fontWeight:800,fontSize:10,color:"#fff",letterSpacing:1 }}>{w.type}</span>
-                </div>
-              </div>
-              <div style={{ fontFamily:FONT,fontSize:12,color:"#888",marginBottom:14 }}>{w.duration} min · {w.cal} cal · {w.day}</div>
-
-              <div style={{ marginBottom:14 }}>
-                <div style={{ fontFamily:FONT,fontSize:11,color:"#aaa",fontWeight:600,letterSpacing:0.5,marginBottom:8 }}>SWITCH DAY</div>
-                <div style={{ display:"flex",gap:6,overflowX:"auto",paddingBottom:4 }}>
-                  {WEEKLY_WORKOUTS.map((d,i)=>(
-                    <button key={i} onClick={()=>setWIdx(i)}
-                      style={{ flexShrink:0,padding:"6px 12px",borderRadius:20,border:`1.5px solid ${i===wIdx?tc:"#e0e0e0"}`,background:i===wIdx?tc:"transparent",fontFamily:FONT,fontWeight:600,fontSize:11,color:i===wIdx?"#fff":"#555",cursor:"pointer",transition:"all 0.2s" }}>
-                      {d.day}
-                    </button>
-                  ))}
+                <div style={{ background:utc,borderRadius:20,padding:"5px 12px" }}>
+                  <span style={{ fontFamily:FONT,fontWeight:800,fontSize:10,color:"#fff",letterSpacing:1 }}>{up.workout.type}</span>
                 </div>
               </div>
-
+              <div style={{ fontFamily:FONT,fontSize:12,color:"#888",marginBottom:8 }}>{up.workout.duration} min · {up.workout.calories} cal</div>
+              <div style={{ display:"flex",alignItems:"center",gap:6,marginBottom:14,background:`${ec}15`,borderRadius:10,padding:"6px 10px",border:`1px solid ${ec}33` }}>
+                <div style={{ width:8,height:8,borderRadius:"50%",background:ec,flexShrink:0 }}/>
+                <div style={{ fontFamily:FONT,fontSize:11,color:ec,fontWeight:600 }}>Predicted energy: {up.energyLabel}</div>
+              </div>
               <div style={{ display:"flex",flexDirection:"column",gap:8,marginBottom:16 }}>
-                {w.exercises.map(ex=>(
-                  <div key={ex.n} style={{ background:"#f3f4f6",borderRadius:14,padding:"12px 16px",display:"flex",alignItems:"center",gap:12 }}>
-                    <div style={{ width:34,height:34,borderRadius:10,background:tc,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontFamily:FONT,fontWeight:800,fontSize:12 }}>{ex.n}</div>
+                {up.workout.exercises.map((ex,j)=>(
+                  <div key={j} style={{ background:"#f3f4f6",borderRadius:14,padding:"12px 16px",display:"flex",alignItems:"center",gap:12 }}>
+                    <div style={{ width:34,height:34,borderRadius:10,background:utc,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontFamily:FONT,fontWeight:800,fontSize:12 }}>{j+1}</div>
                     <div style={{ flex:1 }}>
                       <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#111" }}>{ex.name}</div>
-                      <div style={{ fontFamily:FONT,fontSize:12,color:"#888",marginTop:1 }}>{ex.detail}</div>
+                      <div style={{ fontFamily:FONT,fontSize:12,color:"#888",marginTop:1 }}>{ex.sets} sets × {parseReps(ex.reps)} reps</div>
                     </div>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#bbb" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
                   </div>
                 ))}
               </div>
-
-              <button onClick={()=>{ if(w.type!=="REST") onNavigate&&onNavigate("workoutDetail"); }} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:w.type==="REST"?"#f0f0f0":tc,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:w.type==="REST"?"#888":"#fff",cursor:w.type==="REST"?"default":"pointer",letterSpacing:1 }}>
-                {w.type==="REST"?"REST DAY":"START WORKOUT"}
+              <button onClick={()=>onNavigate&&onNavigate("workoutDetail")} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:utc,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",letterSpacing:1 }}>
+                START WORKOUT
               </button>
             </div>
+          );
+        }) : (
+          <div style={{ background:"#fff",borderRadius:20,padding:"20px",marginBottom:14 }}>
+            <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4 }}>
+              <div>
+                <div style={{ fontFamily:FONT,fontSize:11,color:"#888",fontWeight:600,marginBottom:2 }}>NEXT SESSION</div>
+                <div style={{ fontFamily:FONT,fontWeight:800,fontSize:18,color:"#111" }}>{w.name}</div>
+              </div>
+              <div style={{ background:tc,borderRadius:20,padding:"5px 12px" }}>
+                <span style={{ fontFamily:FONT,fontWeight:800,fontSize:10,color:"#fff",letterSpacing:1 }}>{w.type}</span>
+              </div>
+            </div>
+            <div style={{ fontFamily:FONT,fontSize:12,color:"#888",marginBottom:14 }}>{w.duration} min · {w.cal} cal · {w.day}</div>
+            <button onClick={()=>{ if(w.type!=="REST") onNavigate&&onNavigate("workoutDetail"); }} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:w.type==="REST"?"#f0f0f0":tc,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:w.type==="REST"?"#888":"#fff",cursor:w.type==="REST"?"default":"pointer",letterSpacing:1 }}>
+              {w.type==="REST"?"REST DAY":"START WORKOUT"}
+            </button>
+          </div>
+        )}
 
         {/* ── QUICK ACCESS GRID ── */}
         <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14 }}>
@@ -6478,7 +6577,7 @@ function getTailoredMealOptions(user) {
 }
 
 
-function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, streakDay=1, energyKey, onMoodSelect, weeklyWorkoutDays=0, weeklyAvgCal=null, weeklyAvgMin=null }) {
+function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, streakDay=1, energyKey, onMoodSelect, weeklyWorkoutDays=0, weeklyAvgCal=null, weeklyAvgMin=null, apiWorkout=null }) {
   const { dark } = useTheme();
   const { user, profileImg, isPremium } = useUser();
   const [trialEndedDismissed, setTrialEndedDismissed] = useState(false);
@@ -6530,18 +6629,18 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
   const quote       = QUOTES[dayOfYear % QUOTES.length];
   const meal        = MEALS[mealIdx % MEALS.length];
   const altMeals    = MEALS.filter((_,i) => i !== mealIdx).slice(0,2);
-  const workout     = getTailoredWorkout(user, energyKey);
+  const workout     = apiWorkout || getTailoredWorkout(user, energyKey);
   const lvl         = energyKey ? ENERGY_LEVELS.find(l => l.key === energyKey) : null;
   const pct         = (workoutDays / daysPerWeek) * 100;
   const hr          = new Date().getHours();
   const greeting    = hr < 12 ? "Good Morning" : hr < 17 ? "Good Afternoon" : "Good Evening";
   const displayName = (user?.name || "").split(" ")[0] || "Athlete";
 
-  const THUMBS = [
+  const exThumbs = apiWorkout?.exercises?.filter(e=>e.thumbnailUrl).slice(0,3).map(e=>e.thumbnailUrl) || [];
+  const THUMBS = exThumbs.length >= 3 ? exThumbs : [
     "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=200&q=70",
     "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=200&q=70",
     "https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?w=200&q=70",
-    "https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?w=200&q=70",
   ];
 
   return (
@@ -6718,9 +6817,9 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
             </div>
             <div style={{ flex:1 }}>
               <div style={{ fontFamily:FONT,fontWeight:800,fontSize:17,color:"#fff",marginBottom:3 }}>{workout.name}</div>
-              <div style={{ fontFamily:FONT,fontSize:11.5,color:"#89CFF0",marginBottom:9,lineHeight:1.45 }}>Target: {workout.target}</div>
+              <div style={{ fontFamily:FONT,fontSize:11.5,color:"#89CFF0",marginBottom:9,lineHeight:1.45 }}>Target: {workout.target || (apiWorkout?.exercises?.slice(0,3).map(e=>e.muscleGroup).filter(Boolean).join(', ')) || 'Full Body'}</div>
               <div style={{ display:"flex",gap:14,alignItems:"center" }}>
-                {[{val:workout.mins,icon:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,col:"#EF4444"},{val:workout.cal,icon:<svg width="13" height="13" viewBox="0 0 24 24" fill="#FF6B35"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>,col:"#FF6B35"},{val:workout.exercises,icon:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>,col:PRIMARY}].map((s,i)=>(
+                {[{val:workout.duration||workout.mins||0,icon:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,col:"#EF4444"},{val:workout.cal,icon:<svg width="13" height="13" viewBox="0 0 24 24" fill="#FF6B35"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>,col:"#FF6B35"},{val:workout.exercises,icon:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>,col:PRIMARY}].map((s,i)=>(
                   <div key={i} style={{ display:"flex",alignItems:"center",gap:4 }}>
                     {s.icon}<span style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:s.col }}>{s.val}</span>
                   </div>
@@ -6840,11 +6939,11 @@ function VTRXAppInner({ setPaymentPlan }) {
   const workoutTimerRef = useRef(null);
 
   useEffect(()=>{
-    const active = (innerPage==="workoutDetail"||innerPage==="exerciseDetail") && workoutStarted && !workoutDone;
+    const active = (innerPage==="workoutDetail"||innerPage==="exerciseDetail") && workoutStarted && !workoutDone && !workoutPaused;
     if (active) { workoutTimerRef.current = setInterval(()=>setWorkoutElapsed(t=>t+1),1000); }
     else { clearInterval(workoutTimerRef.current); }
     return ()=>clearInterval(workoutTimerRef.current);
-  }, [innerPage, workoutStarted, workoutDone]);
+  }, [innerPage, workoutStarted, workoutDone, workoutPaused]);
   const [showComplete, setShowComplete] = useState(false);
   const [mealIdx, setMealIdx] = useState(0);
   const [streakDay, setStreakDay] = useState(7);
@@ -6859,6 +6958,7 @@ function VTRXAppInner({ setPaymentPlan }) {
   const [notifCount,    setNotifCount]    = useState(0);
   const [liveUser,      setLiveUser]      = useState(null);
   const [apiWorkout,    setApiWorkout]    = useState(null);
+  const [workoutPaused, setWorkoutPaused] = useState(false);
   const dashScrollRef  = useRef(null);
   const savedScrollPos = useRef(0);
   const mouseStart     = useRef(null);
@@ -7095,8 +7195,42 @@ function VTRXAppInner({ setPaymentPlan }) {
     return <WorkoutDetailPage
       workout={activeW}
       elapsed={workoutElapsed} started={workoutStarted}
+      paused={workoutPaused}
+      onTogglePause={()=>setWorkoutPaused(p=>!p)}
       onBack={goBack}
-      onStart={()=>setWorkoutStarted(true)}
+      onStart={()=>{ setWorkoutStarted(true); setWorkoutPaused(false); }}
+      onStop={async (elapsedSeconds=0, completedExList=[], pct=0)=>{
+        setWorkoutDone(false);
+        clearInterval(workoutTimerRef.current);
+        setWorkoutStarted(false);
+        setWorkoutPaused(false);
+        setWorkoutElapsed(0);
+        const mins = Math.max(1, Math.round(elapsedSeconds / 60));
+        try {
+          const exPayload = (activeW.exercises || []).map(e => ({
+            exerciseId: e.id || undefined,
+            name:       e.name,
+            sets:       [{ setNumber:1, reps: parseReps(e.reps || e.detail || '10') }],
+          }));
+          await apiCall("/workouts/log", {
+            method: "POST",
+            body: JSON.stringify({
+              workoutId:            activeW.workoutId || undefined,
+              name:                 activeW.name,
+              type:                 activeW.type,
+              duration:             activeW.duration || activeW.mins || mins,
+              caloriesBurned:       Math.round((activeW.calories || activeW.cal || 300) * (pct / 100)),
+              energyLevel:          energyKey || "okay",
+              completionPercentage: pct,
+              exercises:            exPayload,
+            }),
+          });
+          const today   = new Date();
+          setLoggedWorkouts(prev => [...prev, { date:today, type:(activeW.type||"strength").toLowerCase(), cal:Math.round(300*(pct/100)), duration:mins, name:activeW.name }]);
+        } catch(_e){}
+        setInnerPage(null);
+        setActiveTab(0);
+      }}
       onComplete={async (elapsedSeconds=0)=>{
         setWorkoutDone(true);
         setStreakDay(s=>s+1);
@@ -7179,6 +7313,7 @@ function VTRXAppInner({ setPaymentPlan }) {
             weeklyWorkoutDays={weeklyWorkoutDays}
             weeklyAvgCal={weeklyAvgCal}
             weeklyAvgMin={weeklyAvgMin}
+            apiWorkout={apiWorkout}
             scrollRef={dashScrollRef}
             mealIdx={mealIdx}
             setMealIdx={setMealIdx}
