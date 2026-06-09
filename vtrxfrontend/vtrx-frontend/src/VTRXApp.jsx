@@ -823,17 +823,35 @@ function AiTipIcon({ type }) {
   if (type==="lightbulb") return <svg {...s}><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 017 7c0 2.38-1.19 4.47-3 5.74V17H8v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 017-7z"/></svg>;
   return <svg {...s}><circle cx="12" cy="12" r="10"/></svg>;
 }
+// Normalise an exercise from either the API shape or the hardcoded EXERCISES shape
+function normaliseExercise(ex) {
+  return {
+    id:          ex.id          || null,
+    name:        ex.name        || 'Exercise',
+    sets:        ex.sets        || 3,
+    reps:        ex.reps        || '8-12',
+    muscles:     ex.muscleGroup || ex.muscles || '',
+    cal:         ex.cal         || 0,
+    img:         ex.thumbnailUrl || ex.img     || '',
+    videoUrl:    ex.videoUrl    || null,
+    ymoveId:     ex.ymoveId     || null,
+    thumbnailUrl: ex.thumbnailUrl || ex.img    || null,
+    restSecs:    ex.restSecs    || 60,
+  };
+}
+
 function WorkoutDetailPage({ workout, onBack, onComplete, onExercise, completedExercises=[], elapsed=0, started=false, onStart }) {
   const wdpScrollRef = useScrollPos("workout-detail");
   const [completedEx, setCompletedEx] = useState([]);
 
-  // Auto-start timer when component first mounts
-  // Don't auto-start — wait for user to tap START WORKOUT button
-  // Timer is started explicitly via the start button
+  // Use exercises from the workout object when available (API data), fall back to hardcoded
+  const exercises = (Array.isArray(workout?.exercises) && workout.exercises.length > 0)
+    ? workout.exercises.map(normaliseExercise)
+    : EXERCISES.map(normaliseExercise);
 
   const fmt = (s) => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
   const toggleEx = (i) => setCompletedEx(p => p.includes(i) ? p.filter(x=>x!==i) : [...p,i]);
-  const allDone = completedEx.length === EXERCISES.length;
+  const allDone = completedEx.length === exercises.length;
 
   return (
     <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column" }}>
@@ -892,7 +910,7 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onExercise, completedE
 
         {/* Exercise list */}
         <div style={{ padding:"0 16px" }}>
-          {EXERCISES.map((ex,i)=>{
+          {exercises.map((ex,i)=>{
             const done = completedEx.includes(i) || completedExercises.includes(ex.name);
             const skipped = completedEx.includes(`skip_${i}`);
             return (
@@ -900,7 +918,7 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onExercise, completedE
                 <div style={{ display:"flex",alignItems:"center" }}>
                   {/* Thumb */}
                   <div onClick={()=>onExercise&&onExercise(ex)} style={{ position:"relative",width:90,height:90,flexShrink:0,cursor:"pointer" }}>
-                    <img src={ex.img} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+                    <img src={ex.thumbnailUrl || ex.img || "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=200&q=70"} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
                     <div style={{ position:"absolute",inset:0,background:"rgba(0,0,0,0.2)",display:"flex",alignItems:"center",justifyContent:"center" }}>
                       <div style={{ width:36,height:36,borderRadius:"50%",background:PRIMARY,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 0 12px ${PRIMARY}99` }}>
                         <svg width="11" height="13" viewBox="0 0 11 13" fill="white"><polygon points="0,0 11,6.5 0,13"/></svg>
@@ -949,7 +967,7 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onExercise, completedE
           </button>
         ) : (
           <div style={{ background:"#111",borderRadius:50,padding:"14px 18px",textAlign:"center" }}>
-            <span style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#888888" }}>{completedEx.filter(x=>!String(x).startsWith("skip_")).length}/{EXERCISES.length} exercises done</span>
+            <span style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#888888" }}>{completedEx.filter(x=>!String(x).startsWith("skip_")).length}/{exercises.length} exercises done</span>
           </div>
         )}
       </div>
@@ -1027,11 +1045,341 @@ function SwipeableSet({ set:s, index:i, activeSet, onUpdate, onComplete, onDelet
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ── VIDEO PLAYER ─────────────────────────────────────────────────────────────
+// Full-featured HTML5 video player with seek, fullscreen, PiP, speed control,
+// ±10s / +30s jumps, progress tracking, and a "no video" placeholder state.
+// ─────────────────────────────────────────────────────────────────────────────
+const PLAYBACK_SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+
+function VideoPlayer({ videoUrl, thumbnailUrl, exerciseName, onProgress, onVideoComplete, initialPositionSecs = 0 }) {
+  const videoRef    = useRef(null);
+  const containerRef = useRef(null);
+  const seekBarRef  = useRef(null);
+  const hideTimer   = useRef(null);
+  const isDragging  = useRef(false);
+
+  const [isPlaying,   setIsPlaying]   = useState(false);
+  const [currentTime, setCurrentTime] = useState(initialPositionSecs);
+  const [duration,    setDuration]    = useState(0);
+  const [speedIdx,    setSpeedIdx]    = useState(2);          // 1x default
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isPiP,       setIsPiP]       = useState(false);
+  const [showControls, setShowControls] = useState(true);
+  const [isLoading,   setIsLoading]   = useState(false);
+  const [hasError,    setHasError]    = useState(false);
+
+  const speed = PLAYBACK_SPEEDS[speedIdx];
+  const pct   = duration > 0 ? (currentTime / duration) * 100 : 0;
+
+  const fmt = (s) => {
+    const m = Math.floor(s / 60);
+    return `${m}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  };
+
+  // Auto-hide controls while playing
+  const resetHideTimer = () => {
+    clearTimeout(hideTimer.current);
+    setShowControls(true);
+    if (isPlaying && !isDragging.current) {
+      hideTimer.current = setTimeout(() => setShowControls(false), 3000);
+    }
+  };
+  useEffect(() => () => clearTimeout(hideTimer.current), []);
+
+  // Wire video element events
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const onPlay     = () => { setIsPlaying(true);  resetHideTimer(); };
+    const onPause    = () => { setIsPlaying(false); setShowControls(true); clearTimeout(hideTimer.current); };
+    const onLoading  = () => setIsLoading(true);
+    const onCanPlay  = () => { setIsLoading(false); setHasError(false); };
+    const onMeta     = () => { setDuration(v.duration || 0); if (initialPositionSecs > 0) v.currentTime = initialPositionSecs; };
+    const onTime     = () => {
+      setCurrentTime(v.currentTime);
+      if (onProgress && v.duration > 0) onProgress(v.currentTime, v.duration);
+    };
+    const onEnd      = () => { setIsPlaying(false); setShowControls(true); if (onVideoComplete) onVideoComplete(); };
+    const onError    = () => { setIsLoading(false); setHasError(true); };
+    const onEnterPiP = () => setIsPiP(true);
+    const onLeavePiP = () => setIsPiP(false);
+    const onFSChange = () => setIsFullscreen(!!document.fullscreenElement);
+
+    v.addEventListener('play',                     onPlay);
+    v.addEventListener('pause',                    onPause);
+    v.addEventListener('waiting',                  onLoading);
+    v.addEventListener('canplay',                  onCanPlay);
+    v.addEventListener('loadedmetadata',           onMeta);
+    v.addEventListener('timeupdate',               onTime);
+    v.addEventListener('ended',                    onEnd);
+    v.addEventListener('error',                    onError);
+    v.addEventListener('enterpictureinpicture',    onEnterPiP);
+    v.addEventListener('leavepictureinpicture',    onLeavePiP);
+    document.addEventListener('fullscreenchange',  onFSChange);
+    document.addEventListener('webkitfullscreenchange', onFSChange);
+
+    return () => {
+      v.removeEventListener('play',                    onPlay);
+      v.removeEventListener('pause',                   onPause);
+      v.removeEventListener('waiting',                 onLoading);
+      v.removeEventListener('canplay',                 onCanPlay);
+      v.removeEventListener('loadedmetadata',          onMeta);
+      v.removeEventListener('timeupdate',              onTime);
+      v.removeEventListener('ended',                   onEnd);
+      v.removeEventListener('error',                   onError);
+      v.removeEventListener('enterpictureinpicture',   onEnterPiP);
+      v.removeEventListener('leavepictureinpicture',   onLeavePiP);
+      document.removeEventListener('fullscreenchange', onFSChange);
+      document.removeEventListener('webkitfullscreenchange', onFSChange);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPositionSecs]);
+
+  const togglePlay = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.paused) v.play().catch(() => {});
+    else          v.pause();
+  };
+
+  const seekBy = (secs) => {
+    const v = videoRef.current;
+    if (!v || !duration) return;
+    v.currentTime = Math.max(0, Math.min(duration, v.currentTime + secs));
+    resetHideTimer();
+  };
+
+  const seekToRatio = (ratio) => {
+    const v = videoRef.current;
+    if (!v || !duration) return;
+    v.currentTime = Math.max(0, Math.min(duration, ratio * duration));
+  };
+
+  const cycleSpeed = (e) => {
+    e.stopPropagation();
+    const next = (speedIdx + 1) % PLAYBACK_SPEEDS.length;
+    setSpeedIdx(next);
+    if (videoRef.current) videoRef.current.playbackRate = PLAYBACK_SPEEDS[next];
+    resetHideTimer();
+  };
+
+  const toggleFullscreen = (e) => {
+    e.stopPropagation();
+    const el = containerRef.current;
+    const v  = videoRef.current;
+    if (!el) return;
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
+    } else if (el.requestFullscreen) {
+      el.requestFullscreen();
+    } else if (el.webkitRequestFullscreen) {
+      el.webkitRequestFullscreen();
+    } else if (v?.webkitEnterFullscreen) {
+      v.webkitEnterFullscreen(); // iOS Safari fallback
+    }
+  };
+
+  const togglePiP = async (e) => {
+    e.stopPropagation();
+    const v = videoRef.current;
+    if (!v) return;
+    try {
+      if (document.pictureInPictureElement) await document.exitPictureInPicture();
+      else                                   await v.requestPictureInPicture();
+    } catch (_) {}
+  };
+
+  // Seek bar interaction (supports both mouse and touch)
+  const getSeekRatio = (clientX) => {
+    const bar = seekBarRef.current;
+    if (!bar) return 0;
+    const { left, width } = bar.getBoundingClientRect();
+    return Math.max(0, Math.min(1, (clientX - left) / width));
+  };
+
+  const onSeekBarDown = (e) => {
+    e.stopPropagation();
+    isDragging.current = true;
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    seekToRatio(getSeekRatio(clientX));
+  };
+  const onSeekBarMove = (e) => {
+    if (!isDragging.current) return;
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    seekToRatio(getSeekRatio(clientX));
+  };
+  const onSeekBarUp = () => { isDragging.current = false; resetHideTimer(); };
+
+  const hasPiP = typeof document !== 'undefined' && 'pictureInPictureEnabled' in document;
+
+  // ── No video URL → show placeholder ───────────────────────────────────────
+  if (!videoUrl) {
+    return (
+      <div style={{ position:'relative', width:'100%', height:210, background:'#0a0a0a', overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:10 }}>
+        {thumbnailUrl
+          ? <img src={thumbnailUrl} alt="" style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', filter:'brightness(0.35)' }}/>
+          : null}
+        <div style={{ position:'relative', width:52, height:52, borderRadius:'50%', background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.12)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="1.5"><polygon points="5 3 19 12 5 21"/></svg>
+        </div>
+        <span style={{ position:'relative', fontFamily:FONT, fontSize:10, color:'#444', letterSpacing:1.5 }}>DEMO VIDEO COMING SOON</span>
+      </div>
+    );
+  }
+
+  const playerHeight = isFullscreen ? '100vh' : 210;
+
+  return (
+    <div
+      ref={containerRef}
+      style={{ position:'relative', width:'100%', height:playerHeight, background:'#000', overflow:'hidden', userSelect:'none', WebkitUserSelect:'none', touchAction:'manipulation' }}
+      onClick={() => { togglePlay(); resetHideTimer(); }}
+      onMouseMove={resetHideTimer}
+      onTouchStart={resetHideTimer}
+    >
+      {/* ─ Video element ─ */}
+      <video
+        ref={videoRef}
+        src={videoUrl}
+        poster={thumbnailUrl || undefined}
+        style={{ width:'100%', height:'100%', objectFit: isFullscreen ? 'contain' : 'cover', display:'block' }}
+        playsInline
+        preload="metadata"
+      />
+
+      {/* ─ Loading spinner ─ */}
+      {isLoading && (
+        <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.4)', pointerEvents:'none' }}>
+          <div style={{ width:36, height:36, border:'3px solid rgba(255,255,255,0.2)', borderTopColor:'#fff', borderRadius:'50%', animation:'spin 0.8s linear infinite' }}/>
+        </div>
+      )}
+
+      {/* ─ Error state ─ */}
+      {hasError && (
+        <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:8, background:'rgba(0,0,0,0.7)', pointerEvents:'none' }}>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span style={{ fontFamily:FONT, fontSize:12, color:'#EF4444' }}>Video unavailable</span>
+        </div>
+      )}
+
+      {/* ─ Controls overlay (auto-hides) ─ */}
+      {showControls && !hasError && (
+        <>
+          {/* Gradient overlay */}
+          <div style={{ position:'absolute', inset:0, background:'linear-gradient(180deg, rgba(0,0,0,0.55) 0%, transparent 30%, transparent 60%, rgba(0,0,0,0.75) 100%)', pointerEvents:'none' }}/>
+
+          {/* Top bar: speed | PiP | fullscreen */}
+          <div style={{ position:'absolute', top:0, left:0, right:0, display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 12px' }} onClick={e=>e.stopPropagation()}>
+            <button
+              onClick={cycleSpeed}
+              style={{ background:'rgba(0,0,0,0.55)', backdropFilter:'blur(6px)', border:'1px solid rgba(255,255,255,0.15)', borderRadius:20, padding:'4px 11px', cursor:'pointer' }}
+            >
+              <span style={{ fontFamily:FONT, fontWeight:700, fontSize:11, color:'#fff' }}>{speed}×</span>
+            </button>
+            <div style={{ display:'flex', gap:8 }}>
+              {hasPiP && (
+                <button onClick={togglePiP} style={{ width:30, height:30, borderRadius:'50%', background:'rgba(0,0,0,0.55)', backdropFilter:'blur(6px)', border:'1px solid rgba(255,255,255,0.15)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
+                  {isPiP
+                    ? <svg width="13" height="13" viewBox="0 0 24 24" fill="#00A3FF" stroke="none"><rect x="2" y="4" width="20" height="16" rx="2"/></svg>
+                    : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><rect x="2" y="4" width="20" height="16" rx="2"/><rect x="13" y="11" width="8" height="7" rx="1" fill="#fff" stroke="none"/></svg>}
+                </button>
+              )}
+              <button onClick={toggleFullscreen} style={{ width:30, height:30, borderRadius:'50%', background:'rgba(0,0,0,0.55)', backdropFilter:'blur(6px)', border:'1px solid rgba(255,255,255,0.15)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
+                {isFullscreen
+                  ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><polyline points="8 3 3 3 3 8"/><polyline points="21 3 16 3 16 8"/><polyline points="3 21 3 16 8 16"/><polyline points="16 21 21 21 21 16"/></svg>
+                  : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>}
+              </button>
+            </div>
+          </div>
+
+          {/* Centre playback controls */}
+          <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', gap:28, pointerEvents:'none' }}>
+            {/* −10 s */}
+            <button onClick={e=>{e.stopPropagation();seekBy(-10);}} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:3, pointerEvents:'all', padding:6 }}>
+              <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
+                <path d="M6.5 4.5A10.5 10.5 0 1 0 13 2.5V5" stroke="#fff" strokeWidth="2" strokeLinecap="round"/>
+                <polyline points="9,2 13,5 9,8" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <text x="9" y="17" fontSize="7" fontWeight="700" fill="#fff" fontFamily="system-ui">10</text>
+              </svg>
+              <span style={{fontFamily:FONT,fontSize:9,color:'rgba(255,255,255,0.7)',letterSpacing:0.5}}>BACK</span>
+            </button>
+
+            {/* Play / Pause */}
+            <button onClick={e=>{e.stopPropagation();togglePlay();}} style={{ width:54, height:54, borderRadius:'50%', background:PRIMARY, border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:`0 0 24px ${PRIMARY}88`, pointerEvents:'all' }}>
+              {isPlaying
+                ? <svg width="17" height="17" viewBox="0 0 24 24" fill="white"><rect x="6"  y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                : <svg width="17" height="17" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21"/></svg>}
+            </button>
+
+            {/* +30 s */}
+            <button onClick={e=>{e.stopPropagation();seekBy(30);}} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:3, pointerEvents:'all', padding:6 }}>
+              <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
+                <path d="M19.5 4.5A10.5 10.5 0 1 1 13 2.5V5" stroke="#fff" strokeWidth="2" strokeLinecap="round"/>
+                <polyline points="17,2 13,5 17,8" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <text x="8" y="17" fontSize="7" fontWeight="700" fill="#fff" fontFamily="system-ui">30</text>
+              </svg>
+              <span style={{fontFamily:FONT,fontSize:9,color:'rgba(255,255,255,0.7)',letterSpacing:0.5}}>SKIP</span>
+            </button>
+          </div>
+
+          {/* Bottom: seek bar + time */}
+          <div style={{ position:'absolute', bottom:0, left:0, right:0, padding:'0 14px 12px' }} onClick={e=>e.stopPropagation()}>
+            {/* Seek bar */}
+            <div
+              ref={seekBarRef}
+              style={{ position:'relative', height:22, display:'flex', alignItems:'center', cursor:'pointer', touchAction:'none' }}
+              onMouseDown={onSeekBarDown}
+              onMouseMove={onSeekBarMove}
+              onMouseUp={onSeekBarUp}
+              onMouseLeave={onSeekBarUp}
+              onTouchStart={onSeekBarDown}
+              onTouchMove={onSeekBarMove}
+              onTouchEnd={onSeekBarUp}
+            >
+              <div style={{ position:'absolute', left:0, right:0, height:3, background:'rgba(255,255,255,0.18)', borderRadius:3 }}>
+                <div style={{ height:'100%', width:`${pct}%`, background:PRIMARY, borderRadius:3 }}/>
+              </div>
+              <div style={{ position:'absolute', left:`${pct}%`, transform:'translateX(-50%)', width:13, height:13, borderRadius:'50%', background:'#fff', boxShadow:`0 0 6px ${PRIMARY}`, transition: isDragging.current ? 'none' : 'left 0.1s' }}/>
+            </div>
+            {/* Time */}
+            <div style={{ display:'flex', justifyContent:'space-between', marginTop:2 }}>
+              <span style={{fontFamily:'monospace',fontSize:10,color:'rgba(255,255,255,0.65)'}}>{fmt(currentTime)}</span>
+              <span style={{fontFamily:'monospace',fontSize:10,color:'rgba(255,255,255,0.45)'}}>{fmt(duration)}</span>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // ── NEW INNER PAGE: EXERCISE DETAIL ──────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
 function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutFmt, onAutoStartWorkout }) {
   const exScrollRef = useScrollPos("exercise-" + (exercise?.name||""));
-  const ex = exercise || EXERCISES[0];
+  const ex = exercise ? normaliseExercise(exercise) : normaliseExercise(EXERCISES[0]);
+
+  // Fetch a fresh (non-expired) video URL from our proxy endpoint when this
+  // exercise has a ymove ID but no pre-loaded URL in the exercise object.
+  const [resolvedVideoUrl, setResolvedVideoUrl] = useState(ex.videoUrl || null);
+  useEffect(()=>{
+    setResolvedVideoUrl(ex.videoUrl || null); // reset when exercise changes
+    if (!ex.ymoveId || ex.videoUrl) return;
+    const token = getAuthToken();
+    if (!token) return;
+    // Check localStorage resume position for this exercise
+    try {
+      const saved = JSON.parse(localStorage.getItem('vtrx_vidprog_' + ex.ymoveId) || 'null');
+      if (saved?.pos > 5) setResumePos(saved.pos);
+    } catch(_e){}
+    apiCall(`/workouts/exercise-video/${ex.ymoveId}`)
+      .then(d => { if (d?.data?.videoUrl) setResolvedVideoUrl(d.data.videoUrl); })
+      .catch(()=>{});
+  }, [ex.ymoveId, ex.videoUrl]);
+
+  const [resumePos, setResumePos] = useState(0);
+
   const [sets, setSets] = useState([{reps:"",weight:"",done:false},{reps:"",weight:"",done:false}]);
   const MIN_SETS = 2; // first 2 sets cannot be deleted
   const [started, setStarted] = useState(false);
@@ -1106,32 +1454,21 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
       <div style={{ flex:1,overflowY:"auto",paddingBottom:100 }}>
 
         {/* ── VIDEO PLAYER ── */}
-        <div style={{ position:"relative",width:"100%",height:210,background:"#000",overflow:"hidden" }}>
-          <img src="https://images.unsplash.com/photo-1517963879433-6ad2b056d712?w=600&q=80"
-            alt="" style={{ width:"100%",height:"100%",objectFit:"cover",filter:"brightness(0.75)" }}/>
-          <div style={{ position:"absolute",inset:0,background:"linear-gradient(180deg,transparent 40%,rgba(0,0,0,0.7) 100%)" }}/>
-          {/* Play button */}
-          <div style={{ position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center" }}>
-            <div style={{ width:60,height:60,borderRadius:"50%",background:"rgba(0,163,255,0.9)",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 0 30px rgba(0,163,255,0.7)",cursor:"pointer" }}>
-              <svg width="22" height="22" viewBox="0 0 22 22" fill="white"><polygon points="4,2 20,11 4,20"/></svg>
-            </div>
-          </div>
-          {/* Labels */}
-          <div style={{ position:"absolute",bottom:14,left:16,display:"flex",gap:8 }}>
-            <div style={{ background:"rgba(0,163,255,0.85)",borderRadius:20,padding:"4px 12px" }}>
-              <span style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#fff",letterSpacing:1 }}>DEMO · 30s LOOP</span>
-            </div>
-            <div style={{ background:"rgba(0,0,0,0.6)",borderRadius:20,padding:"4px 12px",border:"1px solid rgba(255,255,255,0.2)" }}>
-              <span style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#fff" }}>Fullscreen</span>
-            </div>
-          </div>
-          {/* Timer top-right */}
-          <div style={{ position:"absolute",top:14,right:16 }}>
-            <div style={{ background:"rgba(0,0,0,0.6)",borderRadius:20,padding:"5px 14px",border:"1px solid rgba(255,255,255,0.15)" }}>
-              <span style={{ fontFamily:FONT,fontWeight:700,fontSize:12,color:"#fff" }}>00:00</span>
-            </div>
-          </div>
-        </div>
+        <VideoPlayer
+          videoUrl={resolvedVideoUrl}
+          thumbnailUrl={ex.thumbnailUrl || ex.img || null}
+          exerciseName={ex.name}
+          initialPositionSecs={resumePos}
+          onProgress={(pos, dur) => {
+            if (ex.ymoveId || ex.id) {
+              const KEY = 'vtrx_vidprog_' + (ex.ymoveId || ex.id);
+              try { localStorage.setItem(KEY, JSON.stringify({ pos: Math.floor(pos), dur: Math.floor(dur) })); } catch(_e){}
+            }
+          }}
+          onVideoComplete={() => {
+            if (onAutoStartWorkout) onAutoStartWorkout();
+          }}
+        />
 
         <div style={{ padding:"16px 16px 0" }}>
 
@@ -2093,7 +2430,7 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
   );
 }
 
-function SignUpScreen({ onContinue, onAlreadyVerified, onBack, onLogin }) {
+function SignUpScreen({ onContinue, onBack, onLogin }) {
   const [f, setF]         = useState({ name:"", username:"", email:"", password:"", confirm:"" });
   const [errors,    setErrors]    = useState({});
   const [submitted, setSubmitted] = useState(false);
@@ -2139,22 +2476,15 @@ function SignUpScreen({ onContinue, onAlreadyVerified, onBack, onLogin }) {
         }),
       });
 
-      if (data.success) {
-        if (data.data?.emailVerification === true) {
-          // Clerk auto-verified (dev mode) — skip the code screen
-          onAlreadyVerified();
-        } else if (data.data?.verificationId) {
-          if (typeof localStorage !== "undefined") {
-            localStorage.setItem("vtrx_verification_id", data.data.verificationId);
-            localStorage.setItem("vtrx_pending_email", f.email.trim().toLowerCase());
-          }
-          onContinue(f.email.trim().toLowerCase());
-        } else {
-          // verificationId missing and not auto-verified
-          setErrors({ general: "Verification setup failed. Please try again." });
-          return;
+      // ✅ ADD THESE LINES RIGHT HERE (after successful signup)
+      if (data.success && data.data?.verificationId) {
+        if (typeof localStorage !== "undefined") {
+          localStorage.setItem("vtrx_verification_id", data.data.verificationId);
+          localStorage.setItem("vtrx_pending_email", f.email.trim().toLowerCase());
         }
       }
+
+      onContinue(f.email.trim().toLowerCase());
     } catch (e) {
       setErrors({ general: e.message || "Signup failed. Please try again." });
     } finally { 
@@ -6528,10 +6858,20 @@ function VTRXAppInner({ setPaymentPlan }) {
   });
   const [notifCount,    setNotifCount]    = useState(0);
   const [liveUser,      setLiveUser]      = useState(null);
+  const [apiWorkout,    setApiWorkout]    = useState(null);
   const dashScrollRef  = useRef(null);
   const savedScrollPos = useRef(0);
   const mouseStart     = useRef(null);
   const touchStart     = useRef(null);
+
+  // Fetch personalised workout recommendation whenever energy level changes
+  useEffect(()=>{
+    const token = getAuthToken();
+    if (!token) return;
+    apiCall(`/workouts/recommend?energyLevel=${energyKey || 'okay'}`)
+      .then(d => { if (d?.data?.recommendation) setApiWorkout(d.data.recommendation); })
+      .catch(()=>{});
+  }, [energyKey]);
 
   // Load real data on mount
     // ── Load user profile from backend on mount ─────────────────────────────
@@ -6683,14 +7023,8 @@ function VTRXAppInner({ setPaymentPlan }) {
 
   if (phase==="preferences") {
     const SCREENS = [
-      <SignUpScreen
-        key={0}
-        onContinue={(email)=>{ if(email){ setPendingEmail(email); setPhase("emailVerify"); } else goNext(); }}
-        onAlreadyVerified={()=>{ setScreen(2); }}
-        onBack={()=>setPhase("onboarding")}
-        onLogin={()=>setPhase("login")}
-      />,
-      <EmailVerifyScreen   key={1} email={pendingEmail} onVerified={()=>{ goNext(); }} onBack={goPrev}/>,
+      <SignUpScreen              key={0} onContinue={(email)=>{ if(email){ setPendingEmail(email); setPhase("emailVerify"); } else goNext(); }} onBack={()=>setPhase("onboarding")} onLogin={()=>setPhase("login")}/>,
+      <EmailVerifyScreen   key={1} onContinue={goNext} onBack={goPrev}/>,
       <BodyScreen                key={2} onContinue={goNext} onBack={goPrev}/>,
       <WorkoutScreen             key={3} onContinue={goNext} onBack={goPrev}/>,
       <NutritionScreen           key={4} onContinue={goNext} onBack={goPrev}/>,
@@ -6755,68 +7089,69 @@ function VTRXAppInner({ setPaymentPlan }) {
   if (innerPage==="fitnessStats")  return <FitnessStatsPage onBack={goBack} loggedWorkouts={loggedWorkouts}/>;
   if (innerPage==="notifications") return <NotificationsPage onBack={goBack}/>;
   if (innerPage==="profile") return <ProfilePage onBack={goBack} onLogout={handleLogout} streakDay={streakDay} workoutsTotal={workoutsTotal}/>;
-  if (innerPage==="workoutDetail") return <WorkoutDetailPage workout={WEEKLY_WORKOUTS[TODAY_IDX % WEEKLY_WORKOUTS.length]} onBack={goBack}
-    elapsed={workoutElapsed} started={workoutStarted}
-    onStart={()=>setWorkoutStarted(true)}
-    onComplete={async (elapsedSeconds=0)=>{
-      setWorkoutDone(true);
-      setStreakDay(s=>s+1);
-      setWorkoutsTotal(t=>t+1);
-      // Update weekly stats
-      const mins = Math.max(1, Math.round(elapsedSeconds / 60));
-      setWeeklyWorkoutDays(d=>d+1);
-      setWeeklyAvgCal(prev=>{
-        const prevTotal = prev !== null ? prev * weeklyWorkoutDays : 0;
-        return Math.round((prevTotal + 300) / (weeklyWorkoutDays + 1));
-      });
-      setWeeklyAvgMin(prev=>{
-        const prevTotal = prev !== null ? prev * weeklyWorkoutDays : 0;
-        return Math.round((prevTotal + mins) / (weeklyWorkoutDays + 1));
-      });
-      const w = WEEKLY_WORKOUTS[TODAY_IDX % WEEKLY_WORKOUTS.length];
-      try {
-        await apiCall("/workouts/log", {
-          method: "POST",
-          body: JSON.stringify({
-            name:           w.name,
-            type:           w.type,
-            duration:       w.duration,
-            caloriesBurned: w.cal,
-            energyLevel:    energyKey || "okay",
-            exercises:      (w.exercises||[]).map(e=>({ name:e.name, sets:[{ setNumber:1, reps:e.detail }] })),
-          }),
+  if (innerPage==="workoutDetail") {
+    const fallbackW = WEEKLY_WORKOUTS[TODAY_IDX % WEEKLY_WORKOUTS.length];
+    const activeW   = apiWorkout || fallbackW;
+    return <WorkoutDetailPage
+      workout={activeW}
+      elapsed={workoutElapsed} started={workoutStarted}
+      onBack={goBack}
+      onStart={()=>setWorkoutStarted(true)}
+      onComplete={async (elapsedSeconds=0)=>{
+        setWorkoutDone(true);
+        setStreakDay(s=>s+1);
+        setWorkoutsTotal(t=>t+1);
+        const mins = Math.max(1, Math.round(elapsedSeconds / 60));
+        setWeeklyWorkoutDays(d=>d+1);
+        setWeeklyAvgCal(prev=>{
+          const prevTotal = prev !== null ? prev * weeklyWorkoutDays : 0;
+          return Math.round((prevTotal + 300) / (weeklyWorkoutDays + 1));
         });
-        // Refresh streak from backend
-        const me = await apiCall("/users/profile");
-        if (me?.data?.user?.streakDays) setStreakDay(me.data.user.streakDays);
-      } catch(_e){}
-      // Show workout complete screen instead of going straight to AI
-      const today = new Date();
-      const dateStr = today.toLocaleDateString("en-GB", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
-      const timeStr = today.toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit" });
-      const newLog = {
-        date:     today,
-        type:     (w.type||"strength").toLowerCase(),
-        cal:      300,
-        duration: Math.max(1, Math.round(elapsedSeconds / 60)),
-        name:     w.name || "Workout",
-      };
-      setLoggedWorkouts(prev => [...prev, newLog]);
-      setLastWorkoutStats({
-        calories: 300,
-        duration: Math.max(1, Math.round(elapsedSeconds / 60)),
-        exercises: w.exercises ? (Array.isArray(w.exercises) ? w.exercises.length : w.exercises) : 3,
-        name: w.name || "Workout",
-        date: dateStr,
-        time: timeStr,
-      });
-      setWorkoutStarted(false);
-      setWorkoutElapsed(0);
-      setShowComplete(true);
-      setInnerPage(null);
-      setActiveTab(0);
-    }}
-    onExercise={(ex)=>{ setSelectedExercise(ex); setInnerPage("exerciseDetail"); }}/>;
+        setWeeklyAvgMin(prev=>{
+          const prevTotal = prev !== null ? prev * weeklyWorkoutDays : 0;
+          return Math.round((prevTotal + mins) / (weeklyWorkoutDays + 1));
+        });
+        try {
+          const exPayload = (activeW.exercises || []).map(e => ({
+            exerciseId: e.id || undefined,
+            name:       e.name,
+            sets:       [{ setNumber:1, reps: e.reps || e.detail || '8' }],
+          }));
+          await apiCall("/workouts/log", {
+            method: "POST",
+            body: JSON.stringify({
+              workoutId:      activeW.workoutId || undefined,
+              name:           activeW.name,
+              type:           activeW.type,
+              duration:       activeW.duration || activeW.mins || 45,
+              caloriesBurned: activeW.calories || activeW.cal || 300,
+              energyLevel:    energyKey || "okay",
+              exercises:      exPayload,
+            }),
+          });
+          const me = await apiCall("/users/profile");
+          if (me?.data?.user?.streakDays) setStreakDay(me.data.user.streakDays);
+        } catch(_e){}
+        const today   = new Date();
+        const dateStr = today.toLocaleDateString("en-GB", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
+        const timeStr = today.toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit" });
+        setLoggedWorkouts(prev => [...prev, { date:today, type:(activeW.type||"strength").toLowerCase(), cal:300, duration:mins, name:activeW.name }]);
+        setLastWorkoutStats({
+          calories:  activeW.calories || activeW.cal || 300,
+          duration:  mins,
+          exercises: Array.isArray(activeW.exercises) ? activeW.exercises.length : (activeW.exercises || 3),
+          name:      activeW.name || "Workout",
+          date:      dateStr,
+          time:      timeStr,
+        });
+        setWorkoutStarted(false);
+        setWorkoutElapsed(0);
+        setShowComplete(true);
+        setInnerPage(null);
+        setActiveTab(0);
+      }}
+      onExercise={(ex)=>{ setSelectedExercise(ex); setInnerPage("exerciseDetail"); }}/>;
+  };
   if (innerPage==="exerciseDetail"&&selectedExercise) return <ExercisePage exercise={selectedExercise} onBack={()=>setInnerPage("workoutDetail")} onComplete={()=>setInnerPage("workoutDetail")}/>;
 
   return (
