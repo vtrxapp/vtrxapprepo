@@ -316,32 +316,71 @@ const generateAndSaveAISummary = async ({
   });
 };
 
-// ── GET /api/workouts/stats — Weekly stats ────────────────────────────────────
+// ── GET /api/workouts/stats — Weekly + monthly stats ─────────────────────────
 const getWeeklyStats = async (req, res) => {
+  const now     = new Date();
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
+  // Start of current month
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  // Start of current week (Monday)
+  const dayOfWeek  = now.getDay() === 0 ? 6 : now.getDay() - 1; // Mon=0
+  const weekStart  = new Date(now); weekStart.setDate(now.getDate() - dayOfWeek); weekStart.setHours(0,0,0,0);
+
   try {
-    const logs = await prisma.workoutLog.findMany({
-      where: {
-        userId:      req.user.id,
-        completedAt: { gte: weekAgo },
-      },
-      select: {
-        duration:       true,
-        caloriesBurned: true,
-        type:           true,
-        completedAt:    true,
-      },
-    });
+    const [weekLogs, monthLogs, totalCount, userRow] = await Promise.all([
+      prisma.workoutLog.findMany({
+        where: { userId: req.user.id, completedAt: { gte: weekStart } },
+        select: { duration: true, caloriesBurned: true, type: true, completedAt: true, name: true },
+        orderBy: { completedAt: 'asc' },
+      }),
+      prisma.workoutLog.findMany({
+        where: { userId: req.user.id, completedAt: { gte: monthStart } },
+        select: { completedAt: true, type: true, caloriesBurned: true },
+      }),
+      prisma.workoutLog.count({ where: { userId: req.user.id } }),
+      prisma.user.findUnique({ where: { id: req.user.id }, select: { streakDays: true, daysPerWeek: true } }),
+    ]);
+
+    const DAY_NAMES = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+    // Build daily breakdown for current week (Mon–Sun)
+    const dailyBreakdown = DAY_NAMES.map(day => ({ day, cal: 0, type: 'rest' }));
+    for (const log of weekLogs) {
+      const d   = new Date(log.completedAt);
+      const idx = d.getDay() === 0 ? 6 : d.getDay() - 1; // Mon=0
+      dailyBreakdown[idx] = {
+        day:  DAY_NAMES[idx],
+        cal:  log.caloriesBurned || 0,
+        type: (log.type || 'strength').toLowerCase(),
+      };
+    }
+
+    // Monthly completed days (unique dates)
+    const completedDates = [...new Set(monthLogs.map(l =>
+      new Date(l.completedAt).toISOString().slice(0, 10)
+    ))];
 
     const stats = {
-      workoutsCompleted: logs.length,
-      totalMinutes:      logs.reduce((s, l) => s + l.duration,       0),
-      totalCalories:     logs.reduce((s, l) => s + (l.caloriesBurned || 0), 0),
-      byType: logs.reduce((acc, l) => {
+      workoutsCompleted: weekLogs.length,
+      totalMinutes:      weekLogs.reduce((s, l) => s + l.duration, 0),
+      totalCalories:     weekLogs.reduce((s, l) => s + (l.caloriesBurned || 0), 0),
+      avgCalories:       weekLogs.length
+        ? Math.round(weekLogs.reduce((s, l) => s + (l.caloriesBurned || 0), 0) / weekLogs.length)
+        : 0,
+      avgMinutes:        weekLogs.length
+        ? Math.round(weekLogs.reduce((s, l) => s + l.duration, 0) / weekLogs.length)
+        : 0,
+      byType: weekLogs.reduce((acc, l) => {
         acc[l.type] = (acc[l.type] || 0) + 1;
         return acc;
       }, {}),
+      dailyBreakdown,
+      monthlyCompletedDays: completedDates.length,
+      monthlyCompletedDates: completedDates,
+      currentStreak:   userRow?.streakDays    || 0,
+      daysPerWeek:     userRow?.daysPerWeek   || 3,
+      totalWorkouts:   totalCount,
     };
 
     res.json({ success: true, data: { stats } });
