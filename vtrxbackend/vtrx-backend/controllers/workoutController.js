@@ -82,7 +82,6 @@ const getWorkoutById = async (req, res) => {
 };
 
 // ── POST /api/workouts/log — Log a completed workout ─────────────────────────
-// This is called when the user taps "Complete Workout"
 const logWorkout = async (req, res) => {
   const {
     workoutId,
@@ -92,25 +91,26 @@ const logWorkout = async (req, res) => {
     caloriesBurned,
     volume,
     notes,
-    exercises,       // [{ exerciseId, sets: [{ setNumber, reps, weight }] }]
-    generateAI,      // boolean — should we generate AI summary?
-    energyLevel,     // user's mood today
+    exercises,           // [{ exerciseId, name, sets: [{ setNumber, reps, weight }] }]
+    generateAI,
+    energyLevel,
+    completionPercentage, // 0-100
   } = req.body;
 
   try {
     // 1. Create the workout log
     const workoutLog = await prisma.workoutLog.create({
       data: {
-        userId:        req.user.id,
-        workoutId:     workoutId || null,
+        userId:               req.user.id,
+        workoutId:            workoutId || null,
         name,
         type,
-        duration:      parseInt(duration),
-        caloriesBurned: caloriesBurned ? parseInt(caloriesBurned) : null,
-        volume:        volume ? parseFloat(volume) : null,
+        duration:             parseInt(duration),
+        caloriesBurned:       caloriesBurned ? parseInt(caloriesBurned) : null,
+        volume:               volume ? parseFloat(volume) : null,
         notes,
-        energyLevel:   energyLevel || null,
-        // Create exercise sets in the same transaction
+        energyLevel:          energyLevel || null,
+        completionPercentage: completionPercentage != null ? parseInt(completionPercentage) : null,
         sets: {
           create: exercises?.flatMap(ex =>
             (ex.sets || []).map(set => ({
@@ -130,7 +130,39 @@ const logWorkout = async (req, res) => {
     // 2. Update user streak
     await updateStreak(req.user.id);
 
-    // 3. Generate AI summary asynchronously (don't wait for it to respond)
+    // 3. Detect personal records
+    const newPRs = [];
+    if (exercises?.length) {
+      for (const ex of exercises) {
+        if (!ex.name) continue;
+        for (const set of (ex.sets || [])) {
+          const weight = set.weight ? parseFloat(set.weight) : null;
+          const reps   = set.reps   ? parseInt(set.reps)    : null;
+          if (!weight || weight <= 0) continue;
+
+          const existing = await prisma.personalRecord.findFirst({
+            where:   { userId: req.user.id, exerciseName: ex.name },
+            orderBy: { weight: 'desc' },
+          });
+
+          if (!existing || weight > (existing.weight || 0)) {
+            if (existing) {
+              await prisma.personalRecord.update({
+                where: { id: existing.id },
+                data:  { weight, reps, achievedAt: new Date() },
+              });
+            } else {
+              await prisma.personalRecord.create({
+                data: { userId: req.user.id, exerciseName: ex.name, weight, reps },
+              });
+            }
+            newPRs.push({ exerciseName: ex.name, weight, reps, isFirstRecord: !existing });
+          }
+        }
+      }
+    }
+
+    // 4. Generate AI summary asynchronously
     if (generateAI !== false) {
       generateAndSaveAISummary({
         workoutLogId:  workoutLog.id,
@@ -145,12 +177,12 @@ const logWorkout = async (req, res) => {
       }).catch(err => logger.error('AI summary generation failed:', err));
     }
 
-    logger.info(`Workout logged: ${name} by user ${req.user.id}`);
+    logger.info(`Workout logged: ${name} by user ${req.user.id} (${completionPercentage ?? 100}% complete)`);
 
     res.status(201).json({
       success: true,
       message: 'Workout logged successfully!',
-      data:    { workoutLog },
+      data:    { workoutLog, newPRs },
     });
 
   } catch (error) {
@@ -416,18 +448,20 @@ const getRecommendation = async (req, res) => {
           difficulty:   dbWorkout.difficulty,
           description:  dbWorkout.description,
           imageUrl:     dbWorkout.imageUrl,
-          exercises:    dbWorkout.exercises.map(we => ({
-            id:         we.exercise.id,
-            name:       we.exercise.name,
-            muscleGroup: we.exercise.muscleGroup,
-            equipment:  we.exercise.equipment,
-            sets:       we.sets,
-            reps:       we.reps,
-            restSecs:   we.restSecs,
-            videoUrl:   we.exercise.videoUrl,
-            ymoveId:    we.exercise.ymoveId,
-            thumbnailUrl: we.exercise.thumbnailUrl,
-          })),
+          exercises:    dbWorkout.exercises
+            .filter(we => we.exercise.videoUrl)
+            .map(we => ({
+              id:          we.exercise.id,
+              name:        we.exercise.name,
+              muscleGroup: we.exercise.muscleGroup,
+              equipment:   we.exercise.equipment,
+              sets:        we.sets,
+              reps:        we.reps,
+              restSecs:    we.restSecs,
+              videoUrl:    we.exercise.videoUrl,
+              ymoveId:     we.exercise.ymoveId,
+              thumbnailUrl: we.exercise.thumbnailUrl,
+            })),
         }
       : {
           source:      'generated',
@@ -554,6 +588,69 @@ const getVideoProgress = async (req, res) => {
   } catch (error) {
     logger.error('getVideoProgress error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch progress' });
+  }
+};
+
+// ── GET /api/workouts/upcoming — Next N days with energy predictions ───────────
+const getUpcomingWorkouts = async (req, res) => {
+  const daysNum = Math.min(parseInt(req.query.days || '4'), 7);
+
+  // Energy prediction cycle: after heavy sessions energy dips, then recovers
+  const ENERGY_CYCLE = ['good', 'okay', 'peak', 'low', 'good', 'okay', 'peak'];
+
+  try {
+    const availableWorkouts = await prisma.workout.findMany({
+      where: { isPublic: true },
+      include: {
+        exercises: {
+          where:   { exercise: { videoUrl: { not: null } } },
+          include: { exercise: true },
+          orderBy: { order: 'asc' },
+          take: 6,
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    if (!availableWorkouts.length) {
+      return res.json({ success: true, data: { upcoming: [] } });
+    }
+
+    const today      = new Date();
+    const DAY_NAMES  = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+    const upcoming = Array.from({ length: daysNum }, (_, i) => {
+      const date           = new Date(today);
+      date.setDate(today.getDate() + i + 1);
+      const predictedEnergy = ENERGY_CYCLE[i % ENERGY_CYCLE.length];
+      const adaptation      = ENERGY_ADAPTATION[predictedEnergy] || ENERGY_ADAPTATION.okay;
+      const workout         = availableWorkouts[i % availableWorkouts.length];
+
+      return {
+        date:           date.toISOString().slice(0, 10),
+        dayName:        DAY_NAMES[date.getDay()],
+        predictedEnergy,
+        energyLabel:    adaptation.label,
+        workout: {
+          id:         workout.id,
+          name:       workout.name,
+          type:       workout.type,
+          duration:   Math.round(workout.duration * adaptation.durationFactor),
+          calories:   Math.round(workout.calories * adaptation.durationFactor),
+          difficulty: workout.difficulty,
+          exercises:  workout.exercises.slice(0, 4).map(we => ({
+            name: we.exercise.name,
+            sets: we.sets,
+            reps: we.reps,
+          })),
+        },
+      };
+    });
+
+    res.json({ success: true, data: { upcoming } });
+  } catch (error) {
+    logger.error('getUpcomingWorkouts error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch upcoming workouts' });
   }
 };
 
