@@ -4,18 +4,6 @@
 
 require('dotenv').config();
 
-// ── Required environment variable guard ───────────────────────────────────────
-const REQUIRED_ENV = ['JWT_SECRET', 'DATABASE_URL', 'CLERK_SECRET_KEY'];
-const missing = REQUIRED_ENV.filter(k => !process.env[k]);
-if (missing.length > 0) {
-  console.error('FATAL: Missing required environment variables:', missing.join(', '));
-  process.exit(1);
-}
-if ((process.env.JWT_SECRET || '').length < 32) {
-  console.error('FATAL: JWT_SECRET must be at least 32 characters');
-  process.exit(1);
-}
-
 const express     = require('express');
 const cors        = require('cors');
 const helmet      = require('helmet');
@@ -48,13 +36,12 @@ const allowedOrigins = [
   'http://localhost:3000',
 ].filter(Boolean);
 
-// Only allow Vercel deployments that are actually ours (start with vtrxapp)
-const ALLOWED_VERCEL = /^https:\/\/vtrxapp[a-z0-9-]*\.vercel\.app$/;
-
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin) return callback(null, true); // mobile apps, Postman, curl
-    if (allowedOrigins.includes(origin) || ALLOWED_VERCEL.test(origin)) {
+    // Allow requests with no origin (mobile apps, Postman)
+    if (!origin) return callback(null, true);
+    // Allow any vercel.app subdomain
+    if (origin.endsWith('.vercel.app') || allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
     callback(new Error('Not allowed by CORS'));
@@ -76,12 +63,8 @@ const authLimiter = rateLimit({
 });
 
 app.use('/api/', limiter);
-app.use('/api/auth/login',          authLimiter);
-app.use('/api/auth/signup',         authLimiter);
-app.use('/api/auth/confirm-email',  authLimiter);
-app.use('/api/auth/resend-code',    authLimiter);
-app.use('/api/auth/forgot-password', authLimiter);
-app.use('/api/auth/reset-password', authLimiter);
+app.use('/api/auth/login',  authLimiter);
+app.use('/api/auth/signup', authLimiter);
 
 // ── CRITICAL: Stripe webhook needs raw body ───────────────────────────────────
 // Must be registered BEFORE express.json() parses the body

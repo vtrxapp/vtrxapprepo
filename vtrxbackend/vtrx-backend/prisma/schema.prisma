@@ -55,6 +55,7 @@ model User {
   deviceTokens    DeviceToken[]
   personalRecords PersonalRecord[]
   waterLogs       WaterLog[]
+  videoProgress   VideoProgress[]
 
   @@map("users")
 }
@@ -125,17 +126,19 @@ model WorkoutExercise {
 // ── WORKOUT_LOGS ──────────────────────────────────────────────────────────────
 // Records every time a user completes a workout
 model WorkoutLog {
-  id           String        @id @default(uuid())
-  userId       String
-  workoutId    String?
-  name         String        // workout name at time of logging
-  type         String
-  duration     Int           // actual duration in minutes
-  caloriesBurned Int?
-  volume       Float?        // total weight lifted (kg)
-  notes        String?
-  completedAt  DateTime      @default(now())
-  createdAt    DateTime      @default(now())
+  id                   String        @id @default(uuid())
+  userId               String
+  workoutId            String?
+  name                 String        // workout name at time of logging
+  type                 String
+  duration             Int           // actual duration in minutes
+  caloriesBurned       Int?
+  volume               Float?        // total weight lifted (kg)
+  notes                String?
+  energyLevel          String?       // "empty", "low", "okay", "good", "peak"
+  completionPercentage Int?          // 0-100
+  completedAt          DateTime      @default(now())
+  createdAt            DateTime      @default(now())
 
   user         User          @relation(fields: [userId],    references: [id], onDelete: Cascade)
   workout      Workout?      @relation(fields: [workoutId], references: [id], onDelete: SetNull)
@@ -371,6 +374,24 @@ model PersonalRecord {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("personal_records")
+}
+
+// ── VIDEO_PROGRESS ────────────────────────────────────────────────────────────
+// Tracks how far a user has watched each exercise demo video
+model VideoProgress {
+  id           String    @id @default(uuid())
+  userId       String
+  ymoveId      String?   // ymove exercise ID (for cloud videos)
+  exerciseId   String?   // local Exercise.id (for self-hosted videos)
+  positionSecs Int       @default(0)   // seconds into the video
+  durationSecs Int?                     // total video length in seconds
+  completed    Boolean   @default(false)
+  updatedAt    DateTime  @updatedAt
+
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, ymoveId])
+  @@map("video_progress")
 }
 
 // ── WATER_LOGS ────────────────────────────────────────────────────────────────
