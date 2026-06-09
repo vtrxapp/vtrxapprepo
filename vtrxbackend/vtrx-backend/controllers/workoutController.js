@@ -493,42 +493,71 @@ const getRecommendation = async (req, res) => {
             const linked = dbWorkout.exercises
               .filter(we => we.exercise.videoUrl)
               .map(we => ({
-                id:          we.exercise.id,
-                name:        we.exercise.name,
-                muscleGroup: we.exercise.muscleGroup,
-                equipment:   we.exercise.equipment,
-                sets:        we.sets,
-                reps:        we.reps,
-                restSecs:    we.restSecs,
-                videoUrl:    we.exercise.videoUrl,
-                ymoveId:     we.exercise.ymoveId,
+                id:           we.exercise.id,
+                name:         we.exercise.name,
+                muscleGroup:  we.exercise.muscleGroup,
+                equipment:    we.exercise.equipment,
+                sets:         we.sets,
+                reps:         we.reps,
+                restSecs:     we.restSecs,
+                videoUrl:     we.exercise.videoUrl,
+                ymoveId:      we.exercise.ymoveId,
                 thumbnailUrl: we.exercise.thumbnailUrl,
               }));
 
-            // Pad to MIN_VIDEOS if the linked exercises don't cover it
+            // Pad to MIN_VIDEOS using exercises from the same muscle groups
             if (linked.length < MIN_VIDEOS) {
-              const linkedIds = linked.map(e => e.id);
-              const extra = await prisma.exercise.findMany({
+              const linkedIds    = linked.map(e => e.id);
+              const muscleGroups = [...new Set(linked.map(e => e.muscleGroup).filter(Boolean))];
+              const need         = MIN_VIDEOS - linked.length;
+
+              // First try muscle-group-specific exercises for relevant padding
+              let extra = await prisma.exercise.findMany({
                 where: {
-                  videoUrl: { not: null },
-                  id:       { notIn: linkedIds },
+                  videoUrl:    { not: null },
+                  id:          { notIn: linkedIds },
+                  ...(muscleGroups.length > 0 && { muscleGroup: { in: muscleGroups } }),
                 },
-                take: MIN_VIDEOS - linked.length,
+                take:    need,
+                orderBy: { name: 'asc' },
               });
+
+              // Fall back to any exercise if not enough muscle-group matches
+              if (extra.length < need) {
+                const fallback = await prisma.exercise.findMany({
+                  where: { videoUrl: { not: null }, id: { notIn: [...linkedIds, ...extra.map(e => e.id)] } },
+                  take:    need - extra.length,
+                  orderBy: { name: 'asc' },
+                });
+                extra = [...extra, ...fallback];
+              }
+
               extra.forEach(e => linked.push({
-                id:          e.id,
-                name:        e.name,
-                muscleGroup: e.muscleGroup,
-                equipment:   e.equipment,
-                sets:        3,
-                reps:        '10',
-                restSecs:    60,
-                videoUrl:    e.videoUrl,
-                ymoveId:     e.ymoveId,
-                thumbnailUrl: e.thumbnailUrl,
+                id: e.id, name: e.name, muscleGroup: e.muscleGroup,
+                equipment: e.equipment, sets: 3, reps: '10', restSecs: 60,
+                videoUrl: e.videoUrl, ymoveId: e.ymoveId, thumbnailUrl: e.thumbnailUrl,
               }));
             }
-            return linked;
+
+            // Refresh thumbnailUrls from ymove — stored URLs expire after 48 h
+            const refreshed = await Promise.allSettled(
+              linked.map(async (ex) => {
+                if (!ex.ymoveId) return ex;
+                try {
+                  const fresh = await ymove.getExerciseById(ex.ymoveId);
+                  if (fresh) {
+                    return {
+                      ...ex,
+                      thumbnailUrl: fresh.thumbnail_url || fresh.thumbnailUrl || fresh.gif_url || ex.thumbnailUrl,
+                      videoUrl:     fresh.video_url     || fresh.videoUrl     || ex.videoUrl,
+                    };
+                  }
+                } catch (_) {}
+                return ex;
+              })
+            );
+
+            return refreshed.map((r, i) => r.status === 'fulfilled' ? r.value : linked[i]);
           })(),
         }
       : {
