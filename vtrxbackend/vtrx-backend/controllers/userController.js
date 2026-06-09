@@ -159,6 +159,29 @@ const markNotificationsRead = async (req, res) => {
   }
 };
 
+// ── GET /api/users/personal-records ──────────────────────────────────────────
+const getPersonalRecords = async (req, res) => {
+  try {
+    const records = await prisma.personalRecord.findMany({
+      where:   { userId: req.user.id },
+      orderBy: { achievedAt: 'desc' },
+    });
+
+    // Keep only the best record per exercise name
+    const best = {};
+    for (const r of records) {
+      if (!best[r.exerciseName] || (r.weight || 0) > (best[r.exerciseName].weight || 0)) {
+        best[r.exerciseName] = r;
+      }
+    }
+
+    res.json({ success: true, data: { records: Object.values(best) } });
+  } catch (error) {
+    logger.error('getPersonalRecords error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch personal records' });
+  }
+};
+
 module.exports = {
   getProfile,
   updateProfile,
@@ -167,6 +190,7 @@ module.exports = {
   logProgress,
   getNotifications,
   markNotificationsRead,
+  getPersonalRecords,
 };
 
 // ── POST /api/users/water — Log water intake ──────────────────────────────────

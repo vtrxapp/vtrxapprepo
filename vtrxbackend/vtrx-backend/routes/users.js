@@ -12,6 +12,7 @@ router.get('/progress',                      user.getProgressLogs);
 router.post('/progress',                     user.logProgress);
 router.get('/notifications',                 user.getNotifications);
 router.patch('/notifications/read',          user.markNotificationsRead);
+router.get('/personal-records',              user.getPersonalRecords);
 
 module.exports = router;
 

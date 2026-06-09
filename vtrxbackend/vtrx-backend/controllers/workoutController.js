@@ -680,4 +680,5 @@ module.exports = {
   saveVideoProgress,
   getVideoProgress,
   getExerciseVideoUrl,
+  getUpcomingWorkouts,
 };
