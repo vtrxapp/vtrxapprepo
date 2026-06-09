@@ -72,8 +72,8 @@ async function seed() {
   // ── 1. Fetch exercises from ymove ─────────────────────────────────────────
   for (const group of muscleGroups) {
     process.stdout.write(`  Fetching ${group.padEnd(12)}…`);
-    const result = await ymove.getExercises({ muscleGroup: group, limit: 12 });
-    byGroup[group] = (result.exercises || []).map(normalise).filter(e => e.ymoveId);
+    const result = await ymove.getExercises({ muscleGroup: group, limit: 20 });
+    byGroup[group] = (result.exercises || []).map(normalise).filter(e => e.ymoveId && e.videoUrl);
     console.log(` ${byGroup[group].length} exercises`);
     await delay(300); // be kind to the API
   }
@@ -126,11 +126,11 @@ async function seed() {
       continue;
     }
 
-    // Gather exercises for this workout (up to 3 per muscle group, max 8 total)
+    // Gather exercises for this workout (up to 5 per muscle group, min 5 videos, max 12 total)
     const candidates = t.muscleGroups
-      .flatMap(g => (byGroup[g] || []).slice(0, 3))
+      .flatMap(g => (byGroup[g] || []).slice(0, 5))
       .filter((ex, i, arr) => arr.findIndex(e => e.ymoveId === ex.ymoveId) === i)
-      .slice(0, 8);
+      .slice(0, 12);
 
     const exerciseLinks = candidates
       .map((ex, i) => {

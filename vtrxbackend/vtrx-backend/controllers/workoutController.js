@@ -316,32 +316,71 @@ const generateAndSaveAISummary = async ({
   });
 };
 
-// ── GET /api/workouts/stats — Weekly stats ────────────────────────────────────
+// ── GET /api/workouts/stats — Weekly + monthly stats ─────────────────────────
 const getWeeklyStats = async (req, res) => {
+  const now     = new Date();
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
+  // Start of current month
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  // Start of current week (Monday)
+  const dayOfWeek  = now.getDay() === 0 ? 6 : now.getDay() - 1; // Mon=0
+  const weekStart  = new Date(now); weekStart.setDate(now.getDate() - dayOfWeek); weekStart.setHours(0,0,0,0);
+
   try {
-    const logs = await prisma.workoutLog.findMany({
-      where: {
-        userId:      req.user.id,
-        completedAt: { gte: weekAgo },
-      },
-      select: {
-        duration:       true,
-        caloriesBurned: true,
-        type:           true,
-        completedAt:    true,
-      },
-    });
+    const [weekLogs, monthLogs, totalCount, userRow] = await Promise.all([
+      prisma.workoutLog.findMany({
+        where: { userId: req.user.id, completedAt: { gte: weekStart } },
+        select: { duration: true, caloriesBurned: true, type: true, completedAt: true, name: true },
+        orderBy: { completedAt: 'asc' },
+      }),
+      prisma.workoutLog.findMany({
+        where: { userId: req.user.id, completedAt: { gte: monthStart } },
+        select: { completedAt: true, type: true, caloriesBurned: true },
+      }),
+      prisma.workoutLog.count({ where: { userId: req.user.id } }),
+      prisma.user.findUnique({ where: { id: req.user.id }, select: { streakDays: true, daysPerWeek: true } }),
+    ]);
+
+    const DAY_NAMES = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+    // Build daily breakdown for current week (Mon–Sun)
+    const dailyBreakdown = DAY_NAMES.map(day => ({ day, cal: 0, type: 'rest' }));
+    for (const log of weekLogs) {
+      const d   = new Date(log.completedAt);
+      const idx = d.getDay() === 0 ? 6 : d.getDay() - 1; // Mon=0
+      dailyBreakdown[idx] = {
+        day:  DAY_NAMES[idx],
+        cal:  log.caloriesBurned || 0,
+        type: (log.type || 'strength').toLowerCase(),
+      };
+    }
+
+    // Monthly completed days (unique dates)
+    const completedDates = [...new Set(monthLogs.map(l =>
+      new Date(l.completedAt).toISOString().slice(0, 10)
+    ))];
 
     const stats = {
-      workoutsCompleted: logs.length,
-      totalMinutes:      logs.reduce((s, l) => s + l.duration,       0),
-      totalCalories:     logs.reduce((s, l) => s + (l.caloriesBurned || 0), 0),
-      byType: logs.reduce((acc, l) => {
+      workoutsCompleted: weekLogs.length,
+      totalMinutes:      weekLogs.reduce((s, l) => s + l.duration, 0),
+      totalCalories:     weekLogs.reduce((s, l) => s + (l.caloriesBurned || 0), 0),
+      avgCalories:       weekLogs.length
+        ? Math.round(weekLogs.reduce((s, l) => s + (l.caloriesBurned || 0), 0) / weekLogs.length)
+        : 0,
+      avgMinutes:        weekLogs.length
+        ? Math.round(weekLogs.reduce((s, l) => s + l.duration, 0) / weekLogs.length)
+        : 0,
+      byType: weekLogs.reduce((acc, l) => {
         acc[l.type] = (acc[l.type] || 0) + 1;
         return acc;
       }, {}),
+      dailyBreakdown,
+      monthlyCompletedDays: completedDates.length,
+      monthlyCompletedDates: completedDates,
+      currentStreak:   userRow?.streakDays    || 0,
+      daysPerWeek:     userRow?.daysPerWeek   || 3,
+      totalWorkouts:   totalCount,
     };
 
     res.json({ success: true, data: { stats } });
@@ -448,20 +487,48 @@ const getRecommendation = async (req, res) => {
           difficulty:   dbWorkout.difficulty,
           description:  dbWorkout.description,
           imageUrl:     dbWorkout.imageUrl,
-          exercises:    dbWorkout.exercises
-            .filter(we => we.exercise.videoUrl)
-            .map(we => ({
-              id:          we.exercise.id,
-              name:        we.exercise.name,
-              muscleGroup: we.exercise.muscleGroup,
-              equipment:   we.exercise.equipment,
-              sets:        we.sets,
-              reps:        we.reps,
-              restSecs:    we.restSecs,
-              videoUrl:    we.exercise.videoUrl,
-              ymoveId:     we.exercise.ymoveId,
-              thumbnailUrl: we.exercise.thumbnailUrl,
-            })),
+          exercises:    await (async () => {
+            const MIN_VIDEOS = 5;
+            const linked = dbWorkout.exercises
+              .filter(we => we.exercise.videoUrl)
+              .map(we => ({
+                id:          we.exercise.id,
+                name:        we.exercise.name,
+                muscleGroup: we.exercise.muscleGroup,
+                equipment:   we.exercise.equipment,
+                sets:        we.sets,
+                reps:        we.reps,
+                restSecs:    we.restSecs,
+                videoUrl:    we.exercise.videoUrl,
+                ymoveId:     we.exercise.ymoveId,
+                thumbnailUrl: we.exercise.thumbnailUrl,
+              }));
+
+            // Pad to MIN_VIDEOS if the linked exercises don't cover it
+            if (linked.length < MIN_VIDEOS) {
+              const linkedIds = linked.map(e => e.id);
+              const extra = await prisma.exercise.findMany({
+                where: {
+                  videoUrl: { not: null },
+                  id:       { notIn: linkedIds },
+                },
+                take: MIN_VIDEOS - linked.length,
+              });
+              extra.forEach(e => linked.push({
+                id:          e.id,
+                name:        e.name,
+                muscleGroup: e.muscleGroup,
+                equipment:   e.equipment,
+                sets:        3,
+                reps:        '10',
+                restSecs:    60,
+                videoUrl:    e.videoUrl,
+                ymoveId:     e.ymoveId,
+                thumbnailUrl: e.thumbnailUrl,
+              }));
+            }
+            return linked;
+          })(),
         }
       : {
           source:      'generated',
@@ -606,7 +673,7 @@ const getUpcomingWorkouts = async (req, res) => {
           where:   { exercise: { videoUrl: { not: null } } },
           include: { exercise: true },
           orderBy: { order: 'asc' },
-          take: 6,
+          take: 12,
         },
       },
       orderBy: { createdAt: 'asc' },
@@ -638,7 +705,7 @@ const getUpcomingWorkouts = async (req, res) => {
           duration:   Math.round(workout.duration * adaptation.durationFactor),
           calories:   Math.round(workout.calories * adaptation.durationFactor),
           difficulty: workout.difficulty,
-          exercises:  workout.exercises.slice(0, 4).map(we => ({
+          exercises:  workout.exercises.slice(0, 6).map(we => ({
             name: we.exercise.name,
             sets: we.sets,
             reps: we.reps,

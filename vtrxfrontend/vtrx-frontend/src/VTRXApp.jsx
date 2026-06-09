@@ -406,8 +406,29 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
   const [week, setWeek]     = useState(0); // 0 = current week, cannot go below 0
   const [dir, setDir]       = useState(0); // -1 left, 1 right for animation
   const [animKey, setAnimKey] = useState(0);
+  const [apiStats, setApiStats] = useState(null);
   const touchStartX = useRef(null);
-  const MAX_WEEK = WEEKS_DATA.length - 1;
+
+  useEffect(()=>{
+    apiCall('/workouts/stats')
+      .then(d=>{ if(d?.data?.stats) setApiStats(d.data.stats); })
+      .catch(()=>{});
+  }, []);
+
+  // Build weeks array: current week from API, older weeks from static data
+  const getWeekLabel = () => {
+    const d = new Date();
+    const dow = d.getDay() === 0 ? 6 : d.getDay() - 1;
+    const start = new Date(d); start.setDate(d.getDate() - dow);
+    const end   = new Date(start); end.setDate(start.getDate() + 6);
+    const fmt = x => x.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    return `${fmt(start)} – ${fmt(end)}`;
+  };
+  const liveWeek = apiStats?.dailyBreakdown
+    ? { label: getWeekLabel(), days: apiStats.dailyBreakdown, bestDays: [], improvement: "Live" }
+    : WEEKS_DATA[0];
+  const allWeeks  = [liveWeek, ...WEEKS_DATA.slice(1)];
+  const MAX_WEEK  = allWeeks.length - 1;
 
   const goTo = (next) => {
     if (next < 0 || next > MAX_WEEK) return; // boundary guard
@@ -425,25 +446,7 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
     touchStartX.current = null;
   };
 
-  // Patch today's workout into current week if logged
-  const patchedWeeksData = WEEKS_DATA.map((wk, wi) => {
-    if (wi !== 0) return wk; // only patch current week
-    const today = new Date();
-    const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-    const todayName = dayNames[today.getDay()];
-    const patchedDays = wk.days.map(d => {
-      if (d.day !== todayName) return d;
-      // Find any workout logged today
-      const todayLog = loggedWorkouts.find(lw => {
-        const wd = new Date(lw.date);
-        return wd.toDateString() === today.toDateString();
-      });
-      if (!todayLog) return d;
-      return { ...d, cal: todayLog.cal || 300, type: todayLog.type || "strength" };
-    });
-    return { ...wk, days: patchedDays };
-  });
-  const w = patchedWeeksData[week];
+  const w = allWeeks[week] || allWeeks[0];
   const calDays  = w.days.filter(d => d.cal > 0);
   const maxCal   = Math.max(...w.days.map(d => d.cal), 1);
   const minCal   = calDays.length ? Math.min(...calDays.map(d => d.cal)) : 0;
@@ -478,7 +481,7 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
           <div style={{ display:"flex",alignItems:"center",gap:6 }}>
             {/* Dots indicator */}
             <div style={{ display:"flex",gap:5,marginRight:8 }}>
-              {WEEKS_DATA.map((_,i)=>(
+              {allWeeks.map((_,i)=>(
                 <div key={i} style={{ width:i===(MAX_WEEK-week)?18:6,height:6,borderRadius:3,background:i===(MAX_WEEK-week)?PRIMARY:"#2a2a2a",transition:"all 0.2s" }}/>
               ))}
             </div>
@@ -3297,8 +3300,15 @@ function CalendarPage({ onBack, loggedWorkouts=[] }) {
   const [selectedDay, setSelectedDay] = useState(null);
   const [animKey, setAnimKey]         = useState(0);
   const [slideDir, setSlideDir]       = useState(0);
+  const [calHistory, setCalHistory]   = useState([]);
   const touchStartX = useRef(null);
   const MAX_PAST = 3; // can go back 3 months, not forward past current
+
+  useEffect(()=>{
+    apiCall('/workouts/history?limit=90')
+      .then(d=>{ if(d?.data?.history) setCalHistory(d.data.history); })
+      .catch(()=>{});
+  }, []);
 
   const changeMonth = (next) => {
     if (next > 0 || next < -MAX_PAST) return; // 0=current, -MAX_PAST=oldest
@@ -3316,7 +3326,7 @@ function CalendarPage({ onBack, loggedWorkouts=[] }) {
     touchStartX.current = null;
   };
 
-  const now = new Date(2026, 3, 1); // April 2026
+  const now = new Date();
   const displayDate = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
   const monthName = displayDate.toLocaleString("default", { month: "long", year: "numeric" });
 
@@ -3329,20 +3339,27 @@ function CalendarPage({ onBack, loggedWorkouts=[] }) {
 
   const dayData = selectedDay ? DAY_STATS[selectedDay] : null;
 
-  // Monthly averages
-  // Merge real logged workouts into calendar for current month
-    // (using existing now variable)
-  const liveCalData = {...CAL_DATA};
+  // Merge API history into calendar for displayed month
+  const liveCalData = {};
+  calHistory.forEach(h => {
+    const d = new Date(h.completedAt || h.date);
+    if (d.getMonth() === displayDate.getMonth() && d.getFullYear() === displayDate.getFullYear()) {
+      liveCalData[d.getDate()] = (h.type || 'strength').toLowerCase();
+    }
+  });
+  // Merge in-session logged workouts too
   loggedWorkouts.forEach(lw => {
     const d = new Date(lw.date);
-    if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) {
+    if (d.getMonth() === displayDate.getMonth() && d.getFullYear() === displayDate.getFullYear()) {
       liveCalData[d.getDate()] = lw.type || "strength";
     }
   });
 
   const monthlyWorkouts = Object.keys(liveCalData).length;
-  const totalCal = Object.values(DAY_STATS).reduce((s,d)=>s+d.cal,0);
-  const avgCal = Math.round(totalCal / monthlyWorkouts);
+  const totalCal = calHistory
+    .filter(h => { const d=new Date(h.completedAt||h.date); return d.getMonth()===displayDate.getMonth()&&d.getFullYear()===displayDate.getFullYear(); })
+    .reduce((s,h) => s + (h.caloriesBurned || 0), 0);
+  const avgCal = monthlyWorkouts > 0 ? Math.round(totalCal / monthlyWorkouts) : 0;
   const restDays = daysInMonth - monthlyWorkouts;
 
   return (
@@ -3506,7 +3523,7 @@ function WorkoutHistoryPage({ onBack }) {
   const [filter, setFilter] = useState("all");
   const filters = ["all","strength","cardio","hiit"];
   const { isPremium: histPremium } = useUser();
-  const allHistory = filter==="all" ? HISTORY : mapped.filter(h=>h.type===filter);
+  const allHistory = filter==="all" ? mapped : mapped.filter(h=>h.type===filter);
   const filtered   = histPremium ? allHistory : allHistory.slice(0, 4); // free: last 4 entries (~14 days)
 
   return (
@@ -3983,9 +4000,17 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
   const [subPage, setSubPage] = useState(null);
   const [wIdx, setWIdx] = useState(TODAY_IDX);
   const [upcomingWorkouts, setUpcomingWorkouts] = useState([]);
+  const [hubStats,         setHubStats]         = useState(null);
+  const [previewPRs,       setPreviewPRs]       = useState([]);
   useEffect(()=>{
-    apiCall('/workouts/upcoming?days=4')
+    apiCall('/workouts/upcoming?days=7')
       .then(d=>{ if(d?.data?.upcoming) setUpcomingWorkouts(d.data.upcoming); })
+      .catch(()=>{});
+    apiCall('/workouts/stats')
+      .then(d=>{ if(d?.data?.stats) setHubStats(d.data.stats); })
+      .catch(()=>{});
+    apiCall('/users/personal-records')
+      .then(d=>{ if(d?.data?.records) setPreviewPRs(d.data.records); })
       .catch(()=>{});
   }, []);
   const weightsScrollRef = useScrollPos("weights-hub");
@@ -4004,17 +4029,28 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
   const swipeStartX = useRef(null);
 
   const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-  const currentMonthIdx = (3 + monthOffset + 12) % 12; // April = 3
+  const currentMonthIdx = (new Date().getMonth() + monthOffset + 120) % 12;
   const monthName = months[currentMonthIdx];
 
-  // Per-month stats data — offset 0 = Nov (current), -1 = Oct (prev), etc.
-  const MONTH_STATS = {
-     0: { days:"12/16", streak:"3 week", rate:"75%",  pct:75,  label:"In progress" },
+  // Per-month stats — current month from API, older months from static fallback
+  const MONTH_STATS_FALLBACK = {
     "-1": { days:"16/16", streak:"4 week", rate:"100%", pct:100, label:"Completed!" },
     "-2": { days:"14/16", streak:"2 week", rate:"88%",  pct:88,  label:"Great month" },
     "-3": { days:"11/16", streak:"1 week", rate:"69%",  pct:69,  label:"Keep going"  },
   };
-  const stats = MONTH_STATS[String(monthOffset)] || { days:"0/16", streak:"0 week", rate:"0%", pct:0, label:"No data" };
+  const stats = monthOffset === 0 && hubStats ? (() => {
+    const completed = hubStats.monthlyCompletedDays || 0;
+    const target    = Math.max(1, (hubStats.daysPerWeek || 3) * 4);
+    const pct       = Math.min(100, Math.round((completed / target) * 100));
+    const streak    = hubStats.currentStreak || 0;
+    return {
+      days:   `${completed}/${target}`,
+      streak: `${streak} day${streak !== 1 ? 's' : ''}`,
+      rate:   `${pct}%`,
+      pct,
+      label:  pct >= 100 ? "Completed!" : "In progress",
+    };
+  })() : MONTH_STATS_FALLBACK[String(monthOffset)] || { days:"0/16", streak:"0 day", rate:"0%", pct:0, label:"No data" };
 
   // Swipe handlers for monthly card
   const onMonthSwipeStart = (e) => { swipeStartX.current = e.touches[0].clientX; };
@@ -4087,60 +4123,99 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
           <div style={{ fontFamily:FONT,fontSize:10,color:"#444",marginTop:6,textAlign:"right" }}>Swipe to change month</div>
         </div>
 
-        {/* ── NEXT WORKOUT ── */}
-        {upcomingWorkouts.length > 0 ? upcomingWorkouts.slice(0,1).map((up,i)=>{
-          const utc = { STRENGTH:PRIMARY, CARDIO:"#F59E0B", HIIT:"#6366F1", RECOVERY:"#22C55E", MOBILITY:"#22C55E" }[up.workout.type] || PRIMARY;
-          const energyColors = { peak:PRIMARY, good:"#22C55E", okay:"#EAB308", low:"#F97316", empty:"#EF4444" };
-          const ec = energyColors[up.predictedEnergy] || "#888";
-          return (
-            <div key={i} style={{ background:"#fff",borderRadius:20,padding:"20px",marginBottom:14 }}>
+        {/* ── WEEKLY PLAN ── */}
+        {(()=>{
+          const TYPE_C = { STRENGTH:PRIMARY, CARDIO:"#F59E0B", HIIT:"#6366F1", RECOVERY:"#22C55E", MOBILITY:"#22C55E" };
+          const ENERGY_C = { peak:PRIMARY, good:"#22C55E", okay:"#EAB308", low:"#F97316", empty:"#EF4444" };
+          if (upcomingWorkouts.length === 0) return (
+            <div style={{ background:"#fff",borderRadius:20,padding:"20px",marginBottom:14 }}>
               <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4 }}>
                 <div>
-                  <div style={{ fontFamily:FONT,fontSize:11,color:"#888",fontWeight:600,marginBottom:2 }}>NEXT SESSION · {up.dayName.toUpperCase()}</div>
-                  <div style={{ fontFamily:FONT,fontWeight:800,fontSize:18,color:"#111" }}>{up.workout.name}</div>
+                  <div style={{ fontFamily:FONT,fontSize:11,color:"#888",fontWeight:600,marginBottom:2 }}>NEXT SESSION</div>
+                  <div style={{ fontFamily:FONT,fontWeight:800,fontSize:18,color:"#111" }}>{w.name}</div>
                 </div>
-                <div style={{ background:utc,borderRadius:20,padding:"5px 12px" }}>
-                  <span style={{ fontFamily:FONT,fontWeight:800,fontSize:10,color:"#fff",letterSpacing:1 }}>{up.workout.type}</span>
+                <div style={{ background:tc,borderRadius:20,padding:"5px 12px" }}>
+                  <span style={{ fontFamily:FONT,fontWeight:800,fontSize:10,color:"#fff",letterSpacing:1 }}>{w.type}</span>
                 </div>
               </div>
-              <div style={{ fontFamily:FONT,fontSize:12,color:"#888",marginBottom:8 }}>{up.workout.duration} min · {up.workout.calories} cal</div>
-              <div style={{ display:"flex",alignItems:"center",gap:6,marginBottom:14,background:`${ec}15`,borderRadius:10,padding:"6px 10px",border:`1px solid ${ec}33` }}>
-                <div style={{ width:8,height:8,borderRadius:"50%",background:ec,flexShrink:0 }}/>
-                <div style={{ fontFamily:FONT,fontSize:11,color:ec,fontWeight:600 }}>Predicted energy: {up.energyLabel}</div>
-              </div>
-              <div style={{ display:"flex",flexDirection:"column",gap:8,marginBottom:16 }}>
-                {up.workout.exercises.map((ex,j)=>(
-                  <div key={j} style={{ background:"#f3f4f6",borderRadius:14,padding:"12px 16px",display:"flex",alignItems:"center",gap:12 }}>
-                    <div style={{ width:34,height:34,borderRadius:10,background:utc,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontFamily:FONT,fontWeight:800,fontSize:12 }}>{j+1}</div>
-                    <div style={{ flex:1 }}>
-                      <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#111" }}>{ex.name}</div>
-                      <div style={{ fontFamily:FONT,fontSize:12,color:"#888",marginTop:1 }}>{ex.sets} sets × {parseReps(ex.reps)} reps</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <button onClick={()=>onNavigate&&onNavigate("workoutDetail")} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:utc,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",letterSpacing:1 }}>
-                START WORKOUT
+              <div style={{ fontFamily:FONT,fontSize:12,color:"#888",marginBottom:14 }}>{w.duration} min · {w.cal} cal</div>
+              <button onClick={()=>{ if(w.type!=="REST") onNavigate&&onNavigate("workoutDetail"); }} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:w.type==="REST"?"#f0f0f0":tc,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:w.type==="REST"?"#888":"#fff",cursor:w.type==="REST"?"default":"pointer",letterSpacing:1 }}>
+                {w.type==="REST"?"REST DAY":"START WORKOUT"}
               </button>
             </div>
           );
-        }) : (
-          <div style={{ background:"#fff",borderRadius:20,padding:"20px",marginBottom:14 }}>
-            <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4 }}>
-              <div>
-                <div style={{ fontFamily:FONT,fontSize:11,color:"#888",fontWeight:600,marginBottom:2 }}>NEXT SESSION</div>
-                <div style={{ fontFamily:FONT,fontWeight:800,fontSize:18,color:"#111" }}>{w.name}</div>
+          const next = upcomingWorkouts[0];
+          const rest = upcomingWorkouts.slice(1);
+          const nc = TYPE_C[next.workout.type] || PRIMARY;
+          const ne = ENERGY_C[next.predictedEnergy] || "#888";
+          return (
+            <>
+              {/* ── Next session — expanded ── */}
+              <div style={{ background:"#fff",borderRadius:20,padding:"20px",marginBottom:10 }}>
+                <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4 }}>
+                  <div>
+                    <div style={{ fontFamily:FONT,fontSize:11,color:"#888",fontWeight:600,marginBottom:2 }}>NEXT SESSION · {next.dayName.toUpperCase()}</div>
+                    <div style={{ fontFamily:FONT,fontWeight:800,fontSize:18,color:"#111" }}>{next.workout.name}</div>
+                  </div>
+                  <div style={{ background:nc,borderRadius:20,padding:"5px 12px" }}>
+                    <span style={{ fontFamily:FONT,fontWeight:800,fontSize:10,color:"#fff",letterSpacing:1 }}>{next.workout.type}</span>
+                  </div>
+                </div>
+                <div style={{ fontFamily:FONT,fontSize:12,color:"#888",marginBottom:8 }}>{next.workout.duration} min · {next.workout.calories} cal</div>
+                <div style={{ display:"flex",alignItems:"center",gap:6,marginBottom:14,background:`${ne}15`,borderRadius:10,padding:"6px 10px",border:`1px solid ${ne}33` }}>
+                  <div style={{ width:8,height:8,borderRadius:"50%",background:ne,flexShrink:0 }}/>
+                  <div style={{ fontFamily:FONT,fontSize:11,color:ne,fontWeight:600 }}>Predicted energy: {next.energyLabel}</div>
+                </div>
+                <div style={{ display:"flex",flexDirection:"column",gap:8,marginBottom:16 }}>
+                  {(next.workout.exercises||[]).map((ex,j)=>(
+                    <div key={j} style={{ background:"#f3f4f6",borderRadius:14,padding:"12px 16px",display:"flex",alignItems:"center",gap:12 }}>
+                      <div style={{ width:34,height:34,borderRadius:10,background:nc,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontFamily:FONT,fontWeight:800,fontSize:12 }}>{j+1}</div>
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#111" }}>{ex.name}</div>
+                        <div style={{ fontFamily:FONT,fontSize:12,color:"#888",marginTop:1 }}>{ex.sets} sets × {parseReps(ex.reps)} reps</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={()=>onNavigate&&onNavigate("workoutDetail")} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:nc,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",letterSpacing:1 }}>
+                  START WORKOUT
+                </button>
               </div>
-              <div style={{ background:tc,borderRadius:20,padding:"5px 12px" }}>
-                <span style={{ fontFamily:FONT,fontWeight:800,fontSize:10,color:"#fff",letterSpacing:1 }}>{w.type}</span>
-              </div>
-            </div>
-            <div style={{ fontFamily:FONT,fontSize:12,color:"#888",marginBottom:14 }}>{w.duration} min · {w.cal} cal · {w.day}</div>
-            <button onClick={()=>{ if(w.type!=="REST") onNavigate&&onNavigate("workoutDetail"); }} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:w.type==="REST"?"#f0f0f0":tc,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:w.type==="REST"?"#888":"#fff",cursor:w.type==="REST"?"default":"pointer",letterSpacing:1 }}>
-              {w.type==="REST"?"REST DAY":"START WORKOUT"}
-            </button>
-          </div>
-        )}
+
+              {/* ── Remaining days — compact rows ── */}
+              {rest.length > 0 && (
+                <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"16px 18px",marginBottom:14 }}>
+                  <div style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff",marginBottom:14 }}>Upcoming Week</div>
+                  {rest.map((up, i) => {
+                    const uc = TYPE_C[up.workout.type] || PRIMARY;
+                    const ec2 = ENERGY_C[up.predictedEnergy] || "#888";
+                    return (
+                      <div key={i} style={{ display:"flex",alignItems:"center",gap:12,paddingBottom:i<rest.length-1?14:0,marginBottom:i<rest.length-1?14:0,borderBottom:i<rest.length-1?`1px solid ${BORDER}`:"none" }}>
+                        <div style={{ width:44,flexShrink:0,textAlign:"center" }}>
+                          <div style={{ fontFamily:FONT,fontWeight:800,fontSize:13,color:"#fff" }}>{up.dayName.slice(0,3)}</div>
+                          <div style={{ fontFamily:FONT,fontSize:10,color:"#555",marginTop:1 }}>{up.date?new Date(up.date).toLocaleDateString('en-US',{month:'short',day:'numeric'}):""}</div>
+                        </div>
+                        <div style={{ flex:1,minWidth:0 }}>
+                          <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#fff",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{up.workout.name}</div>
+                          <div style={{ fontFamily:FONT,fontSize:11,color:"#555" }}>{up.workout.duration} min · {up.workout.calories} cal</div>
+                        </div>
+                        <div style={{ display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4,flexShrink:0 }}>
+                          <div style={{ background:uc,borderRadius:20,padding:"3px 10px" }}>
+                            <span style={{ fontFamily:FONT,fontWeight:800,fontSize:9,color:"#fff",letterSpacing:0.5 }}>{up.workout.type}</span>
+                          </div>
+                          <div style={{ display:"flex",alignItems:"center",gap:4 }}>
+                            <div style={{ width:6,height:6,borderRadius:"50%",background:ec2 }}/>
+                            <span style={{ fontFamily:FONT,fontSize:10,color:ec2,fontWeight:600 }}>{up.energyLabel}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          );
+        })()}
 
         {/* ── QUICK ACCESS GRID ── */}
         <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14 }}>
@@ -4166,19 +4241,33 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
             <div style={{ fontFamily:FONT,fontWeight:800,fontSize:17,color:"#fff" }}>Personal Records</div>
             <button onClick={()=>setSubPage("records")} style={{ background:"none",border:"none",cursor:"pointer",fontFamily:FONT,fontWeight:700,fontSize:13,color:PRIMARY }}>View All</button>
           </div>
-          {RECORDS.slice(0,3).map((r,i)=>(
-            <div key={i} onClick={()=>setSubPage("records")} style={{ background:CARD2,borderRadius:14,padding:"14px 16px",marginBottom:i<2?10:0,display:"flex",alignItems:"center",gap:14,cursor:"pointer" }}>
-              <div style={{ width:44,height:44,borderRadius:"50%",background:r.bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}><RecordIcon name={r.name}/></div>
-              <div style={{ flex:1 }}>
-                <div style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:"#fff",marginBottom:2 }}>{r.name}</div>
-                <div style={{ fontFamily:FONT,fontSize:12,color:"#888888" }}>Personal Best</div>
-              </div>
-              <div style={{ textAlign:"right" }}>
-                <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:r.color }}>{r.val}</div>
-                <div style={{ fontFamily:FONT,fontSize:11,color:"#444",marginTop:2 }}>{r.when}</div>
-              </div>
-            </div>
-          ))}
+          {(()=>{
+            const PR_COLORS=["#EF4444","#22C55E","#00A3FF","#F97316","#8B5CF6","#EAB308"];
+            const displayPRs = previewPRs.length > 0
+              ? previewPRs.slice(0,3).map((r,i)=>({
+                  name:  r.exerciseName || r.name || "Exercise",
+                  color: PR_COLORS[i%PR_COLORS.length],
+                  bg:    `${PR_COLORS[i%PR_COLORS.length]}22`,
+                  val:   r.weight ? `${r.weight} lbs` : (r.reps ? `${r.reps} reps` : "—"),
+                  when:  r.achievedAt ? new Date(r.achievedAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : "—",
+                }))
+              : RECORDS.slice(0,3);
+            return displayPRs.length === 0
+              ? <div style={{fontFamily:FONT,fontSize:13,color:"#555",textAlign:"center",padding:"16px 0"}}>Complete workouts to earn personal records</div>
+              : displayPRs.map((r,i)=>(
+                <div key={i} onClick={()=>setSubPage("records")} style={{ background:CARD2,borderRadius:14,padding:"14px 16px",marginBottom:i<displayPRs.length-1?10:0,display:"flex",alignItems:"center",gap:14,cursor:"pointer" }}>
+                  <div style={{ width:44,height:44,borderRadius:"50%",background:r.bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}><RecordIcon name={r.name}/></div>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:"#fff",marginBottom:2 }}>{r.name}</div>
+                    <div style={{ fontFamily:FONT,fontSize:12,color:"#888888" }}>Personal Best</div>
+                  </div>
+                  <div style={{ textAlign:"right" }}>
+                    <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:r.color }}>{r.val}</div>
+                    <div style={{ fontFamily:FONT,fontSize:11,color:"#444",marginTop:2 }}>{r.when}</div>
+                  </div>
+                </div>
+              ));
+          })()}
         </div>
 
       </div>
@@ -6819,7 +6908,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
               <div style={{ fontFamily:FONT,fontWeight:800,fontSize:17,color:"#fff",marginBottom:3 }}>{workout.name}</div>
               <div style={{ fontFamily:FONT,fontSize:11.5,color:"#89CFF0",marginBottom:9,lineHeight:1.45 }}>Target: {workout.target || (apiWorkout?.exercises?.slice(0,3).map(e=>e.muscleGroup).filter(Boolean).join(', ')) || 'Full Body'}</div>
               <div style={{ display:"flex",gap:14,alignItems:"center" }}>
-                {[{val:workout.duration||workout.mins||0,icon:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,col:"#EF4444"},{val:workout.cal,icon:<svg width="13" height="13" viewBox="0 0 24 24" fill="#FF6B35"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>,col:"#FF6B35"},{val:workout.exercises,icon:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>,col:PRIMARY}].map((s,i)=>(
+                {[{val:workout.duration||workout.mins||0,icon:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,col:"#EF4444"},{val:workout.calories||workout.cal||0,icon:<svg width="13" height="13" viewBox="0 0 24 24" fill="#FF6B35"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>,col:"#FF6B35"},{val:Array.isArray(workout.exercises)?workout.exercises.length:(workout.exercises||0),icon:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>,col:PRIMARY}].map((s,i)=>(
                   <div key={i} style={{ display:"flex",alignItems:"center",gap:4 }}>
                     {s.icon}<span style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:s.col }}>{s.val}</span>
                   </div>
@@ -6936,6 +7025,7 @@ function VTRXAppInner({ setPaymentPlan }) {
   const [weeklyAvgMin,     setWeeklyAvgMin]     = useState(null);
   const [workoutElapsed,   setWorkoutElapsed]   = useState(0);
   const [workoutStarted,   setWorkoutStarted]   = useState(false);
+  const [workoutPaused,    setWorkoutPaused]    = useState(false);
   const workoutTimerRef = useRef(null);
 
   useEffect(()=>{
@@ -6946,7 +7036,7 @@ function VTRXAppInner({ setPaymentPlan }) {
   }, [innerPage, workoutStarted, workoutDone, workoutPaused]);
   const [showComplete, setShowComplete] = useState(false);
   const [mealIdx, setMealIdx] = useState(0);
-  const [streakDay, setStreakDay] = useState(7);
+  const [streakDay, setStreakDay] = useState(0);
   const [workoutsTotal,setWorkoutsTotal]= useState(0);
   const [energyKey, setEnergyKey] = useState(()=>{
     try {
@@ -6958,7 +7048,6 @@ function VTRXAppInner({ setPaymentPlan }) {
   const [notifCount,    setNotifCount]    = useState(0);
   const [liveUser,      setLiveUser]      = useState(null);
   const [apiWorkout,    setApiWorkout]    = useState(null);
-  const [workoutPaused, setWorkoutPaused] = useState(false);
   const dashScrollRef  = useRef(null);
   const savedScrollPos = useRef(0);
   const mouseStart     = useRef(null);
@@ -6992,15 +7081,22 @@ function VTRXAppInner({ setPaymentPlan }) {
           height:       u.height      || prev.height,
           gender:       u.gender      || prev.gender,
         }));
-        if (u.streakDays)     setStreakDay(u.streakDays);
-        if (u.workoutsTotal)  setWorkoutsTotal(u.workoutsTotal);
+        if (u.streakDays)             setStreakDay(u.streakDays);
+        if (u._count?.workoutLogs)   setWorkoutsTotal(u._count.workoutLogs);
         if (u.isPremium)      setIsPremium(true);
         // Valid token + profile loaded → restore dashboard without re-running onboarding
         setPhase("dashboard");
       }
       // Also load weekly stats
       apiCall("/workouts/stats").then(sr=>{
-        if (sr?.data?.stats?.currentStreak) setStreakDay(sr.data.stats.currentStreak);
+        if (sr?.data?.stats) {
+          const s = sr.data.stats;
+          if (s.currentStreak)               setStreakDay(s.currentStreak);
+          if (s.workoutsCompleted !== undefined) setWeeklyWorkoutDays(s.workoutsCompleted);
+          if (s.avgCalories)                 setWeeklyAvgCal(s.avgCalories);
+          if (s.avgMinutes)                  setWeeklyAvgMin(s.avgMinutes);
+          if (s.totalWorkouts)               setWorkoutsTotal(s.totalWorkouts);
+        }
       }).catch(()=>{});
     }).catch(()=>{});
   }, []);
@@ -7226,7 +7322,8 @@ function VTRXAppInner({ setPaymentPlan }) {
             }),
           });
           const today   = new Date();
-          setLoggedWorkouts(prev => [...prev, { date:today, type:(activeW.type||"strength").toLowerCase(), cal:Math.round(300*(pct/100)), duration:mins, name:activeW.name }]);
+          const calBurned = Math.round((activeW.calories||activeW.cal||300)*(pct/100));
+          setLoggedWorkouts(prev => [...prev, { date:today, type:(activeW.type||"strength").toLowerCase(), cal:calBurned, duration:mins, name:activeW.name }]);
         } catch(_e){}
         setInnerPage(null);
         setActiveTab(0);
@@ -7237,9 +7334,10 @@ function VTRXAppInner({ setPaymentPlan }) {
         setWorkoutsTotal(t=>t+1);
         const mins = Math.max(1, Math.round(elapsedSeconds / 60));
         setWeeklyWorkoutDays(d=>d+1);
+        const actCal = activeW.calories || activeW.cal || 300;
         setWeeklyAvgCal(prev=>{
           const prevTotal = prev !== null ? prev * weeklyWorkoutDays : 0;
-          return Math.round((prevTotal + 300) / (weeklyWorkoutDays + 1));
+          return Math.round((prevTotal + actCal) / (weeklyWorkoutDays + 1));
         });
         setWeeklyAvgMin(prev=>{
           const prevTotal = prev !== null ? prev * weeklyWorkoutDays : 0;
@@ -7265,11 +7363,19 @@ function VTRXAppInner({ setPaymentPlan }) {
           });
           const me = await apiCall("/users/profile");
           if (me?.data?.user?.streakDays) setStreakDay(me.data.user.streakDays);
+          if (me?.data?.user?._count?.workoutLogs) setWorkoutsTotal(me.data.user._count.workoutLogs);
+          const sr = await apiCall("/workouts/stats");
+          if (sr?.data?.stats) {
+            const s = sr.data.stats;
+            if (s.workoutsCompleted !== undefined) setWeeklyWorkoutDays(s.workoutsCompleted);
+            if (s.avgCalories) setWeeklyAvgCal(s.avgCalories);
+            if (s.avgMinutes)  setWeeklyAvgMin(s.avgMinutes);
+          }
         } catch(_e){}
         const today   = new Date();
         const dateStr = today.toLocaleDateString("en-GB", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
         const timeStr = today.toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit" });
-        setLoggedWorkouts(prev => [...prev, { date:today, type:(activeW.type||"strength").toLowerCase(), cal:300, duration:mins, name:activeW.name }]);
+        setLoggedWorkouts(prev => [...prev, { date:today, type:(activeW.type||"strength").toLowerCase(), cal:actCal, duration:mins, name:activeW.name }]);
         setLastWorkoutStats({
           calories:  activeW.calories || activeW.cal || 300,
           duration:  mins,
