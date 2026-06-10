@@ -7449,6 +7449,7 @@ function VTRXAppInner({ setPaymentPlan }) {
   const [innerPage, setInnerPage] = useState(null);
   const [selectedExercise, setSelectedExercise] = useState(null);
   const [workoutDone, setWorkoutDone] = useState(false);
+  const [lastWorkoutLogId, setLastWorkoutLogId] = useState(null);
   const [lastWorkoutStats, setLastWorkoutStats] = useState({ calories:0, duration:0, exercises:0, name:"", date:"" });
   const [loggedWorkouts,   setLoggedWorkouts]   = useState([]);
   const [weeklyWorkoutDays,setWeeklyWorkoutDays]= useState(0);
@@ -7769,7 +7770,7 @@ function VTRXAppInner({ setPaymentPlan }) {
   if (phase !== "dashboard") return null;
 
   // Inner pages
-  if (innerPage==="aiSummary")     return <AISummaryPage energyKey={energyKey} workoutDone={workoutDone} onBack={goBack}/>;
+  if (innerPage==="aiSummary")     return <AISummaryPage energyKey={energyKey} workoutDone={workoutDone} logId={lastWorkoutLogId} onBack={goBack}/>;
   if (innerPage==="nutrition")     return <NutritionPage meal={MEALS[mealIdx % MEALS.length]} onBack={goBack}/>;
   if (innerPage==="fitnessStats")  return <FitnessStatsPage onBack={goBack} loggedWorkouts={loggedWorkouts}/>;
   if (innerPage==="notifications") return <NotificationsPage onBack={goBack}/>;
@@ -7797,7 +7798,7 @@ function VTRXAppInner({ setPaymentPlan }) {
             name:       e.name,
             sets:       [{ setNumber:1, reps: parseReps(e.reps || e.detail || '10') }],
           }));
-          await apiCall("/workouts/log", {
+          const logRes = await apiCall("/workouts/log", {
             method: "POST",
             body: JSON.stringify({
               workoutId:            activeW.workoutId || undefined,
@@ -7810,6 +7811,7 @@ function VTRXAppInner({ setPaymentPlan }) {
               exercises:            exPayload,
             }),
           });
+          if (logRes?.data?.workoutLog?.id) setLastWorkoutLogId(logRes.data.workoutLog.id);
           const today   = new Date();
           const calBurned = Math.round((activeW.calories||activeW.cal||300)*(pct/100));
           setLoggedWorkouts(prev => [...prev, { date:today, type:(activeW.type||"strength").toLowerCase(), cal:calBurned, duration:mins, name:activeW.name }]);
@@ -7838,7 +7840,7 @@ function VTRXAppInner({ setPaymentPlan }) {
             name:       e.name,
             sets:       [{ setNumber:1, reps: e.reps || e.detail || '8' }],
           }));
-          await apiCall("/workouts/log", {
+          const completeRes = await apiCall("/workouts/log", {
             method: "POST",
             body: JSON.stringify({
               workoutId:      activeW.workoutId || undefined,
@@ -7850,6 +7852,7 @@ function VTRXAppInner({ setPaymentPlan }) {
               exercises:      exPayload,
             }),
           });
+          if (completeRes?.data?.workoutLog?.id) setLastWorkoutLogId(completeRes.data.workoutLog.id);
           const me = await apiCall("/users/profile");
           if (me?.data?.user?.streakDays) setStreakDay(me.data.user.streakDays);
           if (me?.data?.user?._count?.workoutLogs) setWorkoutsTotal(me.data.user._count.workoutLogs);
