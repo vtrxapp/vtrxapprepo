@@ -4768,7 +4768,7 @@ function NotificationsPage({ onBack, onMarkAllRead }) {
         )}
         {(displayList || NOTIF_DATA).map((n, i) => {
           const isUnread = displayList ? !n.read : n.unread;
-          const cardBg   = isUnread ? `${PRIMARY}22` : '#fff';
+          const cardBg   = isUnread ? '#0d3460'       : '#fff';
           const titleCol = isUnread ? '#fff'         : '#111';
           const bodyCol  = isUnread ? '#ccc'         : '#666';
           const timeCol  = isUnread ? '#88c8f0'      : '#aaa';
