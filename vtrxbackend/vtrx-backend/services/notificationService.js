@@ -150,6 +150,17 @@ const sendToUser = async ({ userId, title, body, data = {}, imageUrl }) => {
   const succeeded = results.filter(r => r.status === 'fulfilled').length;
   const failed    = results.filter(r => r.status === 'rejected').length;
 
+  // Persist a record so the in-app notification feed can show it
+  await prisma.notification.create({
+    data: {
+      userId,
+      type:  data.type || 'general',
+      title,
+      body,
+      data:  data || {},
+    },
+  }).catch(() => {});
+
   logger.info(`Push notification sent to user ${userId}: ${succeeded} success, ${failed} failed`);
   return { sent: succeeded, failed };
 };
