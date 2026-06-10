@@ -378,6 +378,7 @@ model PersonalRecord {
 
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId, exerciseName])
   @@map("personal_records")
 }
 

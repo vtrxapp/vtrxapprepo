@@ -195,7 +195,9 @@ const logWorkout = async (req, res) => {
 
 // ── GET /api/workouts/history — User's workout history ───────────────────────
 const getWorkoutHistory = async (req, res) => {
-  const { limit = 20, offset = 0, type } = req.query;
+  const rawLimit = parseInt(req.query.limit) || 20;
+  const limit    = Math.min(rawLimit, 100); // cap at 100 per page
+  const { offset = 0, type } = req.query;
 
   try {
     const [logs, total] = await Promise.all([
@@ -209,7 +211,7 @@ const getWorkoutHistory = async (req, res) => {
           _count:    { select: { sets: true } },
         },
         orderBy: { completedAt: 'desc' },
-        take:    parseInt(limit),
+        take:    limit,
         skip:    parseInt(offset),
       }),
       prisma.workoutLog.count({ where: { userId: req.user.id } }),
@@ -217,7 +219,7 @@ const getWorkoutHistory = async (req, res) => {
 
     res.json({
       success: true,
-      data:    { logs, total, hasMore: parseInt(offset) + parseInt(limit) < total },
+      data:    { logs, total, hasMore: parseInt(offset) + limit < total },
     });
   } catch (error) {
     logger.error('getWorkoutHistory error:', error);

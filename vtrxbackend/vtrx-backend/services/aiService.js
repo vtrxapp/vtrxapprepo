@@ -1,5 +1,14 @@
-const OpenAI = require('openai');
-const logger = require('../utils/logger');
+const OpenAI  = require('openai');
+const logger  = require('../utils/logger');
+
+const parseJSON = (raw, context) => {
+  try {
+    return JSON.parse(raw.replace(/```json\n?|\n?```/g, '').trim());
+  } catch (err) {
+    logger.warn(`AI JSON parse failed [${context}]: ${err.message} — raw: ${raw.slice(0, 200)}`);
+    return null;
+  }
+};
 
 let openai = null;
 const getClient = () => {
@@ -120,10 +129,8 @@ Return ONLY valid JSON matching this exact schema (no markdown, no extra text):
 }`;
 
   const result = await callGPT(prompt, 1200, 0.7);
-
-  try {
-    const text   = result.text.replace(/```json\n?|\n?```/g, '').trim();
-    const parsed = JSON.parse(text);
+  const parsed = parseJSON(result.text, 'generateWorkoutSummary');
+  if (parsed) {
     return {
       summary:         parsed.summary          || result.text,
       keyInsights:     parsed.keyInsights       || [],
@@ -139,16 +146,8 @@ Return ONLY valid JSON matching this exact schema (no markdown, no extra text):
       model:      result.model,
       tokensUsed: result.tokensUsed,
     };
-  } catch {
-    return {
-      summary:         result.text,
-      keyInsights:     [],
-      recommendations: [],
-      recap:           null,
-      model:           result.model,
-      tokensUsed:      result.tokensUsed,
-    };
   }
+  return { summary: result.text, keyInsights: [], recommendations: [], recap: null, model: result.model, tokensUsed: result.tokensUsed };
 };
 
 // ── generateMoodRecommendation ────────────────────────────────────────────────
@@ -178,12 +177,8 @@ Return ONLY valid JSON (no markdown):
 }`;
 
   const result = await callGPT(prompt, 400, 0.75);
-  try {
-    const parsed = JSON.parse(result.text.replace(/```json\n?|\n?```/g, '').trim());
-    return { recommendation: parsed, tokensUsed: result.tokensUsed };
-  } catch {
-    return { recommendation: { message: result.text, todayAction: '', adjustedWorkout: '', motivationalCue: '' }, tokensUsed: result.tokensUsed };
-  }
+  const parsed = parseJSON(result.text, 'generateMoodRecommendation');
+  return { recommendation: parsed || { message: result.text, todayAction: '', adjustedWorkout: '', motivationalCue: '' }, tokensUsed: result.tokensUsed };
 };
 
 // ── generateWeeklyInsight ─────────────────────────────────────────────────────
@@ -220,12 +215,8 @@ Return ONLY valid JSON (no markdown):
 }`;
 
   const result = await callGPT(prompt, 500, 0.7);
-  try {
-    const parsed = JSON.parse(result.text.replace(/```json\n?|\n?```/g, '').trim());
-    return { insight: parsed, tokensUsed: result.tokensUsed };
-  } catch {
-    return { insight: { headline: 'Weekly Summary', body: result.text, weekRating: 'average', focusForNextWeek: '', badges: [] }, tokensUsed: result.tokensUsed };
-  }
+  const parsed = parseJSON(result.text, 'generateWeeklyInsight');
+  return { insight: parsed || { headline: 'Weekly Summary', body: result.text, weekRating: 'average', focusForNextWeek: '', badges: [] }, tokensUsed: result.tokensUsed };
 };
 
 // ── generateNutritionAdvice ───────────────────────────────────────────────────
@@ -258,12 +249,8 @@ Return ONLY valid JSON (no markdown):
 }`;
 
   const result = await callGPT(prompt, 500, 0.7);
-  try {
-    const parsed = JSON.parse(result.text.replace(/```json\n?|\n?```/g, '').trim());
-    return { advice: parsed, tokensUsed: result.tokensUsed };
-  } catch {
-    return { advice: { summary: result.text, dailyTargets: {}, timingTips: [], priorityFoods: [], avoidToday: [] }, tokensUsed: result.tokensUsed };
-  }
+  const parsed = parseJSON(result.text, 'generateNutritionAdvice');
+  return { advice: parsed || { summary: result.text, dailyTargets: {}, timingTips: [], priorityFoods: [], avoidToday: [] }, tokensUsed: result.tokensUsed };
 };
 
 // ── generateWorkoutPlan ───────────────────────────────────────────────────────
@@ -310,12 +297,8 @@ Return ONLY valid JSON (no markdown):
 }`;
 
   const result = await callGPT(prompt, 1500, 0.65);
-  try {
-    const parsed = JSON.parse(result.text.replace(/```json\n?|\n?```/g, '').trim());
-    return { plan: parsed, tokensUsed: result.tokensUsed };
-  } catch {
-    return { plan: { planName: 'Custom Plan', overview: result.text, weeklyStructure: [], progressionTip: '', nutritionNote: '' }, tokensUsed: result.tokensUsed };
-  }
+  const parsed = parseJSON(result.text, 'generateWorkoutPlan');
+  return { plan: parsed || { planName: 'Custom Plan', overview: result.text, weeklyStructure: [], progressionTip: '', nutritionNote: '' }, tokensUsed: result.tokensUsed };
 };
 
 // ── generateRecoveryAdvice ────────────────────────────────────────────────────
@@ -348,12 +331,8 @@ Return ONLY valid JSON (no markdown):
 }`;
 
   const result = await callGPT(prompt, 500, 0.7);
-  try {
-    const parsed = JSON.parse(result.text.replace(/```json\n?|\n?```/g, '').trim());
-    return { advice: parsed, tokensUsed: result.tokensUsed };
-  } catch {
-    return { advice: { recoveryScore: 70, statusLabel: 'Fair', summary: result.text, priorities: [], activeRecovery: [], nutritionFocus: '', sleepTip: '', tomorrowRecommendation: 'active-recovery' }, tokensUsed: result.tokensUsed };
-  }
+  const parsed = parseJSON(result.text, 'generateRecoveryAdvice');
+  return { advice: parsed || { recoveryScore: 70, statusLabel: 'Fair', summary: result.text, priorities: [], activeRecovery: [], nutritionFocus: '', sleepTip: '', tomorrowRecommendation: 'active-recovery' }, tokensUsed: result.tokensUsed };
 };
 
 // ── generateMealPlan ──────────────────────────────────────────────────────────
@@ -396,12 +375,8 @@ Return ONLY valid JSON (no markdown):
 }`;
 
   const result = await callGPT(prompt, 900, 0.65);
-  try {
-    const parsed = JSON.parse(result.text.replace(/```json\n?|\n?```/g, '').trim());
-    return { mealPlan: parsed, tokensUsed: result.tokensUsed };
-  } catch {
-    return { mealPlan: null, tokensUsed: result.tokensUsed };
-  }
+  const parsed = parseJSON(result.text, 'generateMealPlan');
+  return { mealPlan: parsed || null, tokensUsed: result.tokensUsed };
 };
 
 module.exports = {

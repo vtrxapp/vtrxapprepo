@@ -39,16 +39,31 @@ const protect = async (req, res, next) => {
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
       select: {
-        id:          true,
-        email:       true,
-        username:    true,
-        name:        true,
-        isPremium:   true,
-        cognitoId:   true,
-        goal:        true,
+        id:           true,
+        email:        true,
+        username:     true,
+        name:         true,
+        isPremium:    true,
+        cognitoId:    true,
+        goal:         true,
         fitnessLevel: true,
+        streakDays:   true,
+        daysPerWeek:  true,
+        equipment:    true,
+        location:     true,
+        subscription: { select: { status: true, plan: true, currentPeriodEnd: true } },
       },
     });
+    // Re-validate premium from subscription record on every request
+    if (user && user.subscription) {
+      const sub = user.subscription;
+      const isActiveSub = sub.status === 'active' && (!sub.currentPeriodEnd || sub.currentPeriodEnd > new Date());
+      if (!isActiveSub && user.isPremium) {
+        // Subscription lapsed — revoke premium in DB (fire-and-forget)
+        prisma.user.update({ where: { id: user.id }, data: { isPremium: false } }).catch(() => {});
+        user.isPremium = false;
+      }
+    }
 
     if (!user) {
       return res.status(401).json({

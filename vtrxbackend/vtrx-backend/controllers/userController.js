@@ -107,6 +107,11 @@ const getProgressLogs = async (req, res) => {
 const logProgress = async (req, res) => {
   const { weight, bodyFat, waist, chest, arms, notes } = req.body;
 
+  if (weight  && (parseFloat(weight)  < 50  || parseFloat(weight)  > 700))  return res.status(400).json({ success: false, message: 'Weight must be between 50 and 700 lbs' });
+  if (bodyFat && (parseFloat(bodyFat) < 2   || parseFloat(bodyFat) > 70))   return res.status(400).json({ success: false, message: 'Body fat must be between 2% and 70%' });
+  if (waist   && (parseFloat(waist)   < 20  || parseFloat(waist)   > 100))  return res.status(400).json({ success: false, message: 'Waist must be between 20 and 100 inches' });
+  if (notes   && notes.length > 500) return res.status(400).json({ success: false, message: 'Notes must be under 500 characters' });
+
   try {
     const log = await prisma.progressLog.create({
       data: {
@@ -182,6 +187,28 @@ const getPersonalRecords = async (req, res) => {
   }
 };
 
+// ── POST /api/users/water — Log water intake ──────────────────────────────────
+const logWater = async (req, res) => {
+  const { glasses } = req.body;
+  if (glasses === undefined || glasses === null || !Number.isInteger(Number(glasses)) || Number(glasses) < 0 || Number(glasses) > 50) {
+    return res.status(400).json({ success: false, message: 'glasses must be an integer between 0 and 50' });
+  }
+  try {
+    const today = new Date(); today.setHours(0,0,0,0);
+    await prisma.waterLog.upsert({
+      where:  { userId_loggedAt: { userId: req.user.id, loggedAt: today } },
+      create: { userId: req.user.id, glasses: Number(glasses), loggedAt: today },
+      update: { glasses: Number(glasses) },
+    }).catch(async () => {
+      await prisma.waterLog.create({ data: { userId: req.user.id, glasses: Number(glasses) } });
+    });
+    res.json({ success: true });
+  } catch (err) {
+    logger.error('logWater error:', err);
+    res.status(500).json({ success: false, message: 'Failed to log water' });
+  }
+};
+
 module.exports = {
   getProfile,
   updateProfile,
@@ -191,25 +218,5 @@ module.exports = {
   getNotifications,
   markNotificationsRead,
   getPersonalRecords,
+  logWater,
 };
-
-// ── POST /api/users/water — Log water intake ──────────────────────────────────
-const logWater = async (req, res) => {
-  const { glasses } = req.body;
-  try {
-    const today = new Date(); today.setHours(0,0,0,0);
-    await prisma.waterLog.upsert({
-      where:  { userId_loggedAt: { userId: req.user.id, loggedAt: today } },
-      create: { userId: req.user.id, glasses, loggedAt: today },
-      update: { glasses },
-    }).catch(async () => {
-      // If unique constraint fails just create new
-      await prisma.waterLog.create({ data: { userId: req.user.id, glasses } });
-    });
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ success: false, message: 'Failed to log water' });
-  }
-};
-
-module.exports.logWater = logWater;

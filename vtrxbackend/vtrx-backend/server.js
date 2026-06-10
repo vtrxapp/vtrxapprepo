@@ -52,19 +52,31 @@ app.use(cors({
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max:      200,
+  windowMs:       15 * 60 * 1000,
+  max:            200,
+  standardHeaders: true,
+  legacyHeaders:  false,
   message: { success: false, message: 'Too many requests. Try again later.' },
 });
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max:      10,
+  windowMs:       15 * 60 * 1000,
+  max:            10,
+  standardHeaders: true,
+  legacyHeaders:  false,
   message: { success: false, message: 'Too many attempts. Try again in 15 minutes.' },
+});
+const aiLimiter = rateLimit({
+  windowMs:       60 * 60 * 1000, // 1 hour
+  max:            30,
+  standardHeaders: true,
+  legacyHeaders:  false,
+  message: { success: false, message: 'AI request limit reached. Try again in an hour.' },
 });
 
 app.use('/api/', limiter);
 app.use('/api/auth/login',  authLimiter);
 app.use('/api/auth/signup', authLimiter);
+app.use('/api/ai/',         aiLimiter);
 
 // ── CRITICAL: Stripe webhook needs raw body ───────────────────────────────────
 // Must be registered BEFORE express.json() parses the body

@@ -13,7 +13,6 @@ router.post('/progress',                     user.logProgress);
 router.get('/notifications',                 user.getNotifications);
 router.patch('/notifications/read',          user.markNotificationsRead);
 router.get('/personal-records',              user.getPersonalRecords);
+router.post('/water',                        user.logWater);
 
 module.exports = router;
-
-router.post('/water', (req,res,next)=>{ require('../controllers/userController').logWater(req,res,next); });
