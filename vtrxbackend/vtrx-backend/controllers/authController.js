@@ -16,6 +16,7 @@ const prisma  = require('../config/database');
 const cognito = require('../services/clerkService');
 const logger  = require('../utils/logger');
 const { validationResult } = require('express-validator');
+const notif   = require('../services/notificationService');
 
 // Helper: sign our own JWT (separate from Cognito tokens)
 const signToken = (userId) => {
@@ -156,6 +157,17 @@ const login = async (req, res) => {
     const token = signToken(user.id);
 
     logger.info(`User logged in: ${email}`);
+
+    // Fire-and-forget welcome notification
+    const hour = new Date().getHours();
+    const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+    const firstName = (user.name || user.username || '').split(' ')[0];
+    notif.sendToUser({
+      userId: user.id,
+      title:  `${greeting}${firstName ? ', ' + firstName : ''} 👋`,
+      body:   'Welcome back to VTRX. Ready to crush today?',
+      data:   { type: 'welcome' },
+    }).catch(() => {});
 
     res.json({
       success: true,
