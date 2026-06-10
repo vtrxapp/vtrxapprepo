@@ -15,8 +15,8 @@ const registerToken = async (req, res) => {
     return res.status(400).json({ success: false, message: 'Token and platform required' });
   }
 
-  if (!['ios', 'android'].includes(platform)) {
-    return res.status(400).json({ success: false, message: 'Platform must be ios or android' });
+  if (!['ios', 'android', 'web'].includes(platform)) {
+    return res.status(400).json({ success: false, message: 'Platform must be ios, android, or web' });
   }
 
   try {
