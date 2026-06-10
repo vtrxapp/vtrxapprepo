@@ -161,7 +161,8 @@ const login = async (req, res) => {
     // Fire-and-forget welcome notification
     const hour = new Date().getHours();
     const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-    const firstName = (user.name || user.username || '').split(' ')[0];
+    const rawName   = (user.name || user.username || '').split(' ')[0];
+    const firstName = rawName ? rawName.charAt(0).toUpperCase() + rawName.slice(1) : '';
     notif.sendToUser({
       userId: user.id,
       title:  `${greeting}${firstName ? ', ' + firstName : ''} 👋`,

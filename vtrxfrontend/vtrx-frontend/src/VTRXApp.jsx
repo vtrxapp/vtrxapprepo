@@ -4667,6 +4667,7 @@ function NotifSettingsPage({ onBack }) {
 // ── NOTIFICATIONS PAGE ────────────────────────────────────────────────────────
 // Map backend notification types to icon keys for rendering
 const NOTIF_ICON_MAP = {
+  welcome:          'logo',
   workout_reminder: 'workout',
   ai_summary:       'goal',
   ai_ready:         'goal',
@@ -4722,6 +4723,7 @@ function NotificationsPage({ onBack, onMarkAllRead }) {
         body:    n.body,
         time:    new Date(n.createdAt).toLocaleDateString('en-GB', { day:'numeric', month:'short' }),
         iconKey: NOTIF_ICON_MAP[n.type] || 'workout',
+        type:    n.type,
         read:    n.read,
       }))
     : (notifications !== null ? [] : null);
@@ -4744,14 +4746,15 @@ function NotificationsPage({ onBack, onMarkAllRead }) {
         </button>
       </div>
 
-      {/* Mark all read */}
-      {hasUnread && (
-        <div style={{ padding:"0 18px 10px", display:"flex", justifyContent:"flex-end", flexShrink:0 }}>
-          <button onClick={markAll} style={{ background:"none", border:"none", fontFamily:FONT, fontWeight:600, fontSize:13, color:PRIMARY, cursor:"pointer" }}>
-            Mark all as read
-          </button>
-        </div>
-      )}
+      {/* Mark all read — always visible, greyed out when nothing to mark */}
+      <div style={{ padding:"0 18px 10px", display:"flex", justifyContent:"flex-end", flexShrink:0 }}>
+        <button onClick={hasUnread ? markAll : undefined}
+          style={{ background:"none", border:"none", fontFamily:FONT, fontWeight:600, fontSize:13,
+            color: hasUnread ? PRIMARY : "#444", cursor: hasUnread ? "pointer" : "default",
+            opacity: hasUnread ? 1 : 0.4 }}>
+          Mark all as read
+        </button>
+      </div>
 
       <div style={{ flex:1, overflowY:"auto", padding:"0 16px 32px" }}>
         {displayList === null && (
@@ -4765,11 +4768,16 @@ function NotificationsPage({ onBack, onMarkAllRead }) {
         )}
         {(displayList || NOTIF_DATA).map((n, i) => {
           const isUnread = displayList ? !n.read : n.unread;
+          const cardBg   = isUnread ? '#0A2540' : '#fff';
+          const titleCol = isUnread ? '#fff'    : '#111';
+          const bodyCol  = isUnread ? '#93B8D8' : '#666';
+          const timeCol  = isUnread ? '#5A8BB0' : '#aaa';
           return (
             <div key={n.id} onClick={() => displayList ? markOne(n.id) : null}
-              style={{ background: "#fff", borderRadius:18, padding:"16px 18px", marginBottom:12, display:"flex", gap:14, alignItems:"flex-start", cursor:"pointer", animation:`fadeUp 0.3s ease ${i*0.05}s both`, transition:"background 0.2s" }}>
-              {/* Icon */}
-              <div style={{ width:44, height:44, borderRadius:"50%", background: isUnread ? "#1a1a1a" : n.iconBg||"#1a1a1a", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+              style={{ background: cardBg, borderRadius:18, padding:"16px 18px", marginBottom:12, display:"flex", gap:14, alignItems:"flex-start", cursor:"pointer", animation:`fadeUp 0.3s ease ${i*0.05}s both`, transition:"background 0.3s" }}>
+              {/* Icon circle — always white background */}
+              <div style={{ width:44, height:44, borderRadius:"50%", background:"#fff", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, overflow:"hidden" }}>
+                {n.iconKey==="logo"      && <VTRXLogo size={18}/>}
                 {n.iconKey==="workout"   && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>}
                 {n.iconKey==="goal"      && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#34D399" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>}
                 {n.iconKey==="meal"      && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FBBF24" strokeWidth="2"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>}
@@ -4781,15 +4789,15 @@ function NotificationsPage({ onBack, onMarkAllRead }) {
                 {n.iconKey==="sleep"     && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#818CF8" strokeWidth="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>}
                 {n.iconKey==="water"     && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38BDF8" strokeWidth="2"><path d="M12 2.69l5.66 5.66a8 8 0 11-11.31 0z"/></svg>}
                 {n.iconKey==="rest"      && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F472B6" strokeWidth="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>}
-                {!n.iconKey && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>}
+                {(!n.iconKey || (n.iconKey !== 'logo' && !['workout','goal','meal','streak','challenge','premium','nutrition','steps','sleep','water','rest'].includes(n.iconKey))) && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>}
               </div>
               {/* Body */}
               <div style={{ flex:1 }}>
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:4 }}>
-                  <div style={{ fontFamily:FONT, fontWeight:800, fontSize:15, color: "#111" }}>{n.title}</div>
-                  <div style={{ fontFamily:FONT, fontSize:12, color: "#aaa", marginLeft:8, whiteSpace:"nowrap", flexShrink:0 }}>{n.time}</div>
+                  <div style={{ fontFamily:FONT, fontWeight:800, fontSize:15, color: titleCol }}>{n.title}</div>
+                  <div style={{ fontFamily:FONT, fontSize:12, color: timeCol, marginLeft:8, whiteSpace:"nowrap", flexShrink:0 }}>{n.time}</div>
                 </div>
-                <div style={{ fontFamily:FONT, fontSize:13, color: "#666", lineHeight:1.55 }}>{n.body}</div>
+                <div style={{ fontFamily:FONT, fontSize:13, color: bodyCol, lineHeight:1.55 }}>{n.body}</div>
               </div>
             </div>
           );
