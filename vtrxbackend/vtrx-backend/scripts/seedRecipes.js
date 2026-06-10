@@ -3,7 +3,6 @@
 // Run: node scripts/seedRecipes.js
 // ─────────────────────────────────────────────────────────────────────────────
 
-require('dotenv').config();
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
@@ -279,6 +278,11 @@ async function main() {
   console.log(`\nDone — ${created} created, ${skipped} already existed.`);
 }
 
-main()
-  .catch(e => { console.error(e); process.exit(1); })
-  .finally(() => prisma.$disconnect());
+// Export for use by server.js on startup
+const run = () => main().finally(() => prisma.$disconnect());
+module.exports = { run };
+
+// Allow direct invocation: node scripts/seedRecipes.js
+if (require.main === module) {
+  run().catch(e => { console.error(e); process.exit(1); });
+}
