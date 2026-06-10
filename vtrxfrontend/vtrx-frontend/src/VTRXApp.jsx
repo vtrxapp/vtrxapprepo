@@ -4768,10 +4768,10 @@ function NotificationsPage({ onBack, onMarkAllRead }) {
         )}
         {(displayList || NOTIF_DATA).map((n, i) => {
           const isUnread = displayList ? !n.read : n.unread;
-          const cardBg   = isUnread ? '#0d3460'       : '#fff';
-          const titleCol = isUnread ? '#fff'         : '#111';
-          const bodyCol  = isUnread ? '#ccc'         : '#666';
-          const timeCol  = isUnread ? '#88c8f0'      : '#aaa';
+          const cardBg   = isUnread ? '#00a3ff'        : '#fff';
+          const titleCol = isUnread ? '#fff'   : '#111';
+          const bodyCol  = isUnread ? '#e0f3ff': '#666';
+          const timeCol  = isUnread ? '#b3e0ff': '#aaa';
           return (
             <div key={n.id} onClick={() => displayList ? markOne(n.id) : null}
               style={{ background: cardBg, borderRadius:18, padding:"16px 18px", marginBottom:12, display:"flex", gap:14, alignItems:"flex-start", cursor:"pointer", animation:`fadeUp 0.3s ease ${i*0.05}s both`, transition:"background 0.3s" }}>
@@ -7945,7 +7945,7 @@ function VTRXAppInner({ setPaymentPlan }) {
               <div style={{ width:24,height:24,display:"flex",alignItems:"center",justifyContent:"center" }}>
                 <svg width="22" height="22" viewBox="0 0 24 24" fill={activeTab===i?PRIMARY:"none"} stroke={activeTab===i?PRIMARY:"#555"} strokeWidth="1.8">
                   {t.iconType==="home"&&<><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></>}
-                  {t.iconType==="nutrition"&&<><path d="M18 8h1a4 4 0 010 8h-1"/><path d="M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></>}
+                  {t.iconType==="nutrition"&&<><path d="M3 2v7a1 1 0 001 1h1v12a1 1 0 002 0V10h1a1 1 0 001-1V2"/><line x1="5" y1="2" x2="5" y2="9"/><path d="M19 2c0 0-2 2-2 5s2 5 2 5v8a1 1 0 01-2 0V2"/></>}
                   {t.iconType==="workout"&&<><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></>}
                 </svg>
               </div>
