@@ -199,7 +199,7 @@ const NUTRITION_FILTERS = ["All","High Protein","Low Carb","Vegan","Vegetarian",
 const normalizeRecipe = (r) => ({
   id:          r.id,
   name:        r.name || r.title || 'Recipe',
-  img:         r.image_url || r.imageUrl || r.thumbnail_url || r.thumbnailUrl || r.image || '',
+  img:         r.image_url || r.imageUrl || r.thumbnail_url || r.thumbnailUrl || r.image || r.img || '',
   cal:         r.calories || r.cal || 0,
   protein:     r.protein  || 0,
   fats:        r.fat      || r.fats  || 0,
@@ -210,8 +210,8 @@ const normalizeRecipe = (r) => ({
   servings:    r.servings  || 1,
   desc:        r.description || r.summary || r.desc || '',
   ingredients: (r.ingredients || []).map(ing =>
-    typeof ing === 'string' ? { text: ing }
-    : { text: [ing.amount, ing.unit, ing.name].filter(Boolean).join(' ') || String(ing) }
+    typeof ing === 'string' ? ing
+    : [ing.amount, ing.unit, ing.name].filter(Boolean).join(' ') || String(ing)
   ),
   steps:       (r.instructions || r.directions || r.steps || []).map(s =>
     typeof s === 'string' ? s : s.description || s.step || s.text || String(s)
