@@ -1733,67 +1733,87 @@ function PerfIcon({ type, color }) {
   return <svg {...s}><circle cx="12" cy="12" r="10"/></svg>;
 }
 
-function AISummaryPage({ energyKey, onBack }) {
+function AISummaryPage({ energyKey, logId, onBack }) {
   const { dark } = useTheme();
-  const T = dark ? DARK : LIGHT;
-  const { isPremium, setIsPremium } = useUser();
+  const { isPremium } = useUser();
   const aiScrollRef = useScrollPos("ai-summary");
-  const [tab, setTab]           = useState("summary");
+  const scrollRef = useRef(null);
+
+  // ── Polling state ──
+  const [summaryData, setSummaryData] = useState(null);
+  const [loading, setLoading] = useState(!!logId);
+  const [fetchFailed, setFetchFailed] = useState(false);
+  const [dotCount, setDotCount] = useState(0);
+
+  // ── UI state ──
+  const [tab, setTab] = useState("recap");
   const [postMood, setPostMood] = useState(null);
-  const [feedback, setFeedback] = useState(null);
-  const [barWidths, setBarWidths] = useState({});
   const [headerCollapsed, setHeaderCollapsed] = useState(false);
-  const [viewed, setViewed]     = useState(false);
-  const [freeUsed, setFreeUsed] = useState(false);
-  const [showLock, setShowLock] = useState(false); // track if first view
-  const [upgrading, setUpgrading] = useState(false);
-  const scrollRef               = useRef(null);
-  const lvl = ENERGY_LEVELS.find(l => l.key === energyKey) || ENERGY_LEVELS[2];
+  const [barReady, setBarReady] = useState(false);
+  const [expandedEx, setExpandedEx] = useState(null);
+  const [twText, setTwText] = useState("");
+  const [twDone, setTwDone] = useState(false);
 
-  // Typewriter for first view
-  const AI_FULL = `Great effort today! Based on your mood check-in (${lvl.label.toLowerCase()}), I adapted your session intensity. Your form held strong through all sets — consistency like this compounds over time.`;
-  const AI_PREVIEW = "Great effort today! Based on your mood check-in, I adapted your session intensity.";
-  const AI_TEXT = isPremium ? AI_FULL : AI_PREVIEW;
-  const [twText, setTwText]   = useState(viewed ? AI_TEXT : "");
-  const [twDone, setTwDone]   = useState(viewed);
-
+  // Dots animation while loading
   useEffect(() => {
-    if (viewed) return;
-    setViewed(true);
-    let i = 0;
-    const interval = setInterval(() => {
-      i++;
-      setTwText(AI_TEXT.slice(0, i));
-      if (i >= AI_TEXT.length) { clearInterval(interval); setTwDone(true); }
-    }, 18);
-    return () => clearInterval(interval);
-  }, []);
+    if (!loading) return;
+    const t = setInterval(() => setDotCount(d => (d + 1) % 4), 500);
+    return () => clearInterval(t);
+  }, [loading]);
 
-  // Animate bars when switching tabs
+  // Poll API
   useEffect(() => {
-    setBarWidths({});
-    const t = setTimeout(() => setBarWidths({cr:90,intensity:72,active:68,zone:78,mood:88}), 200);
+    if (!logId) { setLoading(false); return; }
+    let attempts = 0;
+    let cancelled = false;
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        const res = await apiCall(`/workouts/ai-summary/${logId}`);
+        if (cancelled) return;
+        if (res && res.success && res.data && res.data.summary) {
+          setSummaryData(res.data.summary);
+          setLoading(false);
+          return;
+        }
+      } catch (_e) { /* 202 or other — keep polling */ }
+      attempts++;
+      if (attempts >= 10) { setLoading(false); setFetchFailed(true); return; }
+      setTimeout(poll, 2500);
+    };
+    poll();
+    return () => { cancelled = true; };
+  }, [logId]);
+
+  // Trigger bar animation on tab change
+  useEffect(() => {
+    setBarReady(false);
+    const t = setTimeout(() => setBarReady(true), 220);
     return () => clearTimeout(t);
   }, [tab]);
 
-  // Collapse header on scroll
+  // Typewriter for AI summary text
+  const recap = summaryData?.recap || {};
+  const aiMainText = summaryData?.summary || "Great effort today! Based on your mood check-in, I adapted your session intensity. Your form held strong through all sets — consistency like this compounds over time.";
+  const aiCoachText = recap.coachingInsights || "";
+
+  useEffect(() => {
+    if (loading) return;
+    setTwText("");
+    setTwDone(false);
+    let i = 0;
+    const full = aiMainText;
+    const iv = setInterval(() => {
+      i++;
+      setTwText(full.slice(0, i));
+      if (i >= full.length) { clearInterval(iv); setTwDone(true); }
+    }, 18);
+    return () => clearInterval(iv);
+  }, [loading, aiMainText]);
+
+  const cardBg = "linear-gradient(145deg,#0a0f1e,#141b35)";
+  const cardBorder = `1.5px solid ${PRIMARY}33`;
   const onScroll = (e) => setHeaderCollapsed(e.target.scrollTop > 60);
-
-  const perf = [
-    { key:"cr",        label:"Completion Rate", pct:90, color:"#22C55E", weight:"25%", detail:"10/10 exercises completed",   iconPath:"check"   },
-    { key:"intensity", label:"Intensity",        pct:72, color:PRIMARY,   weight:"20%", detail:"Moderate-high effort sustained", iconPath:"bolt"    },
-    { key:"active",    label:"Active Time",      pct:68, color:"#F97316", weight:"15%", detail:"306 active cal / 450 total cal", iconPath:"clock"   },
-    { key:"zone",      label:"Heart Rate Zone",  pct:78, color:"#EF4444", weight:"—",   detail:"Fat-burn zone · Avg 148 BPM",   iconPath:"heart"   },
-    { key:"mood",      label:"Mood Alignment",   pct:88, color:"#8B5CF6", weight:"20%", detail:"Session matched your energy level", iconPath:"smile" },
-  ];
-
-  const exercises = [
-    { name:"Bench Press",     detail:"3 sets · 12 reps · 60kg", pr:false },
-    { name:"Dumbbell Rows",   detail:"3 sets · 10 reps · 22kg", pr:false },
-    { name:"Shoulder Press",  detail:"3 sets · 10 reps · 18kg", pr:true  },
-    { name:"Tricep Pushdown", detail:"4 sets · 12 reps · 15kg", pr:false },
-    { name:"Cable Chest Fly", detail:"3 sets · 12 reps · 20kg", pr:false },
-  ];
 
   const postMoods = [
     { key:"drained", label:"Drained", color:"#EF4444" },
@@ -1802,29 +1822,70 @@ function AISummaryPage({ energyKey, onBack }) {
     { key:"pumped",  label:"Pumped",  color:PRIMARY   },
   ];
 
-  const handleUpgrade = () => {
-    openPaymentSheet("monthly");
-  };
+  const muscleColors = { Chest:"#60A5FA", Back:"#34D399", Shoulders:"#FBBF24", Arms:"#F87171", Legs:"#A78BFA", Core:"#FB923C", Glutes:"#F472B6" };
+  const getMuscleColor = (name) => muscleColors[name] || "#94A3B8";
 
-  const cardBg = dark ? "linear-gradient(145deg,#0a0f1e,#141b35)" : "#ffffff";
-  const cardBorder = dark ? `1.5px solid ${PRIMARY}33` : `1.5px solid ${PRIMARY}44`;
+  const metricsData = recap.metrics || {};
+  const metricCards = [
+    { key:"completionRate",  label:"Completion Rate",  val:metricsData.completionRate  != null ? `${metricsData.completionRate}%` : "90%",  color:"#22C55E" },
+    { key:"intensityScore",  label:"Intensity Score",  val:metricsData.intensityScore  != null ? `${metricsData.intensityScore}`  : "72",   color:PRIMARY   },
+    { key:"volumeLifted",    label:"Volume Lifted",    val:metricsData.volumeLifted    != null ? `${metricsData.volumeLifted}kg`  : "1,890kg",color:"#F97316" },
+    { key:"moodAlignment",   label:"Mood Alignment",   val:metricsData.moodAlignment   != null ? `${metricsData.moodAlignment}%` : "88%",  color:"#8B5CF6" },
+  ];
+  const overallScore = metricsData.intensityScore != null ? Math.round(metricsData.intensityScore) : 83;
+  const exerciseBreakdown = recap.exerciseBreakdown || [];
+  const muscleGroups = recap.muscleGroups || [];
+  const achievements = recap.achievements || [];
+  const keyInsights = summaryData?.keyInsights || [];
+  const recommendations = summaryData?.recommendations || [];
+  const moodAnalysis = recap.moodAnalysis || null;
+
+  const PaywallCard = ({ title, description }) => (
+    <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"32px 20px",textAlign:"center",margin:"8px 0" }}>
+      <div style={{ width:64,height:64,borderRadius:"50%",background:"rgba(245,158,11,0.12)",border:"1.5px solid rgba(245,158,11,0.3)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px" }}>
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+      </div>
+      <div style={{ fontFamily:FONT,fontWeight:900,fontSize:18,color:"#fff",marginBottom:8 }}>{title}</div>
+      <div style={{ fontFamily:FONT,fontSize:13,color:"#888",lineHeight:1.6,marginBottom:20 }}>{description}</div>
+      <button onClick={()=>openPaymentSheet("monthly")} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:"linear-gradient(135deg,#F59E0B,#D97706)",border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",letterSpacing:1,boxShadow:"0 4px 20px rgba(245,158,11,0.35)",transition:"all 0.2s" }}>UPGRADE TO PRO</button>
+    </div>
+  );
+
+  // ── Loading screen ──
+  if (loading) {
+    return (
+      <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:FONT }}>
+        <div style={{ width:80,height:80,borderRadius:"50%",background:"linear-gradient(135deg,#7C3AED,#4C1D95)",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 0 40px rgba(124,58,237,0.5)",animation:"glow 2s ease infinite",marginBottom:28 }}>
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="white"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        </div>
+        <div style={{ fontWeight:800,fontSize:16,color:"#fff",marginBottom:10,letterSpacing:0.5 }}>VTRX Coach is analyzing your workout{".".repeat(dotCount)}</div>
+        <div style={{ fontSize:13,color:"#888" }}>This may take a few seconds...</div>
+      </div>
+    );
+  }
+
+  const workoutName = summaryData?.name || "Workout Recap";
+  const workoutDate = summaryData?.date ? new Date(summaryData.date).toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"}) : new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
+  const workoutType = summaryData?.type || "STRENGTH";
+  const workoutCalories = summaryData?.calories || metricsData.caloriesBurned || "—";
+  const workoutDuration = summaryData?.duration || metricsData.duration || "—";
+  const workoutMood = summaryData?.mood || "—";
 
   return (
     <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column" }}>
 
       {/* ── COLLAPSIBLE HEADER ── */}
       <div style={{ flexShrink:0,background:BG,transition:"all 0.3s ease",overflow:"hidden" }}>
-        {/* Always-visible back + title */}
         <div style={{ padding:"50px 18px 0",display:"flex",alignItems:"flex-start",justifyContent:"space-between" }}>
           <button onClick={onBack} style={{ width:38,height:38,borderRadius:"50%",background:CARD,border:`1px solid ${BORDER}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={"#888888"} strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#888888" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
           </button>
           <div style={{ textAlign:"center" }}>
-            <div style={{ fontFamily:FONT,fontWeight:900,fontSize:16,color:"#ffffff" }}>UpperBody Strength</div>
-            <div style={{ fontFamily:FONT,fontSize:12,color:"#888888",marginTop:2 }}>Tuesday, June 10 · 45 min</div>
+            <div style={{ fontFamily:FONT,fontWeight:900,fontSize:16,color:"#fff" }}>{workoutName}</div>
+            <div style={{ fontFamily:FONT,fontSize:12,color:"#888888",marginTop:2 }}>{workoutDate}</div>
           </div>
           <div style={{ background:`${PRIMARY}22`,border:`1.5px solid ${PRIMARY}66`,borderRadius:20,padding:"6px 14px" }}>
-            <span style={{ fontFamily:FONT,fontWeight:800,fontSize:10,color:PRIMARY,letterSpacing:1 }}>STRENGTH</span>
+            <span style={{ fontFamily:FONT,fontWeight:800,fontSize:10,color:PRIMARY,letterSpacing:1 }}>{workoutType}</span>
           </div>
         </div>
 
@@ -1832,9 +1893,9 @@ function AISummaryPage({ energyKey, onBack }) {
         <div style={{ maxHeight:headerCollapsed?"0px":"120px",opacity:headerCollapsed?0:1,transition:"max-height 0.35s ease, opacity 0.25s ease",overflow:"hidden",padding:headerCollapsed?"0 16px":"12px 16px 0" }}>
           <div style={{ display:"flex",gap:10 }}>
             {[
-              { ico:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="1.8"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>, val:"382", lbl:"Calories", c:"#EF4444" },
-              { ico:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.8"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>, val:"45",  lbl:"Minutes", c:PRIMARY   },
-              { ico:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="1.8"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>, val:"148", lbl:"Avg BPM", c:"#EF4444" },
+              { ico:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="1.8"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>, val:workoutCalories, lbl:"Calories", c:"#EF4444" },
+              { ico:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.8"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>, val:workoutDuration, lbl:"Minutes", c:PRIMARY },
+              { ico:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" strokeWidth="1.8"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>, val:workoutMood, lbl:"Mood", c:"#8B5CF6" },
             ].map((s,i)=>(
               <div key={i} style={{ flex:1,background:CARD,borderRadius:16,border:`1px solid ${BORDER}`,padding:"12px 8px",textAlign:"center" }}>
                 <div style={{ display:"flex",justifyContent:"center",marginBottom:5,color:s.c }}>{s.ico}</div>
@@ -1845,17 +1906,11 @@ function AISummaryPage({ energyKey, onBack }) {
           </div>
         </div>
 
-        {/* Sticky tabs */}
+        {/* Tabs */}
         <div style={{ padding:"12px 16px 0" }}>
           <div style={{ display:"flex",gap:0,background:CARD,borderRadius:12,padding:4,border:`1px solid ${BORDER}` }}>
-            {[["summary","AI Summary"],["breakdown","Breakdown"],["exercises","Exercises"]].map(([k,lbl])=>(
-              <button key={k} onClick={()=>setTab(k)}
-                style={{ flex:1,padding:"8px 0",borderRadius:10,border:"none",
-                         background:tab===k?PRIMARY:"transparent",
-                         fontFamily:FONT,fontWeight:700,fontSize:12,
-                         color:tab===k?"#fff":"#888",cursor:"pointer",
-                         display:"flex",alignItems:"center",justifyContent:"center",gap:4,
-                         transition:"all 0.2s" }}>
+            {[["recap","AI Recap"],["breakdown","Breakdown"],["exercises","Exercises"]].map(([k,lbl])=>(
+              <button key={k} onClick={()=>setTab(k)} style={{ flex:1,padding:"8px 0",borderRadius:10,border:"none",background:tab===k?PRIMARY:"transparent",fontFamily:FONT,fontWeight:700,fontSize:12,color:tab===k?"#fff":"#888",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:4,transition:"all 0.2s" }}>
                 {lbl}
                 {!isPremium&&(k==="breakdown"||k==="exercises")&&(
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
@@ -1867,85 +1922,95 @@ function AISummaryPage({ energyKey, onBack }) {
       </div>
 
       {/* ── SCROLL CONTENT ── */}
-      <div ref={(el)=>{if(scrollRef)scrollRef.current=el;if(aiScrollRef)aiScrollRef.current=el;}} onScroll={onScroll} style={{ flex:1,overflowY:"auto",padding:"12px 16px 40px" }}>
+      <div ref={(el)=>{scrollRef.current=el;if(aiScrollRef)aiScrollRef.current=el;}} onScroll={onScroll} style={{ flex:1,overflowY:"auto",padding:"12px 16px 40px" }}>
 
-        {/* ════ TAB: AI SUMMARY ════ */}
-        {tab==="summary" && (
+        {/* ════ TAB: AI RECAP ════ */}
+        {tab==="recap" && (
           <div style={{ animation:"fadeUp 0.35s ease both" }}>
             {/* Glowing AI card */}
-            <div style={{ background:cardBg,borderRadius:22,border:cardBorder,padding:"22px 20px",marginBottom:14,boxShadow:dark?"0 0 40px rgba(109,40,217,0.15)":"0 4px 24px rgba(0,163,255,0.1)" }}>
+            <div style={{ background:cardBg,borderRadius:22,border:cardBorder,padding:"22px 20px",marginBottom:14,boxShadow:"0 0 40px rgba(109,40,217,0.15)" }}>
               <div style={{ display:"flex",gap:14,alignItems:"center",marginBottom:16 }}>
                 <div style={{ width:52,height:52,borderRadius:"50%",background:"linear-gradient(135deg,#7C3AED,#4C1D95)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:"0 0 24px rgba(124,58,237,0.6)",animation:"glow 3s ease infinite" }}>
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
                 </div>
                 <div>
-                  <div style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:"#8B5CF6",letterSpacing:2,marginBottom:4 }}>AI POWERED SUMMARY</div>
-                  <div style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:dark?"#fff":"#ffffff" }}>VTRXAI Analysis</div>
+                  <div style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:"#8B5CF6",letterSpacing:2,marginBottom:4 }}>AI POWERED RECAP</div>
+                  <div style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff" }}>VTRX Coach Analysis</div>
                 </div>
               </div>
-              <div style={{ height:1,background:dark?"rgba(255,255,255,0.06)":"rgba(0,0,0,0.06)",marginBottom:16 }}/>
-
-              {/* Typewriter text with glowing cursor */}
-              <div style={{ position:"relative" }}>
-                <div style={{ fontFamily:FONT,fontSize:14,color:dark?"rgba(255,255,255,0.88)":"#ffffff",lineHeight:1.78,marginBottom:14,whiteSpace:"pre-line" }}>
-                  {twText}
-                  {!twDone && <span style={{ display:"inline-block",width:2,height:16,background:PRIMARY,marginLeft:2,animation:"blink 0.9s infinite",verticalAlign:"text-bottom",borderRadius:1 }}/>}
-                </div>
-                {!isPremium && twDone && (
-                  <div style={{ position:"absolute",bottom:0,left:0,right:0,height:"68%",background:"linear-gradient(180deg,transparent 0%,rgba(10,10,10,0.95) 35%,rgba(10,10,10,1) 100%)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-end",paddingBottom:8 }}>
-                    <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:8 }}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-                      <span style={{ fontFamily:FONT,fontSize:12,color:"#fff",fontWeight:700 }}>Full analysis is a Premium feature</span>
-                    </div>
-                    <button onClick={()=>openPaymentSheet()} style={{ padding:"8px 24px",borderRadius:50,background:PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:12,color:"#fff",cursor:"pointer",boxShadow:`0 4px 16px ${PRIMARY}44` }}>
-                      Unlock Premium
-                    </button>
-                  </div>
-                )}
+              <div style={{ height:1,background:"rgba(255,255,255,0.06)",marginBottom:16 }}/>
+              <div style={{ fontFamily:FONT,fontSize:14,color:"rgba(255,255,255,0.88)",lineHeight:1.78,marginBottom:aiCoachText?14:0,whiteSpace:"pre-line" }}>
+                {twText}
+                {!twDone&&<span style={{ display:"inline-block",width:2,height:16,background:PRIMARY,marginLeft:2,animation:"blink 0.9s infinite",verticalAlign:"text-bottom",borderRadius:1 }}/>}
               </div>
-
-              {twDone && (
-                <>
-                  <div style={{ background:dark?"rgba(255,255,255,0.04)":"rgba(0,0,0,0.04)",border:`1px solid ${dark?"rgba(255,255,255,0.08)":"rgba(0,0,0,0.08)"}`,borderRadius:14,padding:"14px 16px",display:"flex",gap:12,alignItems:"flex-start",marginBottom:16 }}>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#EAB308" strokeWidth="2" style={{flexShrink:0,marginTop:1}}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                    <p style={{ fontFamily:FONT,fontSize:14,color:dark?"rgba(255,255,255,0.75)":"#888888",lineHeight:1.65,margin:0 }}>
-                      Tomorrow, I recommend a light active recovery or yoga session to let your muscles rebuild. You've earned it!
-                    </p>
-                  </div>
-                  <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center" }}>
-                    <span style={{ fontFamily:FONT,fontSize:12,color:"#888888" }}>Was this helpful?</span>
-                    <div style={{ display:"flex",gap:10 }}>
-                      {[{v:"down",svg:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3z"/><path d="M17 2h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17"/></svg>},{v:"up",svg:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3z"/><path d="M7 22H4.72A2.31 2.31 0 012 20v-7a2.31 2.31 0 012.72-2H7"/></svg>}].map((t,i)=>(
-                        <button key={i} onClick={()=>setFeedback(i)} style={{ background:feedback===i?(dark?"rgba(255,255,255,0.1)":"rgba(0,0,0,0.06)"):"none",border:"none",borderRadius:10,padding:"6px 12px",cursor:"pointer",opacity:feedback!==null&&feedback!==i?0.3:1,display:"flex",alignItems:"center",transition:"all 0.2s" }}>{t.svg}</button>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
+              {twDone && aiCoachText ? (
+                <div style={{ fontFamily:FONT,fontSize:13,color:"rgba(255,255,255,0.65)",lineHeight:1.7,borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:14,marginTop:4 }}>{aiCoachText}</div>
+              ) : null}
             </div>
 
-            {/* Next session */}
-            <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"16px 18px",marginBottom:14 }}>
-              <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888888",letterSpacing:1,marginBottom:12 }}>NEXT SESSION RECOMMENDATION</div>
-              <div style={{ display:"flex",alignItems:"center",gap:14 }}>
-                <div style={{ width:48,height:48,borderRadius:14,background:"rgba(34,197,94,0.15)",border:"1px solid rgba(34,197,94,0.3)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
-                </div>
-                <div style={{ flex:1 }}>
-                  <div style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:"#ffffff",marginBottom:2 }}>Active Recovery</div>
-                  <div style={{ fontFamily:FONT,fontSize:12,color:"#888888" }}>Tomorrow · 20–30 min · Mobility</div>
-                </div>
-                <div style={{ background:`${PRIMARY}18`,borderRadius:20,padding:"6px 14px",border:`1px solid ${PRIMARY}44` }}>
-                  <span style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:PRIMARY }}>Schedule</span>
+            {/* Achievements */}
+            {achievements.length > 0 && (
+              <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"18px",marginBottom:14,animation:"fadeUp 0.35s ease both" }}>
+                <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888888",letterSpacing:1,marginBottom:14 }}>ACHIEVEMENTS</div>
+                <div style={{ display:"flex",flexWrap:"wrap",gap:8 }}>
+                  {achievements.map((a,i)=>(
+                    <div key={i} style={{ background:"#EAB30818",border:"1px solid #EAB30844",borderRadius:20,padding:"6px 14px",display:"flex",alignItems:"center",gap:6 }}>
+                      <span style={{ fontSize:14 }}>{a.icon||"🏅"}</span>
+                      <span style={{ fontFamily:FONT,fontWeight:700,fontSize:12,color:"#EAB308" }}>{a.label||a}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
-            </div>
+            )}
+
+            {/* Key Insights */}
+            {keyInsights.length > 0 && (
+              <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"18px",marginBottom:14,animation:"fadeUp 0.35s ease both" }}>
+                <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888888",letterSpacing:1,marginBottom:14 }}>KEY INSIGHTS</div>
+                {keyInsights.map((ins,i)=>(
+                  <div key={i} style={{ display:"flex",gap:10,alignItems:"flex-start",marginBottom:i<keyInsights.length-1?12:0 }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2.5" style={{flexShrink:0,marginTop:2}}><polyline points="20 6 9 17 4 12"/></svg>
+                    <span style={{ fontFamily:FONT,fontSize:13,color:"rgba(255,255,255,0.8)",lineHeight:1.6 }}>{ins}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Mood Analysis */}
+            {moodAnalysis && (
+              <div style={{ background:cardBg,borderRadius:18,border:cardBorder,padding:"18px",marginBottom:14,animation:"fadeUp 0.35s ease both" }}>
+                <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10 }}>
+                  <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888888",letterSpacing:1 }}>MOOD ANALYSIS</div>
+                  {moodAnalysis.moodImpact && (
+                    <div style={{ background:moodAnalysis.moodImpact==="positive"?"#22C55E22":moodAnalysis.moodImpact==="negative"?"#EF444422":"#EAB30822",border:`1px solid ${moodAnalysis.moodImpact==="positive"?"#22C55E44":moodAnalysis.moodImpact==="negative"?"#EF444444":"#EAB30844"}`,borderRadius:20,padding:"4px 12px" }}>
+                      <span style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:moodAnalysis.moodImpact==="positive"?"#22C55E":moodAnalysis.moodImpact==="negative"?"#EF4444":"#EAB308",textTransform:"capitalize" }}>{moodAnalysis.moodImpact}</span>
+                    </div>
+                  )}
+                </div>
+                <p style={{ fontFamily:FONT,fontSize:13,color:"rgba(255,255,255,0.75)",lineHeight:1.65,margin:0 }}>{moodAnalysis.description||moodAnalysis}</p>
+              </div>
+            )}
+
+            {/* Recommendations */}
+            {recommendations.length > 0 && (
+              <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"18px",marginBottom:14,animation:"fadeUp 0.35s ease both" }}>
+                <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888888",letterSpacing:1,marginBottom:14 }}>RECOMMENDATIONS</div>
+                {recommendations.map((rec,i)=>(
+                  <div key={i} style={{ display:"flex",gap:12,alignItems:"flex-start",marginBottom:i<recommendations.length-1?14:0 }}>
+                    <div style={{ width:22,height:22,borderRadius:"50%",background:`${PRIMARY}22`,border:`1px solid ${PRIMARY}55`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:1 }}>
+                      <span style={{ fontFamily:FONT,fontWeight:800,fontSize:10,color:PRIMARY }}>{i+1}</span>
+                    </div>
+                    <span style={{ fontFamily:FONT,fontSize:13,color:"rgba(255,255,255,0.8)",lineHeight:1.65 }}>{rec}</span>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Post-workout mood */}
-            <div style={{ background:dark?"linear-gradient(145deg,#0a0f1e,#141b35)":CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"20px 18px" }}>
+            <div style={{ background:cardBg,borderRadius:20,border:cardBorder,padding:"20px 18px",animation:"fadeUp 0.35s ease both" }}>
               <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:6 }}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
-                <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#ffffff" }}>How are you feeling now?</div>
+                <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#fff" }}>How are you feeling now?</div>
               </div>
               <div style={{ fontFamily:FONT,fontSize:13,color:"#888888",marginBottom:20 }}>Your feedback helps me tailor your next session.</div>
               <div style={{ display:"flex",justifyContent:"space-around" }}>
@@ -1956,9 +2021,7 @@ function AISummaryPage({ energyKey, onBack }) {
                   </button>
                 ))}
               </div>
-              {postMood&&<div style={{ marginTop:18,textAlign:"center",animation:"fadeUp 0.3s ease both" }}>
-                <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#22C55E",marginBottom:4 }}>Thanks! We'll adjust tomorrow's plan.</div>
-              </div>}
+              {postMood && <div style={{ marginTop:18,textAlign:"center",animation:"fadeUp 0.3s ease both" }}><div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#22C55E" }}>Thanks! We'll adjust tomorrow's plan.</div></div>}
             </div>
           </div>
         )}
@@ -1967,140 +2030,124 @@ function AISummaryPage({ energyKey, onBack }) {
         {tab==="breakdown" && (
           <div style={{ animation:"fadeUp 0.35s ease both" }}>
             {!isPremium ? (
-              <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"32px 20px",textAlign:"center",margin:"8px 0" }}>
-                <div style={{ width:64,height:64,borderRadius:"50%",background:"rgba(245,158,11,0.12)",border:"1.5px solid rgba(245,158,11,0.3)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px" }}>
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-                </div>
-                <div style={{ fontFamily:FONT,fontWeight:900,fontSize:18,color:"#fff",marginBottom:8 }}>Performance Breakdown</div>
-                <div style={{ fontFamily:FONT,fontSize:13,color:"#888",lineHeight:1.6,marginBottom:20 }}>Unlock your full performance score, muscle group breakdown, intensity metrics and heart rate zones with VTRX Pro.</div>
-                <button onClick={handleUpgrade} disabled={upgrading} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:upgrading?"#333":"linear-gradient(135deg,#F59E0B,#D97706)",border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:upgrading?"not-allowed":"pointer",letterSpacing:1,boxShadow:upgrading?"none":"0 4px 20px rgba(245,158,11,0.35)",transition:"all 0.2s" }}>{upgrading?"Redirecting...":"UPGRADE TO PRO"}</button>
-              </div>
+              <PaywallCard title="Performance Breakdown" description="Unlock your full performance score, muscle group breakdown, intensity metrics and more with VTRX Pro."/>
             ) : (
               <div>
                 {/* Overall score circle */}
-                <div style={{ background:dark?"linear-gradient(145deg,#0a0f1e,#141b35)":CARD,borderRadius:20,border:cardBorder,padding:"22px 18px",marginBottom:14,textAlign:"center" }}>
+                <div style={{ background:cardBg,borderRadius:20,border:cardBorder,padding:"22px 18px",marginBottom:14,textAlign:"center" }}>
                   <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888888",letterSpacing:2,marginBottom:10 }}>OVERALL SESSION SCORE</div>
                   <div style={{ position:"relative",width:110,height:110,margin:"0 auto 14px" }}>
                     <svg width="110" height="110" style={{ transform:"rotate(-90deg)" }}>
-                      <circle cx="55" cy="55" r="46" fill="none" stroke={dark?"#1a1a2e":"#e5e5e5"} strokeWidth="10"/>
+                      <circle cx="55" cy="55" r="46" fill="none" stroke="#1a1a2e" strokeWidth="10"/>
                       <circle cx="55" cy="55" r="46" fill="none" stroke={PRIMARY} strokeWidth="10"
                         strokeDasharray={`${2*Math.PI*46}`}
-                        strokeDashoffset={`${2*Math.PI*46*(1-83/100)}`}
+                        strokeDashoffset={`${2*Math.PI*46*(1-overallScore/100)}`}
                         strokeLinecap="round" style={{ transition:"stroke-dashoffset 1.4s ease" }}/>
                     </svg>
                     <div style={{ position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center" }}>
-                      <div style={{ fontFamily:FONT,fontWeight:900,fontSize:28,color:PRIMARY,lineHeight:1 }}>83</div>
+                      <div style={{ fontFamily:FONT,fontWeight:900,fontSize:28,color:PRIMARY,lineHeight:1 }}>{overallScore}</div>
                       <div style={{ fontFamily:FONT,fontSize:10,color:"#888888",letterSpacing:1,marginTop:2 }}>/ 100</div>
                     </div>
                   </div>
-                  <div style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:"#22C55E",marginBottom:4 }}>Excellent</div>
-                  <div style={{ fontFamily:FONT,fontSize:12,color:"#888888" }}>Top 22% of all your sessions this month</div>
+                  <div style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:overallScore>=80?"#22C55E":overallScore>=60?"#F97316":"#EF4444",marginBottom:4 }}>{overallScore>=80?"Excellent":overallScore>=60?"Good":"Needs Work"}</div>
                 </div>
 
-                {/* Performance bars */}
-                <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"18px",marginBottom:14 }}>
-                  <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:20 }}>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="#22C55E"><rect x="1" y="4" width="4" height="17" rx="1"/><rect x="7" y="9" width="4" height="12" rx="1"/><rect x="13" y="6" width="4" height="15" rx="1"/><rect x="19" y="2" width="4" height="19" rx="1"/></svg>
-                    <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#ffffff" }}>Performance Breakdown</div>
-                  </div>
-                  {perf.map((p,i)=>(
-                    <div key={i} style={{ marginBottom:i<perf.length-1?20:0 }}>
-                      <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:7 }}>
-                        <div style={{ display:"flex",alignItems:"center",gap:8 }}>
-                          <PerfIcon type={p.iconPath} color={p.color}/>
-                          <div>
-                            <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#ffffff" }}>{p.label}</div>
-                            <div style={{ fontFamily:FONT,fontSize:11,color:"#888888",marginTop:1 }}>{p.detail}</div>
+                {/* Metrics grid */}
+                <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14 }}>
+                  {metricCards.map((mc,i)=>(
+                    <div key={i} style={{ background:CARD,borderRadius:16,border:`1px solid ${BORDER}`,padding:"16px 14px",textAlign:"center" }}>
+                      <div style={{ fontFamily:FONT,fontWeight:900,fontSize:24,color:mc.color,lineHeight:1,marginBottom:6 }}>{mc.val}</div>
+                      <div style={{ fontFamily:FONT,fontSize:11,color:"#888888" }}>{mc.label}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Muscle Group Analysis */}
+                {muscleGroups.length > 0 && (
+                  <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"18px" }}>
+                    <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888888",letterSpacing:1,marginBottom:16 }}>MUSCLE GROUP ANALYSIS</div>
+                    {muscleGroups.map((mg,i)=>{
+                      const name = mg.name||mg.muscle||mg;
+                      const pct = mg.percentage||mg.pct||50;
+                      const c = getMuscleColor(name);
+                      return (
+                        <div key={i} style={{ marginBottom:i<muscleGroups.length-1?14:0 }}>
+                          <div style={{ display:"flex",justifyContent:"space-between",marginBottom:6 }}>
+                            <span style={{ fontFamily:FONT,fontSize:14,color:"#888888" }}>{name}</span>
+                            <span style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:c }}>{pct}%</span>
+                          </div>
+                          <div style={{ height:8,background:"#1a1a1a",borderRadius:8,overflow:"hidden" }}>
+                            <div style={{ height:"100%",width:barReady?`${pct}%`:"0%",background:c,borderRadius:8,transition:`width ${1+i*0.1}s ease` }}/>
                           </div>
                         </div>
-                        <div style={{ textAlign:"right",flexShrink:0,marginLeft:10 }}>
-                          <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:p.color }}>{p.pct}%</div>
-                          {p.weight!=="—"&&<div style={{ fontFamily:FONT,fontSize:10,color:"#888888",marginTop:1 }}>{p.weight}</div>}
-                        </div>
-                      </div>
-                      <div style={{ height:8,background:dark?"#1a1a1a":"#e5e5e5",borderRadius:8,overflow:"hidden" }}>
-                        <div style={{ height:"100%",width:`${barWidths[p.key]||0}%`,background:p.color,borderRadius:8,transition:"width 1.1s cubic-bezier(0.4,0,0.2,1)" }}/>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* VS Last Session */}
-                <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"18px" }}>
-                  <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888888",letterSpacing:1,marginBottom:14 }}>VS LAST SESSION</div>
-                  {[{label:"Calories Burned",val:"+12%"},{label:"Sets Completed",val:"+2"},{label:"Avg Heart Rate",val:"-4 BPM"},{label:"Session Score",val:"+8 pts"}].map((s,i,arr)=>(
-                    <div key={i} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",paddingBottom:i<arr.length-1?12:0,borderBottom:i<arr.length-1?`1px solid ${BORDER}`:"none",marginBottom:i<arr.length-1?12:0 }}>
-                      <span style={{ fontFamily:FONT,fontSize:14,color:"#888888" }}>{s.label}</span>
-                      <span style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#22C55E" }}>↑ {s.val}</span>
-                    </div>
-                  ))}
-                </div>
+                      );
+                    })}
+                    {muscleGroups.length===0&&(
+                      <div style={{ fontFamily:FONT,fontSize:13,color:"#888",textAlign:"center",padding:"12px 0" }}>No muscle data available.</div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
         )}
 
+        {/* ════ TAB: EXERCISES ════ */}
         {tab==="exercises" && (
           <div style={{ animation:"fadeUp 0.35s ease both" }}>
             {!isPremium ? (
-              <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"32px 20px",textAlign:"center",margin:"8px 0" }}>
-                <div style={{ width:64,height:64,borderRadius:"50%",background:"rgba(245,158,11,0.12)",border:"1.5px solid rgba(245,158,11,0.3)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px" }}>
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-                </div>
-                <div style={{ fontFamily:FONT,fontWeight:900,fontSize:18,color:"#fff",marginBottom:8 }}>Exercises Completed</div>
-                <div style={{ fontFamily:FONT,fontSize:13,color:"#888",lineHeight:1.6,marginBottom:20 }}>See every exercise, set, rep count and personal records from this session with VTRX Pro.</div>
-                <button onClick={handleUpgrade} disabled={upgrading} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:upgrading?"#333":"linear-gradient(135deg,#F59E0B,#D97706)",border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:upgrading?"not-allowed":"pointer",letterSpacing:1,boxShadow:upgrading?"none":"0 4px 20px rgba(245,158,11,0.35)",transition:"all 0.2s" }}>{upgrading?"Redirecting...":"UPGRADE TO PRO"}</button>
+              <PaywallCard title="Exercise Breakdown" description="See every exercise, set, rep count and personal records from this session with VTRX Pro."/>
+            ) : exerciseBreakdown.length===0 ? (
+              <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"40px 20px",textAlign:"center" }}>
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#444" strokeWidth="1.5" style={{marginBottom:14}}><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>
+                <div style={{ fontFamily:FONT,fontSize:14,color:"#888" }}>No exercise breakdown available for this session.</div>
               </div>
             ) : (
               <div>
-                <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"18px",marginBottom:14 }}>
-                  <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18 }}>
-                    <div style={{ display:"flex",alignItems:"center",gap:10 }}>
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2"><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>
-                      <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#ffffff" }}>Exercises Completed</div>
-                    </div>
-                    <div style={{ background:"#22C55E22",border:"1px solid #22C55E44",borderRadius:20,padding:"4px 12px" }}>
-                      <span style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#22C55E" }}>5/5</span>
-                    </div>
-                  </div>
-                  {exercises.map((ex,i)=>(
-                    <div key={i} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",paddingBottom:i<exercises.length-1?16:0,borderBottom:i<exercises.length-1?`1px solid ${BORDER}`:"none",marginBottom:i<exercises.length-1?16:0,animation:`fadeUp 0.3s ease ${i*0.07}s both` }}>
-                      <div>
-                        <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:3 }}>
-                          <div style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:"#ffffff" }}>{ex.name}</div>
-                          {ex.pr&&<div style={{ background:"#EAB30822",border:"1px solid #EAB30844",borderRadius:8,padding:"2px 8px" }}><span style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:"#EAB308",letterSpacing:1 }}>PR</span></div>}
+                {exerciseBreakdown.map((ex,i)=>{
+                  const isExpanded = expandedEx===i;
+                  const trend = ex.trend||ex.performance||"maintained";
+                  const trendIcon = trend==="improved"?"↑":trend==="declined"?"↓":"→";
+                  const trendColor = trend==="improved"?"#22C55E":trend==="declined"?"#EF4444":"#888888";
+                  const reps = ex.repsPerSet||[];
+                  return (
+                    <div key={i} style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"16px 18px",marginBottom:10,animation:`fadeUp 0.3s ease ${i*0.06}s both`,cursor:"pointer" }} onClick={()=>setExpandedEx(isExpanded?null:i)}>
+                      <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center" }}>
+                        <div style={{ flex:1 }}>
+                          <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:4 }}>
+                            <span style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:"#fff" }}>{ex.name||ex.exerciseName}</span>
+                            {ex.isPR&&<div style={{ background:"#EAB30822",border:"1px solid #EAB30844",borderRadius:8,padding:"2px 8px" }}><span style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:"#EAB308",letterSpacing:1 }}>🏆 NEW PR</span></div>}
+                          </div>
+                          <div style={{ display:"flex",alignItems:"center",gap:10 }}>
+                            <span style={{ fontFamily:FONT,fontSize:12,color:"#888" }}>{ex.sets||reps.length||0} sets</span>
+                            <span style={{ fontFamily:FONT,fontSize:13,fontWeight:700,color:trendColor }}>{trendIcon}</span>
+                          </div>
                         </div>
-                        <div style={{ fontFamily:FONT,fontSize:12,color:"#888888" }}>{ex.detail}</div>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2" style={{ transform:isExpanded?"rotate(180deg)":"none",transition:"transform 0.2s" }}><polyline points="6 9 12 15 18 9"/></svg>
                       </div>
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="9 12 11.5 14.5 15.5 9.5"/></svg>
+                      {isExpanded && (
+                        <div style={{ marginTop:14,borderTop:`1px solid ${BORDER}`,paddingTop:14,animation:"fadeUp 0.2s ease both" }}>
+                          {reps.length>0&&(
+                            <div style={{ marginBottom:12 }}>
+                              <div style={{ fontFamily:FONT,fontSize:11,color:"#888",letterSpacing:1,marginBottom:8 }}>REPS PER SET</div>
+                              <div style={{ display:"flex",flexWrap:"wrap",gap:6 }}>
+                                {reps.map((r,ri)=>(
+                                  <div key={ri} style={{ background:`${PRIMARY}18`,border:`1px solid ${PRIMARY}44`,borderRadius:10,padding:"4px 12px" }}>
+                                    <span style={{ fontFamily:FONT,fontWeight:700,fontSize:12,color:PRIMARY }}>Set {ri+1}: {r}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          <div style={{ display:"flex",gap:16 }}>
+                            {ex.maxWeight!=null&&<div><div style={{ fontFamily:FONT,fontSize:11,color:"#888",marginBottom:2 }}>Max Weight</div><div style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff" }}>{ex.maxWeight}kg</div></div>}
+                            {ex.totalVolume!=null&&<div><div style={{ fontFamily:FONT,fontSize:11,color:"#888",marginBottom:2 }}>Total Volume</div><div style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff" }}>{ex.totalVolume}kg</div></div>}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  ))}
-                </div>
-                <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"18px",marginBottom:14 }}>
-                  <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888888",letterSpacing:1,marginBottom:14 }}>TOTAL SESSION VOLUME</div>
-                  <div style={{ display:"flex",justifyContent:"space-around" }}>
-                    {[{val:"18",lbl:"Total Sets",c:PRIMARY},{val:"156",lbl:"Total Reps",c:"#22C55E"},{val:"1,890kg",lbl:"Total Load",c:"#F97316"}].map((s,i)=>(
-                      <div key={i} style={{ textAlign:"center" }}>
-                        <div style={{ fontFamily:FONT,fontWeight:900,fontSize:26,color:s.c,lineHeight:1,marginBottom:4 }}>{s.val}</div>
-                        <div style={{ fontFamily:FONT,fontSize:11,color:"#888888" }}>{s.lbl}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"18px" }}>
-                  <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888888",letterSpacing:1,marginBottom:16 }}>MUSCLES TRAINED</div>
-                  {[{name:"Chest",pct:85,c:"#EF4444"},{name:"Triceps",pct:75,c:"#F97316"},{name:"Shoulders",pct:60,c:"#EAB308"},{name:"Back",pct:40,c:PRIMARY},{name:"Core",pct:25,c:"#22C55E"}].map((m,i)=>(
-                    <div key={i} style={{ marginBottom:i<4?14:0 }}>
-                      <div style={{ display:"flex",justifyContent:"space-between",marginBottom:6 }}>
-                        <span style={{ fontFamily:FONT,fontSize:14,color:"#888888" }}>{m.name}</span>
-                        <span style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:m.c }}>{m.pct}%</span>
-                      </div>
-                      <div style={{ height:8,background:dark?"#1a1a1a":"#e5e5e5",borderRadius:8,overflow:"hidden" }}>
-                        <div style={{ height:"100%",width:`${barWidths.cr?m.pct:0}%`,background:m.c,borderRadius:8,transition:`width ${1+i*0.1}s ease` }}/>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
             )}
           </div>
