@@ -7481,6 +7481,7 @@ function VTRXAppInner({ setPaymentPlan }) {
   const [apiWorkout,    setApiWorkout]    = useState(null);
   // Show "Enable notifications" banner if permission not yet decided
   const [showPushBanner, setShowPushBanner] = useState(false);
+  const [navExpanded,    setNavExpanded]    = useState(true);
   const dashScrollRef  = useRef(null);
   const savedScrollPos = useRef(0);
   const mouseStart     = useRef(null);
@@ -7730,6 +7731,21 @@ function VTRXAppInner({ setPaymentPlan }) {
     { label:"Workouts",  iconType:"workout"   },
   ];
 
+  // Collapse nav when dashboard is scrolled
+  useEffect(() => {
+    const el = dashScrollRef.current;
+    if (!el) return;
+    const onScroll = () => { if (el.scrollTop > 40) setNavExpanded(false); };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  });
+
+  const handleTabSelect = (i) => {
+    setActiveTab(i);
+    setInnerPage(null);
+    setTimeout(() => setNavExpanded(false), 250);
+  };
+
   const navigate = (page) => {
     if (dashScrollRef.current) savedScrollPos.current = dashScrollRef.current.scrollTop;
     setInnerPage(page);
@@ -7921,7 +7937,7 @@ function VTRXAppInner({ setPaymentPlan }) {
 
       {/* Push notification permission banner */}
       {showPushBanner && !innerPage && (
-        <div style={{ position:"absolute",bottom:90,left:12,right:12,zIndex:60,background:"#1a1a1a",border:`1px solid ${PRIMARY}44`,borderRadius:16,padding:"14px 16px",display:"flex",alignItems:"center",gap:12,boxShadow:"0 4px 24px rgba(0,0,0,0.5)",animation:"fadeUp 0.3s ease both" }}>
+        <div style={{ position:"absolute",bottom:110,left:12,right:12,zIndex:60,background:"#1a1a1a",border:`1px solid ${PRIMARY}44`,borderRadius:16,padding:"14px 16px",display:"flex",alignItems:"center",gap:12,boxShadow:"0 4px 24px rgba(0,0,0,0.5)",animation:"fadeUp 0.3s ease both" }}>
           <div style={{ width:36,height:36,borderRadius:"50%",background:`${PRIMARY}22`,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center" }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
           </div>
@@ -7936,22 +7952,53 @@ function VTRXAppInner({ setPaymentPlan }) {
         </div>
       )}
 
-      {/* Bottom nav */}
+      {/* Floating nav pill */}
       {!innerPage&&(
-        <div style={{ position:"absolute",bottom:0,left:0,right:0,background:"rgba(10,10,10,0.95)",backdropFilter:"blur(20px)",borderTop:`1px solid ${BORDER}`,display:"flex",padding:"8px 0 24px",zIndex:50 }}>
-          {TABS.map((t,i)=>(
-            <button key={i} onClick={()=>{ setActiveTab(i); setInnerPage(null); }}
-              style={{ flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4,background:"none",border:"none",cursor:"pointer",padding:"4px 0" }}>
-              <div style={{ width:24,height:24,display:"flex",alignItems:"center",justifyContent:"center" }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill={activeTab===i?PRIMARY:"none"} stroke={activeTab===i?PRIMARY:"#555"} strokeWidth="1.8">
-                  {t.iconType==="home"&&<><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></>}
-                  {t.iconType==="nutrition"&&<><path d="M3 2v7a1 1 0 001 1h1v12a1 1 0 002 0V10h1a1 1 0 001-1V2"/><line x1="5" y1="2" x2="5" y2="9"/><path d="M19 2c0 0-2 2-2 5s2 5 2 5v8a1 1 0 01-2 0V2"/></>}
-                  {t.iconType==="workout"&&<><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></>}
+        <div style={{ position:"absolute", bottom:0, left:0, right:0, height:96, pointerEvents:"none", zIndex:50 }}>
+          <div style={{
+            position:"absolute",
+            bottom: 28,
+            left:      navExpanded ? "50%" : 20,
+            transform: navExpanded ? "translateX(-50%)" : "translateX(0)",
+            transition:"left 0.42s cubic-bezier(0.34,1.56,0.64,1), transform 0.42s cubic-bezier(0.34,1.56,0.64,1)",
+            background:"rgba(18,18,18,0.96)",
+            backdropFilter:"blur(24px)",
+            borderRadius: navExpanded ? 32 : 28,
+            border:`1px solid ${BORDER}`,
+            boxShadow:"0 8px 32px rgba(0,0,0,0.55)",
+            display:"flex",
+            alignItems:"center",
+            overflow:"hidden",
+            pointerEvents:"all",
+          }}>
+            {navExpanded ? (
+              /* ── Expanded: all three tabs ── */
+              TABS.map((t,i) => (
+                <button key={i} onClick={()=>handleTabSelect(i)}
+                  style={{ display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"10px 20px",background:"none",border:"none",cursor:"pointer",position:"relative" }}>
+                  {activeTab===i && (
+                    <div style={{ position:"absolute",inset:0,borderRadius:24,background:`${PRIMARY}18` }}/>
+                  )}
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill={activeTab===i?PRIMARY:"none"} stroke={activeTab===i?PRIMARY:"#555"} strokeWidth="1.8">
+                    {t.iconType==="home"      &&<><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></>}
+                    {t.iconType==="nutrition" &&<><path d="M3 2v7a1 1 0 001 1h1v12a1 1 0 002 0V10h1a1 1 0 001-1V2"/><line x1="5" y1="2" x2="5" y2="9"/><path d="M19 2c0 0-2 2-2 5s2 5 2 5v8a1 1 0 01-2 0V2"/></>}
+                    {t.iconType==="workout"   &&<path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/>}
+                  </svg>
+                  <span style={{ fontFamily:FONT,fontSize:10,fontWeight:700,letterSpacing:0.3,color:activeTab===i?PRIMARY:"#555",position:"relative" }}>{t.label}</span>
+                </button>
+              ))
+            ) : (
+              /* ── Collapsed: active icon only — tap to expand ── */
+              <button onClick={()=>setNavExpanded(true)}
+                style={{ width:56,height:56,display:"flex",alignItems:"center",justifyContent:"center",background:"none",border:"none",cursor:"pointer" }}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill={PRIMARY} stroke={PRIMARY} strokeWidth="1.6">
+                  {TABS[activeTab]?.iconType==="home"      &&<><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></>}
+                  {TABS[activeTab]?.iconType==="nutrition" &&<><path d="M3 2v7a1 1 0 001 1h1v12a1 1 0 002 0V10h1a1 1 0 001-1V2"/><line x1="5" y1="2" x2="5" y2="9"/><path d="M19 2c0 0-2 2-2 5s2 5 2 5v8a1 1 0 01-2 0V2"/></>}
+                  {TABS[activeTab]?.iconType==="workout"   &&<path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/>}
                 </svg>
-              </div>
-              <span style={{ fontFamily:FONT,fontSize:11,fontWeight:700,letterSpacing:0.3,color:activeTab===i?PRIMARY:"#555" }}>{t.label}</span>
-            </button>
-          ))}
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>
