@@ -4778,7 +4778,7 @@ function NotificationsPage({ onBack, onMarkAllRead }) {
               {/* Icon circle — always white background */}
               <div style={{ width:44, height:44, borderRadius:"50%", background:"#fff", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, overflow:"hidden" }}>
                 {n.iconKey==="logo"      && <VTRXLogo size={18}/>}
-                {n.iconKey==="workout"   && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>}
+                {n.iconKey==="workout"   && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 8h12"/><path d="M6 16h12"/><rect x="2" y="6" width="3" height="12" rx="1"/><rect x="19" y="6" width="3" height="12" rx="1"/><rect x="5" y="10" width="2" height="4" rx="0.5"/><rect x="17" y="10" width="2" height="4" rx="0.5"/></svg>}
                 {n.iconKey==="goal"      && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#34D399" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>}
                 {n.iconKey==="meal"      && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FBBF24" strokeWidth="2"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>}
                 {n.iconKey==="streak"    && <svg width="20" height="20" viewBox="0 0 24 24" fill="#F87171"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>}
