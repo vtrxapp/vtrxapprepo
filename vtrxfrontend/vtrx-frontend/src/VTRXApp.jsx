@@ -311,7 +311,7 @@ function SlideIcon({ type }) {
   if (type==="bolt") return <svg {...s}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>;
   if (type==="fire") return <svg {...s}><path d="M12 2c0 6-6 8-6 14a6 6 0 0012 0c0-6-6-8-6-14z"/></svg>;
   if (type==="chart") return <svg {...s}><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>;
-  if (type==="muscle"||type==="muscle") return <svg {...s}><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>;
+  if (type==="muscle"||type==="muscle") return <svg {...s}><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>;
   // Nutrition slide
   if (type==="fork") return <svg {...s}><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>;
   if (type==="bar")  return <svg {...s}><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>;
@@ -568,7 +568,7 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
         <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12 }}>
           {[
             { iconBg:"#DC2626", label:"Average Calories",   val:avgCal,         svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> },
-            { iconBg:"#6366F1", label:"Workouts This Week", val:calDays.length, svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg> },
+            { iconBg:"#6366F1", label:"Workouts This Week", val:calDays.length, svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg> },
             { iconBg:"#16A34A", label:"Avg Minutes",        val:60,             svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> },
             { iconBg:"#9333EA", label:"Weekly Improvement", val:w.improvement,  svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg> },
           ].map((s,i)=>(
@@ -851,7 +851,7 @@ function AiTipIcon({ type }) {
   const s = { width:14, height:14, viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:"2" };
   if (type==="clock")     return <svg {...s}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
   if (type==="target")    return <svg {...s}><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>;
-  if (type==="muscle")    return <svg {...s}><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>;
+  if (type==="muscle")    return <svg {...s}><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>;
   if (type==="lightbulb") return <svg {...s}><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 017 7c0 2.38-1.19 4.47-3 5.74V17H8v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 017-7z"/></svg>;
   return <svg {...s}><circle cx="12" cy="12" r="10"/></svg>;
 }
@@ -958,7 +958,7 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onStop, onExercise, co
           </button>
         ) : (
           <div style={{ width:42,height:42,borderRadius:"50%",background:PRIMARY,display:"flex",alignItems:"center",justifyContent:"center" }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>
           </div>
         )}
       </div>
@@ -970,7 +970,7 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onStop, onExercise, co
           <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#aaa",textAlign:"center",marginBottom:18 }}>{workout.name}</div>
           <div style={{ display:"flex",justifyContent:"space-around" }}>
             {[
-              {val:exercises.length,                            lbl:"Exercises",col:"#FF6B35",svg:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FF6B35" strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>},
+              {val:exercises.length,                            lbl:"Exercises",col:"#FF6B35",svg:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FF6B35" strokeWidth="2"><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>},
               {val:workout.calories||workout.cal||0,            lbl:"Calories",col:"#EF4444",svg:<svg width="18" height="18" viewBox="0 0 24 24" fill="#EF4444"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>},
               {val:workout.duration||workout.mins||0,           lbl:"Minutes",col:"#22C55E",svg:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>},
             ].map(s=>(
@@ -2056,7 +2056,7 @@ function AISummaryPage({ energyKey, onBack }) {
                 <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"18px",marginBottom:14 }}>
                   <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18 }}>
                     <div style={{ display:"flex",alignItems:"center",gap:10 }}>
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2"><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>
                       <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#ffffff" }}>Exercises Completed</div>
                     </div>
                     <div style={{ background:"#22C55E22",border:"1px solid #22C55E44",borderRadius:20,padding:"4px 12px" }}>
@@ -2187,7 +2187,7 @@ function BodyFieldIcon({ type }) {
   if (type==="age")    return <svg {...s}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>;
   if (type==="goal")   return <svg {...s}><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>;
   if (type==="ruler")  return <svg {...s}><path d="M21 6H3a2 2 0 00-2 2v8a2 2 0 002 2h18a2 2 0 002-2V8a2 2 0 00-2-2z"/><line x1="7" y1="6" x2="7" y2="10"/><line x1="12" y1="6" x2="12" y2="12"/><line x1="17" y1="6" x2="17" y2="10"/></svg>;
-  if (type==="muscle") return <svg {...s}><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>;
+  if (type==="muscle") return <svg {...s}><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>;
   if (type==="lock")   return <svg {...s}><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>;
   if (type==="percent") return <svg {...s}><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>;
   if (type==="user")    return <svg {...s}><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>;
@@ -2901,11 +2901,11 @@ function BodyScreen({ onContinue, onBack }) {
 
 function WorkoutTypeIcon({ type }) {
   const s = { width:18, height:18, viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:"2" };
-  if (type==="barbell"||type==="muscle") return <svg {...s}><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>;
+  if (type==="barbell"||type==="muscle") return <svg {...s}><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>;
   if (type==="heart"||type==="cardio")   return <svg {...s}><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>;
   if (type==="rest"||type==="recovery")  return <svg {...s}><path d="M18 8h1a4 4 0 010 8h-1"/><path d="M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>;
   if (type==="run"||type==="hiit")       return <svg {...s}><circle cx="13" cy="4" r="2"/><path d="M10.5 20.5l1-4-2.5-2.5L11 9l4 3h4"/><path d="M7 20.5l2.5-6"/></svg>;
-  if (type==="strength")                 return <svg {...s}><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>;
+  if (type==="strength")                 return <svg {...s}><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>;
   return <svg {...s}><circle cx="12" cy="12" r="10"/></svg>;
 }
 function WorkoutScreen({ onContinue, onBack }) {
@@ -3119,7 +3119,7 @@ function ReadyScreen({ onFinish }) {
   const timeDisplay = time.includes("min") ? time : time + " min";
   const styleList   = Array.isArray(user.workoutStyle) && user.workoutStyle.length > 0 ? user.workoutStyle[0] : "Full Body";
   const workoutName = level + " " + styleList;
-  return <Shell bg="https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=800&q=80" overlay="linear-gradient(180deg,rgba(0,0,0,0.5) 0%,rgba(0,0,0,0.6) 40%,rgba(0,0,0,0.94) 100%)"><div style={{ flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"0 32px",textAlign:"center" }}><div style={{ width:100,height:100,borderRadius:"50%",background:"rgba(0,163,255,0.15)",border:`2.5px solid ${PRIMARY}`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 28px",boxShadow:`0 0 50px rgba(0,163,255,0.4)`,opacity:v?1:0,transform:v?"scale(1)":"scale(0.6)",transition:"all 0.5s cubic-bezier(0.34,1.56,0.64,1)" }}><VTRXLogo size={44}/></div><div style={{ opacity:v?1:0,transform:v?"translateY(0)":"translateY(20px)",transition:"all 0.5s ease 0.25s" }}><div style={{ fontFamily:FONT,fontWeight:900,fontSize:26,color:"#fff",marginBottom:10,lineHeight:1.2 }}>Your Profile is Ready!</div><div style={{ fontFamily:FONT,fontSize:14,color:"rgba(255,255,255,0.65)",lineHeight:1.65,marginBottom:32 }}>VTRX has built your personalised training plan, meal of the day, and first workout — all based on your answers.</div></div><div style={{ width:"100%",background:"rgba(0,163,255,0.12)",border:"1.5px solid rgba(0,163,255,0.4)",borderRadius:20,padding:"20px 22px",marginBottom:28,opacity:v?1:0,transform:v?"translateY(0)":"translateY(20px)",transition:"all 0.5s ease 0.4s" }}><p style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:PRIMARY,letterSpacing:2,marginBottom:14 }}>YOUR FIRST WORKOUT IS READY</p><div style={{ display:"flex",alignItems:"center",gap:14 }}><div style={{ width:52,height:52,borderRadius:12,background:"rgba(0,163,255,0.2)",display:"flex",alignItems:"center",justifyContent:"center" }}><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#00A3FF" strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg></div><div style={{textAlign:"left"}}><p style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:"#fff",margin:"0 0 3px" }}>{workoutName}</p><p style={{ fontFamily:FONT,fontSize:12,color:"rgba(255,255,255,0.6)",margin:0 }}>{timeDisplay} · {location} · {style}</p></div></div></div><div style={{ width:"100%",opacity:v?1:0,transition:"opacity 0.5s ease 0.55s" }}><CTA label="LET'S GO" onClick={onFinish}/></div><p style={{ fontFamily:FONT,fontSize:12,color:"rgba(255,255,255,0.4)",marginTop:16 }}>Day 1 streak starts now</p></div></Shell>;
+  return <Shell bg="https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=800&q=80" overlay="linear-gradient(180deg,rgba(0,0,0,0.5) 0%,rgba(0,0,0,0.6) 40%,rgba(0,0,0,0.94) 100%)"><div style={{ flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"0 32px",textAlign:"center" }}><div style={{ width:100,height:100,borderRadius:"50%",background:"rgba(0,163,255,0.15)",border:`2.5px solid ${PRIMARY}`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 28px",boxShadow:`0 0 50px rgba(0,163,255,0.4)`,opacity:v?1:0,transform:v?"scale(1)":"scale(0.6)",transition:"all 0.5s cubic-bezier(0.34,1.56,0.64,1)" }}><VTRXLogo size={44}/></div><div style={{ opacity:v?1:0,transform:v?"translateY(0)":"translateY(20px)",transition:"all 0.5s ease 0.25s" }}><div style={{ fontFamily:FONT,fontWeight:900,fontSize:26,color:"#fff",marginBottom:10,lineHeight:1.2 }}>Your Profile is Ready!</div><div style={{ fontFamily:FONT,fontSize:14,color:"rgba(255,255,255,0.65)",lineHeight:1.65,marginBottom:32 }}>VTRX has built your personalised training plan, meal of the day, and first workout — all based on your answers.</div></div><div style={{ width:"100%",background:"rgba(0,163,255,0.12)",border:"1.5px solid rgba(0,163,255,0.4)",borderRadius:20,padding:"20px 22px",marginBottom:28,opacity:v?1:0,transform:v?"translateY(0)":"translateY(20px)",transition:"all 0.5s ease 0.4s" }}><p style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:PRIMARY,letterSpacing:2,marginBottom:14 }}>YOUR FIRST WORKOUT IS READY</p><div style={{ display:"flex",alignItems:"center",gap:14 }}><div style={{ width:52,height:52,borderRadius:12,background:"rgba(0,163,255,0.2)",display:"flex",alignItems:"center",justifyContent:"center" }}><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#00A3FF" strokeWidth="2"><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg></div><div style={{textAlign:"left"}}><p style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:"#fff",margin:"0 0 3px" }}>{workoutName}</p><p style={{ fontFamily:FONT,fontSize:12,color:"rgba(255,255,255,0.6)",margin:0 }}>{timeDisplay} · {location} · {style}</p></div></div></div><div style={{ width:"100%",opacity:v?1:0,transition:"opacity 0.5s ease 0.55s" }}><CTA label="LET'S GO" onClick={onFinish}/></div><p style={{ fontFamily:FONT,fontSize:12,color:"rgba(255,255,255,0.4)",marginTop:16 }}>Day 1 streak starts now</p></div></Shell>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3256,7 +3256,7 @@ const ALL_EXERCISES = Object.values(EXERCISE_LIBRARY).flat();
 // ── PERSONAL RECORDS ─────────────────────────────────────────────────────────
 function RecordIcon({ name }) {
   const W="20",H="20",V="0 0 24 24",F="none",SW="2";
-  if (name==="Bench Press")    return <svg width={W} height={H} viewBox={V} fill={F} stroke="white" strokeWidth={SW}><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>;
+  if (name==="Bench Press")    return <svg width={W} height={H} viewBox={V} fill={F} stroke="white" strokeWidth={SW}><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>;
   if (name==="Deadlift")       return <svg width={W} height={H} viewBox={V} fill={F} stroke="white" strokeWidth={SW}><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>;
   if (name==="5K Run")         return <svg width={W} height={H} viewBox={V} fill={F} stroke="white" strokeWidth={SW}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>;
   if (name==="Squat")          return <svg width={W} height={H} viewBox={V} fill={F} stroke="white" strokeWidth={SW}><polyline points="17 21 12 13 7 21"/><polyline points="17 13 12 5 7 13"/></svg>;
@@ -3504,7 +3504,7 @@ function CalendarPage({ onBack, loggedWorkouts=[] }) {
                 {svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>, val:avgCal, lbl:"Average Calories", bg:"#DC2626"},
                 {svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>, val:"60", lbl:"Avg Minutes", bg:"#16A34A"},
                 {svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>, val:restDays, lbl:"Rest Days", bg:"#D97706"},
-                {svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>, val:monthlyWorkouts, lbl:"Active Days", bg:"#16A34A"},
+                {svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>, val:monthlyWorkouts, lbl:"Active Days", bg:"#16A34A"},
               ].map((s,i)=>(
                 <div key={i} style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"22px 16px",textAlign:"center" }}>
                   <div style={{ width:50,height:50,borderRadius:"50%",background:s.bg,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 12px" }}>{s.svg}</div>
@@ -3587,7 +3587,7 @@ function WorkoutHistoryPage({ onBack }) {
           <div key={i} style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"16px 18px",marginBottom:12,display:"flex",alignItems:"center",gap:14,animation:`fadeUp 0.3s ease ${i*0.05}s both` }}>
             <div style={{ width:46,height:46,borderRadius:14,background:`${TYPE_COLOR[h.type]}22`,border:`1.5px solid ${TYPE_COLOR[h.type]}55`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:22,color:TYPE_COLOR[h.type] }}>
               {h.type==="strength"
-                ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>
+                ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>
                 : h.type==="cardio"
                 ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
                 : h.type==="hiit"
@@ -3770,7 +3770,7 @@ function PersonalRecordsPage({ onBack }) {
           {!loading && filtered.length === 0 && (
             <div style={{ textAlign:"center",padding:"60px 20px" }}>
               <div style={{ width:64,height:64,borderRadius:"50%",background:`${PRIMARY}18`,border:`1px solid ${PRIMARY}33`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px" }}>
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.8"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.8"><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>
               </div>
               <div style={{ fontFamily:FONT,fontWeight:800,fontSize:17,color:"#fff",marginBottom:8 }}>No records yet</div>
               <div style={{ fontFamily:FONT,fontSize:14,color:"#666",lineHeight:1.6 }}>
@@ -3787,7 +3787,7 @@ function PersonalRecordsPage({ onBack }) {
               <div key={r.id} onClick={()=>setSelected(r.exerciseName)}
                 style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"16px 18px",marginBottom:12,display:"flex",alignItems:"center",gap:14,cursor:"pointer",animation:`fadeUp 0.3s ease ${i*0.06}s both` }}>
                 <div style={{ width:46,height:46,borderRadius:"50%",background:`${color}22`,border:`1px solid ${color}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>
                 </div>
                 <div style={{ flex:1 }}>
                   <div style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:"#fff",marginBottom:3 }}>{r.exerciseName}</div>
@@ -3810,7 +3810,7 @@ function PersonalRecordsPage({ onBack }) {
               <>
                 <div style={{ background:`linear-gradient(135deg,${color}22,${color}11)`,border:`1.5px solid ${color}44`,borderRadius:22,padding:"28px 24px",textAlign:"center",marginBottom:16 }}>
                   <div style={{ width:64,height:64,borderRadius:"50%",background:`${color}22`,border:`1px solid ${color}44`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 12px" }}>
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>
                   </div>
                   <div style={{ fontFamily:FONT,fontWeight:900,fontSize:22,color:"#fff",marginBottom:6 }}>{rec.exerciseName}</div>
                   <div style={{ fontFamily:FONT,fontWeight:900,fontSize:48,color,lineHeight:1,marginBottom:8 }}>{fmtWeight(rec.weight)}</div>
@@ -3844,7 +3844,7 @@ function PersonalRecordsPage({ onBack }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function TemplateIcon({ name }) {
   const W="20",H="20",V="0 0 24 24",F="none",SW="2";
-  if (name==="Push / Pull / Legs") return <svg width={W} height={H} viewBox={V} fill={F} stroke="currentColor" strokeWidth={SW}><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>;
+  if (name==="Push / Pull / Legs") return <svg width={W} height={H} viewBox={V} fill={F} stroke="currentColor" strokeWidth={SW}><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>;
   if (name==="Upper / Lower")      return <svg width={W} height={H} viewBox={V} fill={F} stroke="currentColor" strokeWidth={SW}><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>;
   if (name==="Full Body")          return <svg width={W} height={H} viewBox={V} fill={F} stroke="currentColor" strokeWidth={SW}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>;
   return <svg width={W} height={H} viewBox={V} fill={F} stroke="currentColor" strokeWidth={SW}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>;
@@ -4110,7 +4110,7 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
       <div style={{ padding:"50px 18px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0 }}>
         <div style={{ display:"flex",alignItems:"center",gap:12 }}>
           <div style={{ width:42,height:42,borderRadius:"50%",background:PRIMARY,display:"flex",alignItems:"center",justifyContent:"center" }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>
           </div>
           <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff",letterSpacing:2 }}>WORKOUTS</div>
         </div>
@@ -4512,7 +4512,7 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
 // Notification icons rendered as SVG in NotificationsPage
 function NotifIcon({ type }) {
   const p = { width:"18",height:"18",viewBox:"0 0 24 24",fill:"none",stroke:"#fff",strokeWidth:"2" };
-  if (type==="workout")   return <svg width={p.width} height={p.height} viewBox={p.viewBox} fill={p.fill} stroke={p.stroke} strokeWidth={p.strokeWidth}><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>;
+  if (type==="workout")   return <svg width={p.width} height={p.height} viewBox={p.viewBox} fill={p.fill} stroke={p.stroke} strokeWidth={p.strokeWidth}><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>;
   if (type==="goal")      return <svg width={p.width} height={p.height} viewBox={p.viewBox} fill={p.fill} stroke={p.stroke} strokeWidth={p.strokeWidth}><path d="M18 8h1a4 4 0 010 8h-1"/><path d="M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>;
   if (type==="streak")    return <svg width={p.width} height={p.height} viewBox={p.viewBox} fill={p.fill} stroke={p.stroke} strokeWidth={p.strokeWidth}><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>;
   if (type==="nutrition") return <svg width={p.width} height={p.height} viewBox="0 0 24 24" fill="none" stroke={p.stroke} strokeWidth={p.strokeWidth}><path d="M18 8h1a4 4 0 010 8h-1"/><path d="M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>;
@@ -4536,7 +4536,7 @@ const NOTIF_DATA = [
 
 function NotifSectionIcon({ type }) {
   const s = { width:20, height:20, viewBox:"0 0 24 24", fill:"none", stroke:"#fff", strokeWidth:"2" };
-  if (type==="workout") return <svg {...s}><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>;
+  if (type==="workout") return <svg {...s}><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>;
   if (type==="meal")    return <svg {...s}><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>;
   if (type==="trophy")  return <svg {...s}><path d="M6 9H4.5a2.5 2.5 0 010-5H6"/><path d="M18 9h1.5a2.5 2.5 0 000-5H18"/><path d="M4 22h16"/><path d="M18 2H6v7a6 6 0 0012 0V2z"/></svg>;
   if (type==="users")   return <svg {...s}><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>;
@@ -4778,7 +4778,7 @@ function NotificationsPage({ onBack, onMarkAllRead }) {
               {/* Icon circle — always white background */}
               <div style={{ width:44, height:44, borderRadius:"50%", background:"#fff", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, overflow:"hidden" }}>
                 {n.iconKey==="logo"      && <VTRXLogo size={18}/>}
-                {n.iconKey==="workout"   && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 8h12"/><path d="M6 16h12"/><rect x="2" y="6" width="3" height="12" rx="1"/><rect x="19" y="6" width="3" height="12" rx="1"/><rect x="5" y="10" width="2" height="4" rx="0.5"/><rect x="17" y="10" width="2" height="4" rx="0.5"/></svg>}
+                {n.iconKey==="workout"   && <svg width="20" height="20" viewBox="0 0 24 24" fill="#60A5FA" stroke="none"><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>}
                 {n.iconKey==="goal"      && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#34D399" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>}
                 {n.iconKey==="meal"      && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FBBF24" strokeWidth="2"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>}
                 {n.iconKey==="streak"    && <svg width="20" height="20" viewBox="0 0 24 24" fill="#F87171"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>}
@@ -5018,7 +5018,7 @@ function PersonalDetailsPage({ onBack }) {
 function GoalIcon({ type }) {
   const s = { width:22, height:22, viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:"2" };
   if (type==="fire")    return <svg {...s}><path d="M12 2c0 6-6 8-6 14a6 6 0 0012 0c0-6-6-8-6-14z"/></svg>;
-  if (type==="muscle")  return <svg {...s}><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>;
+  if (type==="muscle")  return <svg {...s}><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>;
   if (type==="bolt")    return <svg {...s}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>;
   if (type==="run")     return <svg {...s}><circle cx="12" cy="5" r="2"/><path d="M10 22v-6l-2-3 4-4 2 3h4"/><path d="M10 13l-4 2"/></svg>;
   if (type==="star")    return <svg {...s}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>;
@@ -6401,7 +6401,7 @@ function ProfilePage({ onBack, onLogout, streakDay=1, workoutsTotal=0 }) {
           right={<div style={{ background:"rgba(255,193,7,0.15)",border:"1px solid rgba(255,193,7,0.4)",borderRadius:20,padding:"3px 10px" }}><span style={{ fontFamily:FONT,fontWeight:700,fontSize:9,color:"#FFC107",letterSpacing:1 }}>COMING SOON</span></div>}
         />
         <ProfileRow label="Fitness Preferences"  sub="Workout intensity and training goals"       onPress={()=>setSubPage("fitness")}
-          icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.8"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>}/>
+          icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.8"><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>}/>
         <ProfileRow label="Notifications"        sub="Workout reminders and achievements"         onPress={()=>setSubPage("notifSettings")}
           icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.8"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>}/>
         <ProfileRow label="Privacy & Security"   sub="Data protection and account security"      onPress={()=>setSubPage("privacy")}
@@ -7337,7 +7337,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
               <div style={{ fontFamily:FONT,fontWeight:800,fontSize:17,color:"#fff",marginBottom:3 }}>{workout.name}</div>
               <div style={{ fontFamily:FONT,fontSize:11.5,color:"#89CFF0",marginBottom:9,lineHeight:1.45 }}>Target: {workout.target || (apiWorkout?.exercises?.slice(0,3).map(e=>e.muscleGroup).filter(Boolean).join(', ')) || 'Full Body'}</div>
               <div style={{ display:"flex",gap:14,alignItems:"center" }}>
-                {[{val:workout.duration||workout.mins||0,icon:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,col:"#EF4444"},{val:workout.calories||workout.cal||0,icon:<svg width="13" height="13" viewBox="0 0 24 24" fill="#FF6B35"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>,col:"#FF6B35"},{val:Array.isArray(workout.exercises)?workout.exercises.length:(workout.exercises||0),icon:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>,col:PRIMARY}].map((s,i)=>(
+                {[{val:workout.duration||workout.mins||0,icon:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,col:"#EF4444"},{val:workout.calories||workout.cal||0,icon:<svg width="13" height="13" viewBox="0 0 24 24" fill="#FF6B35"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>,col:"#FF6B35"},{val:Array.isArray(workout.exercises)?workout.exercises.length:(workout.exercises||0),icon:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2"><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>,col:PRIMARY}].map((s,i)=>(
                   <div key={i} style={{ display:"flex",alignItems:"center",gap:4 }}>
                     {s.icon}<span style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:s.col }}>{s.val}</span>
                   </div>
@@ -7360,7 +7360,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
               </div>
             ) : (
               <div key={i} onClick={()=>onNavigate("workoutDetail")} style={{ minWidth:76,width:76,height:76,borderRadius:12,background:`${PRIMARY}0d`,border:`1px dashed ${PRIMARY}33`,flexShrink:0,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center" }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.5" opacity="0.4"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.5" opacity="0.4"><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>
               </div>
             ))}
           </div>
@@ -7946,7 +7946,7 @@ function VTRXAppInner({ setPaymentPlan }) {
                 <svg width="22" height="22" viewBox="0 0 24 24" fill={activeTab===i?PRIMARY:"none"} stroke={activeTab===i?PRIMARY:"#555"} strokeWidth="1.8">
                   {t.iconType==="home"&&<><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></>}
                   {t.iconType==="nutrition"&&<><path d="M18 8h1a4 4 0 010 8h-1"/><path d="M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></>}
-                  {t.iconType==="workout"&&<><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></>}
+                  {t.iconType==="workout"&&<><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></>}
                 </svg>
               </div>
               <span style={{ fontFamily:FONT,fontSize:11,fontWeight:700,letterSpacing:0.3,color:activeTab===i?PRIMARY:"#555" }}>{t.label}</span>
