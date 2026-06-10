@@ -6,6 +6,7 @@ const prisma    = require('../config/database');
 const aiService = require('../services/aiService');
 const ymove     = require('../services/ymoveService');
 const logger    = require('../utils/logger');
+const notif     = require('../services/notificationService');
 
 // ── GET /api/workouts — Get available workout programmes ──────────────────────
 const getWorkouts = async (req, res) => {
@@ -274,10 +275,21 @@ const updateStreak = async (userId) => {
     newStreak = 1;
   }
 
+  const wasStreak = user.streakDays > 0;
+  const isBroken  = lastActive && (now - lastActive) / (1000 * 60 * 60) >= 48;
+
   await prisma.user.update({
     where: { id: userId },
     data:  { streakDays: newStreak, lastActiveAt: now },
   });
+
+  // Send streak notifications (fire-and-forget)
+  if (isBroken && wasStreak) {
+    notif.sendStreakBroken({ userId }).catch(() => {});
+  } else if (newStreak >= 3 && newStreak % 5 === 0) {
+    // Celebrate every 5-day milestone (5, 10, 15, 20...)
+    notif.sendStreakAlert({ userId, streakDays: newStreak }).catch(() => {});
+  }
 };
 
 // ── HELPER: Generate and save AI summary ─────────────────────────────────────
@@ -303,7 +315,7 @@ const generateAndSaveAISummary = async ({
     streakDays,
   });
 
-  await prisma.aISummary.create({
+  const saved = await prisma.aISummary.create({
     data: {
       workoutLogId,
       summary,
@@ -313,7 +325,13 @@ const generateAndSaveAISummary = async ({
       model,
       tokensUsed,
     },
+    select: { workoutLog: { select: { userId: true } } },
   });
+
+  const userId = saved.workoutLog?.userId;
+  if (userId) {
+    notif.sendAISummaryReady({ userId, workoutName }).catch(() => {});
+  }
 };
 
 // ── GET /api/workouts/stats — Weekly + monthly stats ─────────────────────────
