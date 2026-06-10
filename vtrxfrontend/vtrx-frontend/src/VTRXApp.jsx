@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, createContext, useContext } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
+import { getNotificationToken, onForegroundMessage } from "./firebase";
 
 // Stripe.js loaded once at module scope — publishable key is safe in client code
 const _stripePromise = import.meta?.env?.VITE_STRIPE_PUBLISHABLE_KEY
@@ -4664,10 +4665,66 @@ function NotifSettingsPage({ onBack }) {
 }
 
 // ── NOTIFICATIONS PAGE ────────────────────────────────────────────────────────
-function NotificationsPage({ onBack, onMarkAllRead, unreadIds, onRead }) {
+// Map backend notification types to icon keys for rendering
+const NOTIF_ICON_MAP = {
+  workout_reminder: 'workout',
+  ai_summary:       'goal',
+  ai_ready:         'goal',
+  streak_alert:     'streak',
+  streak_broken:    'streak',
+  weekly_summary:   'goal',
+  meal_reminder:    'meal',
+  hydration:        'water',
+  payment_failed:   'premium',
+  test:             'workout',
+};
+
+function NotificationsPage({ onBack, onMarkAllRead }) {
   const { dark } = useTheme();
   const T = dark ? DARK : LIGHT;
   const [showSettings, setShowSettings] = useState(false);
+  const [notifications, setNotifications] = useState(null); // null = loading
+  const [hasUnread, setHasUnread]         = useState(false);
+
+  useEffect(()=>{
+    if (!getAuthToken()) { setNotifications([]); return; }
+    apiCall('/notifications')
+      .then(d => {
+        const list = d?.data?.notifications;
+        if (Array.isArray(list)) {
+          setNotifications(list);
+          setHasUnread(list.some(n => !n.read));
+        } else {
+          setNotifications([]);
+        }
+      })
+      .catch(() => setNotifications([]));
+  }, []);
+
+  const markOne = (id) => {
+    setNotifications(p => p.map(n => n.id === id ? { ...n, read: true } : n));
+    setHasUnread(p => notifications.some(n => n.id !== id && !n.read));
+    if (getAuthToken()) apiCall(`/notifications/${id}/read`, { method:'PATCH' }).catch(()=>{});
+  };
+
+  const markAll = () => {
+    setNotifications(p => p.map(n => ({ ...n, read: true })));
+    setHasUnread(false);
+    if (getAuthToken()) apiCall('/notifications/read', { method:'PATCH' }).catch(()=>{});
+    onMarkAllRead?.();
+  };
+
+  // Fall back to static demo data until the API returns real notifications
+  const displayList = notifications && notifications.length > 0
+    ? notifications.map(n => ({
+        id:      n.id,
+        title:   n.title,
+        body:    n.body,
+        time:    new Date(n.createdAt).toLocaleDateString('en-GB', { day:'numeric', month:'short' }),
+        iconKey: NOTIF_ICON_MAP[n.type] || 'workout',
+        read:    n.read,
+      }))
+    : (notifications !== null ? [] : null);
 
   if (showSettings) return <NotifSettingsPage onBack={() => setShowSettings(false)}/>;
 
@@ -4688,19 +4745,28 @@ function NotificationsPage({ onBack, onMarkAllRead, unreadIds, onRead }) {
       </div>
 
       {/* Mark all read */}
-      {unreadIds.length > 0 && (
+      {hasUnread && (
         <div style={{ padding:"0 18px 10px", display:"flex", justifyContent:"flex-end", flexShrink:0 }}>
-          <button onClick={onMarkAllRead} style={{ background:"none", border:"none", fontFamily:FONT, fontWeight:600, fontSize:13, color:PRIMARY, cursor:"pointer" }}>
+          <button onClick={markAll} style={{ background:"none", border:"none", fontFamily:FONT, fontWeight:600, fontSize:13, color:PRIMARY, cursor:"pointer" }}>
             Mark all as read
           </button>
         </div>
       )}
 
       <div style={{ flex:1, overflowY:"auto", padding:"0 16px 32px" }}>
-        {NOTIF_DATA.map((n, i) => {
-          const isUnread = unreadIds.includes(n.id);
+        {displayList === null && (
+          <div style={{ textAlign:"center", padding:"40px 0", fontFamily:FONT, fontSize:13, color:"#555" }}>Loading...</div>
+        )}
+        {displayList !== null && displayList.length === 0 && (
+          <div style={{ textAlign:"center", padding:"60px 20px", fontFamily:FONT, fontSize:14, color:"#555" }}>
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#333" strokeWidth="1.5" style={{display:"block",margin:"0 auto 12px"}}><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+            No notifications yet
+          </div>
+        )}
+        {(displayList || NOTIF_DATA).map((n, i) => {
+          const isUnread = displayList ? !n.read : n.unread;
           return (
-            <div key={n.id} onClick={() => onRead(n.id)}
+            <div key={n.id} onClick={() => displayList ? markOne(n.id) : null}
               style={{ background: "#fff", borderRadius:18, padding:"16px 18px", marginBottom:12, display:"flex", gap:14, alignItems:"flex-start", cursor:"pointer", animation:`fadeUp 0.3s ease ${i*0.05}s both`, transition:"background 0.2s" }}>
               {/* Icon */}
               <div style={{ width:44, height:44, borderRadius:"50%", background: isUnread ? "#1a1a1a" : n.iconBg||"#1a1a1a", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
@@ -6433,13 +6499,49 @@ const GROCERY_LIST = [
   ]},
 ];
 
-function GroceryTab({ checkedGrocery, setCheckedGrocery }) {
-  const totalItems  = GROCERY_LIST.reduce((s,cat)=>s+cat.items.length,0);
+// Assign a recipe to a meal slot based on name keywords and calories
+const getRecipeSlot = (r) => {
+  const name = (r.name||'').toLowerCase();
+  const cal  = r.cal || 0;
+  if (/oat|pancake|omelette|toast|yogurt|smoothie bowl|chia|overnight|muffin|cottage|porridge/.test(name)) return 'breakfast';
+  if (/shake|bar/.test(name) || cal < 260) return 'snack';
+  if (/soup|stir.?fry|sheet pan|stuffed|taco|asparagus|baked|roast/.test(name) || cal >= 420) return 'dinner';
+  return 'lunch';
+};
+
+const INGR_CATS = [
+  ['Proteins',       /chicken|beef|salmon|turkey|tuna|shrimp|egg|yogurt|protein|tofu|cottage|whey|mince|ground/i],
+  ['Vegetables',     /broccoli|spinach|pepper|tomato|onion|garlic|carrot|asparagus|cabbage|cauliflower|mushroom|cucumber|avocado|celery|corn|bean|lentil|chickpea|coriander|parsley/i],
+  ['Carbs & Grains', /rice|oat|quinoa|bread|potato|pasta|tortilla|sweet potato|corn/i],
+  ['Fruits',         /banana|berr|mango|lime|lemon|apple|peach|pear/i],
+  ['Dairy',          /milk|cheese|butter|cream|feta/i],
+];
+const categoriseIngredient = (ing) => INGR_CATS.find(([,re])=>re.test(ing))?.[0] || 'Pantry';
+
+const buildGroceryListFromRecipes = (recipes) => {
+  const seen = new Set();
+  const groups = {};
+  const unique = [...new Map(recipes.filter(Boolean).map(r=>[r.id,r])).values()];
+  unique.forEach(r=>{
+    (r.ingredients||[]).forEach(ing=>{
+      const key = ing.toLowerCase().trim();
+      if (seen.has(key)) return;
+      seen.add(key);
+      const cat = categoriseIngredient(ing);
+      (groups[cat]=groups[cat]||[]).push({ name:ing });
+    });
+  });
+  const ORDER = ['Proteins','Vegetables','Carbs & Grains','Fruits','Dairy','Pantry'];
+  return ORDER.filter(c=>groups[c]).map(c=>({ category:c, items:groups[c] }));
+};
+
+function GroceryTab({ checkedGrocery, setCheckedGrocery, groceryList }) {
+  const list = groceryList && groceryList.length > 0 ? groceryList : GROCERY_LIST;
+  const totalItems   = list.reduce((s,cat)=>s+cat.items.length,0);
   const checkedCount = checkedGrocery.length;
   const pct = totalItems > 0 ? Math.round((checkedCount/totalItems)*100) : 0;
   return (
     <div>
-      {/* Progress bar */}
       <div style={{ background:CARD,borderRadius:16,padding:"14px 18px",marginBottom:12,border:`1px solid ${BORDER}` }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8 }}>
           <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#fff" }}>Shopping Progress</div>
@@ -6450,12 +6552,11 @@ function GroceryTab({ checkedGrocery, setCheckedGrocery }) {
         </div>
         {pct===100&&<div style={{ fontFamily:FONT,fontSize:11,color:"#22C55E",textAlign:"center",marginTop:8,fontWeight:700 }}>All items collected!</div>}
       </div>
-      {/* Category cards — white background */}
-      {GROCERY_LIST.map((cat,i)=>(
+      {list.map((cat,i)=>(
         <div key={i} style={{ background:"#fff",borderRadius:16,padding:"14px 16px",marginBottom:12 }}>
           <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888",letterSpacing:1,marginBottom:10 }}>{cat.category.toUpperCase()}</div>
           {cat.items.map((item,j)=>{
-            const gkey=`${i}-${j}`;
+            const gkey=`${cat.category}::${item.name||item}`;
             const isChecked=checkedGrocery.includes(gkey);
             return (
               <div key={j} onClick={()=>setCheckedGrocery(p=>p.includes(gkey)?p.filter(x=>x!==gkey):[...p,gkey])}
@@ -6463,7 +6564,7 @@ function GroceryTab({ checkedGrocery, setCheckedGrocery }) {
                 <div style={{ width:22,height:22,borderRadius:6,border:`2px solid ${isChecked?PRIMARY:"#ddd"}`,background:isChecked?PRIMARY:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all 0.2s" }}>
                   {isChecked&&<svg width="11" height="9" viewBox="0 0 11 9" fill="none" stroke="#fff" strokeWidth="2.5"><polyline points="1,4.5 4,7.5 10,1"/></svg>}
                 </div>
-                <div style={{ fontFamily:FONT,fontSize:14,color:isChecked?"#aaa":"#111",textDecoration:isChecked?"line-through":"none",transition:"all 0.2s",flex:1 }}>{item.name||item} {item.qty?<span style={{color:"#888",fontSize:12}}>({item.qty})</span>:null}</div>
+                <div style={{ fontFamily:FONT,fontSize:14,color:isChecked?"#aaa":"#111",textDecoration:isChecked?"line-through":"none",flex:1 }}>{item.name||item}{item.qty?<span style={{color:"#888",fontSize:12}}> ({item.qty})</span>:null}</div>
                 {isChecked&&<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>}
               </div>
             );
@@ -6493,7 +6594,7 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
   const [bannerOpen, setBannerOpen]   = useState(true); // AI banner collapsed state
   const [checkedGrocery, setCheckedGrocery] = useState([]);
   const [selectedDay, setSelectedDay] = useState(new Date().getDay()===0?6:new Date().getDay()-1);
-  // mealSwaps[day][slotIdx] = option index (overrides WEEKLY_MEAL_PLAN default)
+  // mealSwaps[dayIdx][slotLabel] = recipe object override for that slot
   const [mealSwaps, setMealSwaps] = useState({});
 
   useEffect(()=>{
@@ -6514,20 +6615,6 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
         .catch(()=>{});
     }
   },[]);
-
-  const getMeal = (dayIdx, slotIdx) => {
-    const slot  = WEEKLY_MEAL_PLAN[dayIdx][slotIdx];
-    const overrideIdx = (mealSwaps[dayIdx]||{})[slotIdx];
-    const idx = overrideIdx !== undefined ? overrideIdx : slot.idx;
-    const pool = MEAL_OPTIONS[slot.slot];
-    return { ...pool[idx % pool.length], time: slot.time, slot: slot.slot, poolLen: pool.length, curIdx: idx };
-  };
-
-  const swapMeal = (dayIdx, slotIdx) => {
-    const meal = getMeal(dayIdx, slotIdx);
-    const nextIdx = (meal.curIdx + 1) % meal.poolLen;
-    setMealSwaps(p => ({ ...p, [dayIdx]: { ...(p[dayIdx]||{}), [slotIdx]: nextIdx } }));
-  };
 
   const toggleSave = (recipe) => {
     const sid = String(recipe.id);
@@ -6562,6 +6649,57 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
     return matchCat && matchSearch;
   });
 
+  // ── Meal Plan helpers ─────────────────────────────────────────────────────────
+  const MEAL_SLOTS = ['breakfast','lunch','snack','dinner'];
+  const SLOT_LABELS = { breakfast:'Breakfast', lunch:'Lunch', snack:'Snack', dinner:'Dinner' };
+
+  const recipesBySlot = { breakfast:[], lunch:[], snack:[], dinner:[] };
+  displayRecipes.forEach(r => {
+    const s = getRecipeSlot(r);
+    if (recipesBySlot[s]) recipesBySlot[s].push(r);
+  });
+  // Fall back to a single placeholder so slots never render empty
+  MEAL_SLOTS.forEach(s => {
+    if (!recipesBySlot[s].length) recipesBySlot[s] = displayRecipes.slice(0, 1);
+  });
+
+  const getMealForDay = (dayIdx, slotLabel) => {
+    const override = mealSwaps[dayIdx]?.[slotLabel];
+    if (override) return override;
+    const pool = recipesBySlot[slotLabel];
+    return pool.length ? pool[dayIdx % pool.length] : null;
+  };
+
+  const swapMeal = (dayIdx, slotLabel) => {
+    const pool = recipesBySlot[slotLabel];
+    if (pool.length < 2) return;
+    const cur = getMealForDay(dayIdx, slotLabel);
+    const curIdx = pool.findIndex(r => r.id === cur?.id);
+    const next = pool[(curIdx + 1) % pool.length];
+    setMealSwaps(p => ({ ...p, [dayIdx]: { ...(p[dayIdx]||{}), [slotLabel]: next } }));
+  };
+
+  // Dates for Mon–Sun of this week
+  const weekDates = (() => {
+    const today = new Date();
+    const dow = today.getDay();
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1));
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      return d.getDate();
+    });
+  })();
+
+  // All meals for the full week — used to build grocery list
+  const weekMeals = [];
+  for (let d = 0; d < 7; d++) {
+    MEAL_SLOTS.forEach(s => { const m = getMealForDay(d, s); if (m) weekMeals.push(m); });
+  }
+  const computedGroceryList = buildGroceryListFromRecipes(weekMeals);
+  // ─────────────────────────────────────────────────────────────────────────────
+
   const TABS=[{label:"Discover",icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>},{label:"Plan",icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>},{label:"Grocery",icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>},{label:"Saved",icon:<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>}];
 
   return (
@@ -6586,7 +6724,6 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
             style={{ flex:1,padding:"8px 4px",borderRadius:12,border:`1.5px solid ${subTab===i?PRIMARY:BORDER}`,background:subTab===i?`${PRIMARY}18`:"transparent",display:"flex",flexDirection:"column",alignItems:"center",gap:3,cursor:"pointer",transition:"all 0.2s" }}>
             <span style={{ color:subTab===i?PRIMARY:"#555",display:"flex" }}>{t.icon}</span>
             <span style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:subTab===i?PRIMARY:"#555",letterSpacing:0.3 }}>{t.label}</span>
-            {(i===1||i===2)&&!isPremium&&<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>}
           </button>
         ))}
       </div>
@@ -6701,18 +6838,20 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
                 <div key={i} onClick={()=>setSelectedDay(i)}
                   style={{ flexShrink:0,width:44,textAlign:"center",padding:"8px 4px",borderRadius:12,background:i===selectedDay?PRIMARY:"transparent",cursor:"pointer",transition:"background 0.2s" }}>
                   <div style={{ fontFamily:FONT,fontSize:10,fontWeight:700,color:i===selectedDay?"#fff":"#888",marginBottom:4 }}>{d}</div>
-                  <div style={{ fontFamily:FONT,fontSize:13,fontWeight:800,color:i===selectedDay?"#fff":"#555" }}>{i+14}</div>
+                  <div style={{ fontFamily:FONT,fontSize:13,fontWeight:800,color:i===selectedDay?"#fff":"#555" }}>{weekDates[i]}</div>
                 </div>
               ))}
             </div>
             {/* Daily totals */}
             <div style={{ background:CARD,borderRadius:14,padding:"14px 16px",marginBottom:14,border:`1px solid ${BORDER}`,display:"flex",justifyContent:"space-around" }}>
               {(()=>{
-              const dayMeals = WEEKLY_MEAL_PLAN[selectedDay].map((_,i)=>getMeal(selectedDay,i));
-              const totCal  = dayMeals.reduce((s,m)=>s+m.cal,0);
-              const totProt = dayMeals.reduce((s,m)=>s+m.protein,0);
-              return [{l:"Calories",v:totCal,c:"#EF4444"},{l:"Protein",v:`${totProt}g`,c:PRIMARY},{l:"Carbs",v:"~180g",c:"#F97316"},{l:"Fat",v:"~55g",c:"#A78BFA"}];
-            })().map((item,i)=>(
+                const dayMeals = MEAL_SLOTS.map(s=>getMealForDay(selectedDay,s)).filter(Boolean);
+                const totCal  = dayMeals.reduce((s,m)=>s+(m.cal||0),0);
+                const totProt = dayMeals.reduce((s,m)=>s+(m.protein||0),0);
+                const totCarb = dayMeals.reduce((s,m)=>s+(m.carbs||0),0);
+                const totFat  = dayMeals.reduce((s,m)=>s+(m.fats||0),0);
+                return [{l:"Calories",v:totCal,c:"#EF4444"},{l:"Protein",v:`${Math.round(totProt)}g`,c:PRIMARY},{l:"Carbs",v:`${Math.round(totCarb)}g`,c:"#F97316"},{l:"Fat",v:`${Math.round(totFat)}g`,c:"#A78BFA"}];
+              })().map((item,i)=>(
                 <div key={i} style={{ textAlign:"center" }}>
                   <div style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:item.c }}>{item.v}</div>
                   <div style={{ fontFamily:FONT,fontSize:10,color:"#888" }}>{item.l}</div>
@@ -6720,25 +6859,32 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
               ))}
             </div>
             {/* Meal cards */}
-            {WEEKLY_MEAL_PLAN[selectedDay].map((slot,i)=>{
-              const meal = getMeal(selectedDay, i);
+            {MEAL_SLOTS.map(slotLabel=>{
+              const meal = getMealForDay(selectedDay, slotLabel);
+              if (!meal) return null;
               return (
-                <div key={i} style={{ background:"#fff",borderRadius:16,padding:"14px",marginBottom:12 }}>
+                <div key={slotLabel} style={{ background:"#fff",borderRadius:16,padding:"14px",marginBottom:12 }}>
                   <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8 }}>
-                    <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888",letterSpacing:1 }}>{meal.time.toUpperCase()}</div>
-                    <button onClick={()=>swapMeal(selectedDay,i)}
+                    <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888",letterSpacing:1 }}>{SLOT_LABELS[slotLabel]}</div>
+                    <button onClick={()=>swapMeal(selectedDay,slotLabel)}
                       style={{ display:"flex",alignItems:"center",gap:4,background:"none",border:`1px solid ${PRIMARY}44`,borderRadius:20,padding:"4px 10px",cursor:"pointer" }}>
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.67"/></svg>
                       <span style={{ fontFamily:FONT,fontSize:10,fontWeight:700,color:PRIMARY }}>Swap</span>
                     </button>
                   </div>
-                  <div style={{ display:"flex",gap:10,alignItems:"center" }}>
-                    <img src={meal.img} alt="" style={{ width:60,height:60,borderRadius:10,objectFit:"cover",flexShrink:0 }}/>
+                  <div onClick={()=>setSelectedRecipe(meal)} style={{ display:"flex",gap:10,alignItems:"center",cursor:"pointer" }}>
+                    {meal.img
+                      ? <img src={meal.img} alt="" style={{ width:60,height:60,borderRadius:10,objectFit:"cover",flexShrink:0 }}/>
+                      : <div style={{ width:60,height:60,borderRadius:10,background:"#f0f0f0",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center" }}>
+                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#aaa" strokeWidth="1.5"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>
+                        </div>
+                    }
                     <div style={{ flex:1 }}>
                       <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#111",marginBottom:3 }}>{meal.name}</div>
                       <div style={{ fontFamily:FONT,fontSize:12,color:"#666",marginBottom:2 }}>{meal.cal} cal · {meal.protein}g protein</div>
-                      <div style={{ fontFamily:FONT,fontSize:11,color:"#aaa" }}>{meal.prep} prep</div>
+                      <div style={{ fontFamily:FONT,fontSize:11,color:"#aaa" }}>{meal.prep||meal.time} prep</div>
                     </div>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#bbb" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
                   </div>
                 </div>
               );
@@ -6747,9 +6893,7 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
         )}
 
         {subTab===2 && (
-          isPremium ? (
-            <GroceryTab checkedGrocery={checkedGrocery} setCheckedGrocery={setCheckedGrocery}/>
-          ) : <PremiumGate feature="Grocery List"/>
+          <GroceryTab checkedGrocery={checkedGrocery} setCheckedGrocery={setCheckedGrocery} groceryList={computedGroceryList}/>
         )}
 
         {subTab===3 && (
@@ -6942,7 +7086,7 @@ function getTailoredMealOptions(user) {
 }
 
 
-function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, streakDay=1, energyKey, onMoodSelect, weeklyWorkoutDays=0, weeklyAvgCal=null, weeklyAvgMin=null, apiWorkout=null }) {
+function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, streakDay=1, energyKey, onMoodSelect, weeklyWorkoutDays=0, weeklyAvgCal=null, weeklyAvgMin=null, apiWorkout=null, notifCount=0, onNotifReset }) {
   const { dark } = useTheme();
   const { user, profileImg, isPremium } = useUser();
   const [trialEndedDismissed, setTrialEndedDismissed] = useState(false);
@@ -6951,7 +7095,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
   const [showMood, setShowMood]   = useState(false);
   const [showNotifs, setShowNotifs]   = useState(false);
   const [showProfile, setShowProfile] = useState(false);
-  const [unreadIds, setUnreadIds]     = useState([1,2,3]);
+  const hasUnread = notifCount > 0;
   const [workoutDone,      setWorkoutDone]      = useState(false);
   const [freezeUsed,  setFreezeUsed]  = useState(()=>{
     try {
@@ -6961,7 +7105,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
   });
   const [showFreezeSheet, setShowFreezeSheet] = useState(false);
 
-  // Check for newly earned achievements and badge the bell
+  // Check for newly earned achievements (notification badging handled by notifCount from API)
   useEffect(()=>{
     const stats = {
       streakDays: streakDay, workoutsTotal: 0, earlyWorkouts:0,
@@ -6972,12 +7116,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
       const seen = JSON.parse(localStorage.getItem("vtrx_seen_achievements")||"[]");
       const earned = ACHIEVEMENTS.filter(a=>getProgress(a.req,stats)>=a.req.n);
       const newOnes = earned.filter(a=>!seen.includes(a.id));
-      if (newOnes.length>0) {
-        setUnreadIds(p=>{
-          const achId = 99; // achievement notification ID
-          return p.includes(achId) ? p : [...p, achId];
-        });
-      }
+      // Could surface achievement unlocks here in future
     } catch(_e){}
   }, [streakDay]);
   const freezesAvailable = isPremium ? (freezeUsed ? 0 : 1) : 0;
@@ -7021,7 +7160,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
 
       {showNotifs&&(
         <div style={{ position:"absolute",inset:0,zIndex:80,animation:"slideR 0.36s ease both" }}>
-          <NotificationsPage onBack={()=>setShowNotifs(false)} unreadIds={unreadIds} onRead={(id)=>setUnreadIds(p=>p.filter(x=>x!==id))} onMarkAllRead={()=>setUnreadIds([])}/>
+          <NotificationsPage onBack={()=>setShowNotifs(false)} onMarkAllRead={onNotifReset}/>
         </div>
       )}
       {showProfile&&(
@@ -7040,12 +7179,12 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
           </div>
         </div>
         <div style={{ display:"flex",gap:9 }}>
-          <button onClick={()=>setShowNotifs(true)} style={{ width:38,height:38,borderRadius:"50%",background:unreadIds.length>0?PRIMARY:CARD,border:`1px solid ${unreadIds.length>0?PRIMARY:BORDER}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",position:"relative",transition:"all 0.25s" }}>
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={unreadIds.length>0?"#fff":"#888"} strokeWidth="1.8">
+          <button onClick={()=>setShowNotifs(true)} style={{ width:38,height:38,borderRadius:"50%",background:hasUnread?PRIMARY:CARD,border:`1px solid ${hasUnread?PRIMARY:BORDER}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",position:"relative",transition:"all 0.25s" }}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={hasUnread?"#fff":"#888"} strokeWidth="1.8">
               <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/>
               <path d="M13.73 21a2 2 0 01-3.46 0"/>
             </svg>
-            {unreadIds.length>0&&<div style={{ position:"absolute",top:4,right:4,width:8,height:8,borderRadius:"50%",background:"#fff",border:`1.5px solid ${PRIMARY}` }}/>}
+            {hasUnread&&<div style={{ position:"absolute",top:4,right:4,width:8,height:8,borderRadius:"50%",background:"#fff",border:`1.5px solid ${PRIMARY}` }}/>}
           </button>
           <button onClick={()=>setShowFreezeSheet(p=>!p)} style={{ width:38,height:38,borderRadius:"50%",background:freezeUsed?"#0a1f0a":showFreezeSheet?PRIMARY+"22":CARD,border:"1px solid "+(freezeUsed?"#22C55E55":showFreezeSheet?PRIMARY:BORDER),display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.25s" }}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={freezeUsed?"#22C55E":showFreezeSheet?PRIMARY:"#888"} strokeWidth="1.8">
@@ -7332,6 +7471,8 @@ function VTRXAppInner({ setPaymentPlan }) {
   const [notifCount,    setNotifCount]    = useState(0);
   const [liveUser,      setLiveUser]      = useState(null);
   const [apiWorkout,    setApiWorkout]    = useState(null);
+  // Show "Enable notifications" banner if permission not yet decided
+  const [showPushBanner, setShowPushBanner] = useState(false);
   const dashScrollRef  = useRef(null);
   const savedScrollPos = useRef(0);
   const mouseStart     = useRef(null);
@@ -7407,6 +7548,44 @@ function VTRXAppInner({ setPaymentPlan }) {
   useEffect(()=>{
     _openPaymentSheet = (plan) => setPaymentPlan(plan || "monthly");
     return () => { _openPaymentSheet = null; };
+  }, []);
+
+  // Show "Enable notifications" banner if permission not yet decided
+  useEffect(()=>{
+    if (phase !== "dashboard") return;
+    if (typeof Notification === "undefined") return;
+    if (Notification.permission === "default") setShowPushBanner(true);
+    // If already granted, register token silently (no user gesture needed)
+    if (Notification.permission === "granted") registerPushToken();
+  }, [phase]);
+
+  const registerPushToken = async () => {
+    try {
+      const token = await getNotificationToken();
+      if (token) {
+        await apiCall('/notifications/register', {
+          method: 'POST',
+          body: JSON.stringify({ token, platform: 'web' }),
+        });
+      }
+    } catch(_e) {}
+  };
+
+  const handleEnableNotifications = async () => {
+    setShowPushBanner(false);
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission === 'granted') await registerPushToken();
+    } catch(_e) {}
+  };
+
+  // Listen for foreground push messages and increment badge
+  useEffect(()=>{
+    const unsub = onForegroundMessage(payload => {
+      const { title, body } = payload.notification || {};
+      setNotifCount(c => c + 1);
+    });
+    return unsub;
   }, []);
 
   useEffect(()=>{
@@ -7709,6 +7888,8 @@ function VTRXAppInner({ setPaymentPlan }) {
             setMealIdx={setMealIdx}
             streakDay={streakDay}
             energyKey={energyKey}
+            notifCount={notifCount}
+            onNotifReset={()=>setNotifCount(0)}
             onMoodSelect={(key)=>{
               setEnergyKey(key);
               try { localStorage.setItem("vtrx_mood", JSON.stringify({key, date:new Date().toISOString().slice(0,10)})); } catch(_e){}
@@ -7726,6 +7907,23 @@ function VTRXAppInner({ setPaymentPlan }) {
           <WeightsHub onLogout={handleLogout} onNavigate={navigate}/>
         )}
       </div>
+
+      {/* Push notification permission banner */}
+      {showPushBanner && !innerPage && (
+        <div style={{ position:"absolute",bottom:90,left:12,right:12,zIndex:60,background:"#1a1a1a",border:`1px solid ${PRIMARY}44`,borderRadius:16,padding:"14px 16px",display:"flex",alignItems:"center",gap:12,boxShadow:"0 4px 24px rgba(0,0,0,0.5)",animation:"fadeUp 0.3s ease both" }}>
+          <div style={{ width:36,height:36,borderRadius:"50%",background:`${PRIMARY}22`,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center" }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+          </div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#fff",marginBottom:2 }}>Enable notifications</div>
+            <div style={{ fontFamily:FONT,fontSize:11,color:"#888" }}>Get streak alerts, AI summaries & workout reminders</div>
+          </div>
+          <div style={{ display:"flex",gap:8,flexShrink:0 }}>
+            <button onClick={()=>setShowPushBanner(false)} style={{ background:"none",border:"none",fontFamily:FONT,fontSize:12,color:"#555",cursor:"pointer",padding:"4px 8px" }}>Not now</button>
+            <button onClick={handleEnableNotifications} style={{ background:PRIMARY,border:"none",borderRadius:20,padding:"6px 14px",fontFamily:FONT,fontWeight:700,fontSize:12,color:"#fff",cursor:"pointer" }}>Allow</button>
+          </div>
+        </div>
+      )}
 
       {/* Bottom nav */}
       {!innerPage&&(
