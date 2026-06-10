@@ -7599,6 +7599,15 @@ function VTRXAppInner({ setPaymentPlan }) {
     return () => unsub();
   }, []);
 
+  // Collapse floating nav when dashboard is scrolled down
+  useEffect(()=>{
+    const el = dashScrollRef.current;
+    if (!el) return;
+    const onScroll = () => { if (el.scrollTop > 40) setNavExpanded(false); };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
+
   useEffect(()=>{
   const loadData = async () => {
       try {
@@ -7730,15 +7739,6 @@ function VTRXAppInner({ setPaymentPlan }) {
     { label:"Nutrition", iconType:"nutrition" },
     { label:"Workouts",  iconType:"workout"   },
   ];
-
-  // Collapse nav when dashboard is scrolled
-  useEffect(() => {
-    const el = dashScrollRef.current;
-    if (!el) return;
-    const onScroll = () => { if (el.scrollTop > 40) setNavExpanded(false); };
-    el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
-  });
 
   const handleTabSelect = (i) => {
     setActiveTab(i);
