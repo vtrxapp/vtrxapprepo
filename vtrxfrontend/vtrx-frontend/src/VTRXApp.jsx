@@ -195,6 +195,30 @@ const RECIPES = [
 
 const NUTRITION_FILTERS = ["All","High Protein","Low Carb","Vegan","Vegetarian","Weight Loss","Muscle Gain","Meal Prep"];
 
+// Normalise ymove/DB recipe → shape RecipeFullPage expects
+const normalizeRecipe = (r) => ({
+  id:          r.id,
+  name:        r.name || r.title || 'Recipe',
+  img:         r.image_url || r.imageUrl || r.thumbnail_url || r.thumbnailUrl || r.image || '',
+  cal:         r.calories || r.cal || 0,
+  protein:     r.protein  || 0,
+  fats:        r.fat      || r.fats  || 0,
+  carbs:       r.carbs    || r.carbohydrates || 0,
+  mins:        r.prep_time || r.prepTime || r.mins || 0,
+  time:        `${r.prep_time || r.prepTime || r.mins || '?'} min`,
+  prep:        `${r.prep_time || r.prepTime || r.mins || '?'} min`,
+  servings:    r.servings  || 1,
+  desc:        r.description || r.summary || r.desc || '',
+  ingredients: (r.ingredients || []).map(ing =>
+    typeof ing === 'string' ? { text: ing }
+    : { text: [ing.amount, ing.unit, ing.name].filter(Boolean).join(' ') || String(ing) }
+  ),
+  steps:       (r.instructions || r.directions || r.steps || []).map(s =>
+    typeof s === 'string' ? s : s.description || s.step || s.text || String(s)
+  ),
+  tags:        r.tags || r.categories || r.cat || [],
+});
+
 const WEEK_DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
 const DEFAULT_MEAL_PLAN = [
@@ -6454,8 +6478,12 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
   const [filter, setFilter]           = useState("All");
   const scrollRef = useScrollPos("nutrition-" + subTab);
   const [search, setSearch]           = useState("");
-  const [savedIds, setSavedIds]       = useState([0,3,7]);
-  const [selectedRecipe, setSelectedRecipe] = useState(null);
+  // API-backed recipe state
+  const [apiRecipes,     setApiRecipes]     = useState([]);
+  const [loadingRecipes, setLoadingRecipes] = useState(false);
+  const [savedRecipes,   setSavedRecipes]   = useState([]);
+  const [savedSet,       setSavedSet]       = useState(new Set());
+  const [selectedRecipe, setSelectedRecipe] = useState(null); // recipe object
   const [saveMsg, setSaveMsg]         = useState("");
   const [swapTarget, setSwapTarget]   = useState(null);
   const [bannerOpen, setBannerOpen]   = useState(true); // AI banner collapsed state
@@ -6463,6 +6491,25 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
   const [selectedDay, setSelectedDay] = useState(new Date().getDay()===0?6:new Date().getDay()-1);
   // mealSwaps[day][slotIdx] = option index (overrides WEEKLY_MEAL_PLAN default)
   const [mealSwaps, setMealSwaps] = useState({});
+
+  useEffect(()=>{
+    setLoadingRecipes(true);
+    apiCall('/nutrition/recipes?limit=30&source=all')
+      .then(d=>{ if(d?.data?.recipes?.length) setApiRecipes(d.data.recipes.map(normalizeRecipe)); })
+      .catch(()=>{})
+      .finally(()=>setLoadingRecipes(false));
+    if (getAuthToken()) {
+      apiCall('/nutrition/saved')
+        .then(d=>{
+          if(d?.data?.recipes?.length) {
+            const norm = d.data.recipes.map(normalizeRecipe);
+            setSavedRecipes(norm);
+            setSavedSet(new Set(norm.map(r=>String(r.id))));
+          }
+        })
+        .catch(()=>{});
+    }
+  },[]);
 
   const getMeal = (dayIdx, slotIdx) => {
     const slot  = WEEKLY_MEAL_PLAN[dayIdx][slotIdx];
@@ -6478,30 +6525,36 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
     setMealSwaps(p => ({ ...p, [dayIdx]: { ...(p[dayIdx]||{}), [slotIdx]: nextIdx } }));
   };
 
-  const toggleSave = (id) => {
-    if (!isPremium && !savedIds.includes(id) && savedIds.length >= 3) {
+  const toggleSave = (recipe) => {
+    const sid = String(recipe.id);
+    const isSaved = savedSet.has(sid);
+    if (!isPremium && !isSaved && savedSet.size >= 3) {
       setSaveMsg("Free plan: 3 saved recipes max. Upgrade for unlimited saves.");
       setTimeout(()=>setSaveMsg(""), 3000);
       return;
     }
-    setSavedIds(p=>{
-    const next = p.includes(id) ? p.filter(x=>x!==id) : [...p,id];
-    if (!DEMO_MODE && getAuthToken()) {
-      const wasSaved = p.includes(id);
-      if (wasSaved) apiCall(`/nutrition/saved/${id}`, { method:"DELETE" }).catch(()=>{});
-      else          apiCall('/nutrition/saved', { method:'POST', body:JSON.stringify({ recipeId:id }) }).catch(()=>{});
+    if (isSaved) {
+      setSavedSet(p=>{ const n=new Set(p); n.delete(sid); return n; });
+      setSavedRecipes(p=>p.filter(r=>String(r.id)!==sid));
+      if (!DEMO_MODE && getAuthToken()) apiCall(`/nutrition/saved/${sid}`, { method:"DELETE" }).catch(()=>{});
+    } else {
+      setSavedSet(p=>new Set([...p, sid]));
+      setSavedRecipes(p=>[recipe,...p]);
+      if (!DEMO_MODE && getAuthToken()) apiCall('/nutrition/saved', { method:'POST', body:JSON.stringify({ recipeId:sid }) }).catch(()=>{});
     }
-    return next;
-  });
   };
 
   const aiSug = AI_SUGGESTIONS[energyKey] || AI_SUGGESTIONS.okay;
 
   if (showProfile) return <ProfilePage onBack={()=>setShowProfile(false)} onLogout={()=>{ setShowProfile(false); onLogout&&onLogout(); }}/>;
 
-  const filtered = RECIPES.filter(r=>{
-    const matchCat = filter==="All" || r.tags?.includes(filter);
-    const matchSearch = search==="" || r.name.toLowerCase().includes(search.toLowerCase());
+  const displayRecipes = apiRecipes.length > 0 ? apiRecipes : RECIPES.map(normalizeRecipe);
+  const filtered = displayRecipes.filter(r=>{
+    const rtags = r.tags || r.cat || [];
+    const matchCat = filter==="All" || rtags.some(t=>
+      t.toLowerCase().includes(filter.toLowerCase()) || filter.toLowerCase().includes(t.toLowerCase())
+    );
+    const matchSearch = search==="" || (r.name||'').toLowerCase().includes(search.toLowerCase());
     return matchCat && matchSearch;
   });
 
@@ -6565,20 +6618,25 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
                     </button>
                   )}
                   <div style={{ display:"flex",flexDirection:"column",gap:8,marginTop:isPremium?0:10 }}>
-                    {isPremium && aiSug.rec.map(ri=>(
-                      <div key={ri} onClick={()=>setSelectedRecipe(ri)}
-                        style={{ display:"flex",alignItems:"center",gap:12,borderRadius:14,overflow:"hidden",cursor:"pointer",background:"rgba(255,255,255,0.06)",padding:"8px" }}>
-                        <div style={{ width:56,height:56,borderRadius:10,overflow:"hidden",flexShrink:0 }}><img src={RECIPES[ri]?.img} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/></div>
-                        <div style={{ flex:1 }}>
-                          <div style={{ fontFamily:FONT,fontSize:13,fontWeight:700,color:"#fff",lineHeight:1.3,marginBottom:3 }}>{RECIPES[ri]?.name}</div>
-                          <div style={{ display:"flex",gap:8,alignItems:"center" }}>
-                            <span style={{ fontFamily:FONT,fontSize:11,color:"#888" }}>{RECIPES[ri]?.cal} cal</span>
-                            <span style={{ fontFamily:FONT,fontSize:11,color:"#888" }}>{RECIPES[ri]?.time}</span>
+                    {isPremium && aiSug.rec.map(ri=>{
+                      const sr = displayRecipes[ri] || normalizeRecipe(RECIPES[ri] || RECIPES[0]);
+                      return (
+                        <div key={ri} onClick={()=>setSelectedRecipe(sr)}
+                          style={{ display:"flex",alignItems:"center",gap:12,borderRadius:14,overflow:"hidden",cursor:"pointer",background:"rgba(255,255,255,0.06)",padding:"8px" }}>
+                          <div style={{ width:56,height:56,borderRadius:10,overflow:"hidden",flexShrink:0 }}>
+                            <img src={sr.img} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
                           </div>
+                          <div style={{ flex:1 }}>
+                            <div style={{ fontFamily:FONT,fontSize:13,fontWeight:700,color:"#fff",lineHeight:1.3,marginBottom:3 }}>{sr.name}</div>
+                            <div style={{ display:"flex",gap:8,alignItems:"center" }}>
+                              <span style={{ fontFamily:FONT,fontSize:11,color:"#888" }}>{sr.cal} cal</span>
+                              <span style={{ fontFamily:FONT,fontSize:11,color:"#888" }}>{sr.time}</span>
+                            </div>
+                          </div>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#bbb" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
                         </div>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#bbb" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -6598,24 +6656,35 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
               ))}
             </div>
             {/* Recipe grid */}
+            {loadingRecipes && apiRecipes.length===0 && (
+              <div style={{ textAlign:"center",padding:"32px 0",fontFamily:FONT,fontSize:13,color:"#555" }}>Loading recipes...</div>
+            )}
             <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12 }}>
-              {filtered.map((r,i)=>(
-                <div key={i} onClick={()=>setSelectedRecipe(RECIPES.indexOf(r))} style={{ background:"#fff",borderRadius:14,overflow:"hidden",cursor:"pointer",border:`1px solid ${BORDER}` }}>
-                  <div style={{ height:110,overflow:"hidden",position:"relative" }}>
-                    <img src={r.img} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
-                    <button onClick={e=>{ e.stopPropagation(); toggleSave(RECIPES.indexOf(r)); }} style={{ position:"absolute",top:8,right:8,width:28,height:28,borderRadius:"50%",background:"rgba(0,0,0,0.5)",border:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill={savedIds.includes(RECIPES.indexOf(r))?"#00A3FF":"none"} stroke="#fff" strokeWidth="2"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>
-                    </button>
-                  </div>
-                  <div style={{ padding:"10px" }}>
-                    <div style={{ fontFamily:FONT,fontSize:12,fontWeight:700,color:"#111",marginBottom:4,lineHeight:1.3 }}>{r.name}</div>
-                    <div style={{ display:"flex",gap:6 }}>
-                      <span style={{ fontFamily:FONT,fontSize:10,color:"#EF4444",fontWeight:600 }}>{r.cal} cal</span>
-                      <span style={{ fontFamily:FONT,fontSize:10,color:PRIMARY,fontWeight:600 }}>{r.protein}g protein</span>
+              {filtered.map((r,i)=>{
+                const isSaved = savedSet.has(String(r.id));
+                return (
+                  <div key={r.id||i} onClick={()=>setSelectedRecipe(r)} style={{ background:"#fff",borderRadius:14,overflow:"hidden",cursor:"pointer",border:`1px solid ${BORDER}` }}>
+                    <div style={{ height:110,overflow:"hidden",position:"relative" }}>
+                      {r.img
+                        ? <img src={r.img} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+                        : <div style={{ width:"100%",height:"100%",background:"#e5e7eb",display:"flex",alignItems:"center",justifyContent:"center" }}>
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="1.5"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>
+                          </div>
+                      }
+                      <button onClick={e=>{ e.stopPropagation(); toggleSave(r); }} style={{ position:"absolute",top:8,right:8,width:28,height:28,borderRadius:"50%",background:"rgba(0,0,0,0.5)",border:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill={isSaved?"#00A3FF":"none"} stroke="#fff" strokeWidth="2"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>
+                      </button>
+                    </div>
+                    <div style={{ padding:"10px" }}>
+                      <div style={{ fontFamily:FONT,fontSize:12,fontWeight:700,color:"#111",marginBottom:4,lineHeight:1.3 }}>{r.name}</div>
+                      <div style={{ display:"flex",gap:6 }}>
+                        <span style={{ fontFamily:FONT,fontSize:10,color:"#EF4444",fontWeight:600 }}>{r.cal} cal</span>
+                        <span style={{ fontFamily:FONT,fontSize:10,color:PRIMARY,fontWeight:600 }}>{r.protein}g protein</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -6681,34 +6750,44 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
 
         {subTab===3 && (
           <div>
-            {savedIds.length===0 ? (
+            {savedRecipes.length===0 ? (
               <div style={{ textAlign:"center",padding:"60px 20px",color:"#555",fontFamily:FONT,fontSize:14 }}>
                 <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#333" strokeWidth="1.5" style={{marginBottom:16,display:"block",margin:"0 auto 16px"}}><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>
                 No saved recipes yet. Tap the bookmark icon on any recipe.
               </div>
-            ) : savedIds.map(id=>(
-              <div key={id} onClick={()=>setSelectedRecipe(id)} style={{ background:CARD,borderRadius:14,padding:"12px",marginBottom:10,display:"flex",gap:12,alignItems:"center",border:`1px solid ${BORDER}`,cursor:"pointer" }}>
-                <img src={RECIPES[id].img} alt="" style={{ width:60,height:60,borderRadius:10,objectFit:"cover",flexShrink:0 }}/>
+            ) : savedRecipes.map(r=>(
+              <div key={r.id} onClick={()=>setSelectedRecipe(r)} style={{ background:CARD,borderRadius:14,padding:"12px",marginBottom:10,display:"flex",gap:12,alignItems:"center",border:`1px solid ${BORDER}`,cursor:"pointer" }}>
+                {r.img
+                  ? <img src={r.img} alt="" style={{ width:60,height:60,borderRadius:10,objectFit:"cover",flexShrink:0 }}/>
+                  : <div style={{ width:60,height:60,borderRadius:10,background:"#1a1a1a",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center" }}>
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#444" strokeWidth="1.5"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>
+                    </div>
+                }
                 <div style={{ flex:1 }}>
-                  <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#fff",marginBottom:3 }}>{RECIPES[id].name}</div>
+                  <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#fff",marginBottom:3 }}>{r.name}</div>
                   <div style={{ display:"flex",gap:8 }}>
-                    <span style={{ fontFamily:FONT,fontSize:11,color:"#EF4444",fontWeight:600 }}>{RECIPES[id].cal} cal</span>
-                    <span style={{ fontFamily:FONT,fontSize:11,color:PRIMARY,fontWeight:600 }}>{RECIPES[id].protein}g protein</span>
+                    <span style={{ fontFamily:FONT,fontSize:11,color:"#EF4444",fontWeight:600 }}>{r.cal} cal</span>
+                    <span style={{ fontFamily:FONT,fontSize:11,color:PRIMARY,fontWeight:600 }}>{r.protein}g protein</span>
                   </div>
                 </div>
-                <button onClick={e=>{ e.stopPropagation(); toggleSave(id); }} style={{ width:32,height:32,borderRadius:"50%",background:"rgba(0,163,255,0.1)",border:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}>
+                <button onClick={e=>{ e.stopPropagation(); toggleSave(r); }} style={{ width:32,height:32,borderRadius:"50%",background:"rgba(0,163,255,0.1)",border:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill={PRIMARY} stroke={PRIMARY} strokeWidth="2"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>
                 </button>
               </div>
             ))}
-            {!isPremium&&savedIds.length>=3&&<div style={{ textAlign:"center",padding:"16px",fontFamily:FONT,fontSize:12,color:"#666" }}>Upgrade to Premium for unlimited saves</div>}
+            {!isPremium&&savedSet.size>=3&&<div style={{ textAlign:"center",padding:"16px",fontFamily:FONT,fontSize:12,color:"#666" }}>Upgrade to Premium for unlimited saves</div>}
           </div>
         )}
       </div>
       {/* Recipe overlay — keeps NutritionHub mounted so scroll + tab are preserved */}
       {selectedRecipe !== null && (
         <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}>
-          <RecipeFullPage r={RECIPES[selectedRecipe]} onBack={()=>setSelectedRecipe(null)}/>
+          <RecipeFullPage
+            r={selectedRecipe}
+            isSaved={savedSet.has(String(selectedRecipe.id))}
+            onToggleSave={()=>toggleSave(selectedRecipe)}
+            onBack={()=>setSelectedRecipe(null)}
+          />
         </div>
       )}
     </div>
