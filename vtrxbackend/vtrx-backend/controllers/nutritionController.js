@@ -2,9 +2,10 @@
 // controllers/nutritionController.js — Nutrition & Recipes Controller
 // ─────────────────────────────────────────────────────────────────────────────
 
-const prisma  = require('../config/database');
-const ymove   = require('../services/ymoveService');
-const logger  = require('../utils/logger');
+const prisma    = require('../config/database');
+const ymove     = require('../services/ymoveService');
+const aiService = require('../services/aiService');
+const logger    = require('../utils/logger');
 
 // ── GET /api/nutrition/recipes — Browse recipes ───────────────────────────────
 const getRecipes = async (req, res) => {
@@ -137,7 +138,7 @@ const getSavedRecipes = async (req, res) => {
   }
 };
 
-// ── GET /api/nutrition/meal-plan — Today's meal plan (Premium) ────────────────
+// ── GET /api/nutrition/meal-plan — Today's AI-generated meal plan (Premium) ───
 const getMealPlan = async (req, res) => {
   if (!req.user.isPremium) {
     return res.status(403).json({
@@ -148,26 +149,32 @@ const getMealPlan = async (req, res) => {
   }
 
   try {
-    // In future this will be AI-generated based on the user's goal
-    // For now, return curated recipes for each meal slot
-    const [breakfast, lunch, snack, dinner] = await Promise.all([
-      prisma.recipe.findFirst({ where: { tags: { hasSome: ['Breakfast'] } } }),
-      prisma.recipe.findFirst({ where: { tags: { hasSome: ['High Protein'] } } }),
-      prisma.recipe.findFirst({ where: { tags: { hasSome: ['Snack'] } } }),
-      prisma.recipe.findFirst({ where: { calories: { lte: 600 } } }),
+    const [user, todayLog] = await Promise.all([
+      prisma.user.findUnique({
+        where:  { id: req.user.id },
+        select: { goal: true, weight: true, fitnessLevel: true },
+      }),
+      prisma.workoutLog.findFirst({
+        where: {
+          userId:      req.user.id,
+          completedAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) },
+        },
+        select: { name: true, caloriesBurned: true },
+      }),
     ]);
 
-    const plan = [
-      { time: 'Breakfast', recipe: breakfast },
-      { time: 'Lunch',     recipe: lunch     },
-      { time: 'Snack',     recipe: snack     },
-      { time: 'Dinner',    recipe: dinner    },
-    ].filter(p => p.recipe);
+    const { mealPlan, tokensUsed } = await aiService.generateMealPlan({
+      goal:           user?.goal,
+      weight:         user?.weight,
+      fitnessLevel:   user?.fitnessLevel,
+      todayWorkout:   todayLog?.name,
+      caloriesBurned: todayLog?.caloriesBurned,
+    });
 
-    res.json({ success: true, data: { plan } });
+    res.json({ success: true, data: { plan: mealPlan, tokensUsed } });
   } catch (error) {
     logger.error('getMealPlan error:', error);
-    res.status(500).json({ success: false, message: 'Failed to fetch meal plan' });
+    res.status(500).json({ success: false, message: 'Failed to generate meal plan' });
   }
 };
 
