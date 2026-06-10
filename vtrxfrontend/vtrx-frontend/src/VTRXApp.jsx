@@ -7471,6 +7471,8 @@ function VTRXAppInner({ setPaymentPlan }) {
   const [notifCount,    setNotifCount]    = useState(0);
   const [liveUser,      setLiveUser]      = useState(null);
   const [apiWorkout,    setApiWorkout]    = useState(null);
+  // Show "Enable notifications" banner if permission not yet decided
+  const [showPushBanner, setShowPushBanner] = useState(false);
   const dashScrollRef  = useRef(null);
   const savedScrollPos = useRef(0);
   const mouseStart     = useRef(null);
@@ -7548,24 +7550,34 @@ function VTRXAppInner({ setPaymentPlan }) {
     return () => { _openPaymentSheet = null; };
   }, []);
 
-  // Register FCM push token when user reaches the dashboard
+  // Show "Enable notifications" banner if permission not yet decided
   useEffect(()=>{
-    if (phase !== "dashboard" || !getAuthToken()) return;
-    const registerPush = async () => {
-      try {
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') return;
-        const token = await getNotificationToken();
-        if (token) {
-          await apiCall('/notifications/register', {
-            method: 'POST',
-            body: JSON.stringify({ token, platform: 'web' }),
-          });
-        }
-      } catch(_e) {} // silently ignore: permission denied, VAPID key missing, etc.
-    };
-    registerPush();
+    if (phase !== "dashboard") return;
+    if (typeof Notification === "undefined") return;
+    if (Notification.permission === "default") setShowPushBanner(true);
+    // If already granted, register token silently (no user gesture needed)
+    if (Notification.permission === "granted") registerPushToken();
   }, [phase]);
+
+  const registerPushToken = async () => {
+    try {
+      const token = await getNotificationToken();
+      if (token) {
+        await apiCall('/notifications/register', {
+          method: 'POST',
+          body: JSON.stringify({ token, platform: 'web' }),
+        });
+      }
+    } catch(_e) {}
+  };
+
+  const handleEnableNotifications = async () => {
+    setShowPushBanner(false);
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission === 'granted') await registerPushToken();
+    } catch(_e) {}
+  };
 
   // Listen for foreground push messages and increment badge
   useEffect(()=>{
@@ -7895,6 +7907,23 @@ function VTRXAppInner({ setPaymentPlan }) {
           <WeightsHub onLogout={handleLogout} onNavigate={navigate}/>
         )}
       </div>
+
+      {/* Push notification permission banner */}
+      {showPushBanner && !innerPage && (
+        <div style={{ position:"absolute",bottom:90,left:12,right:12,zIndex:60,background:"#1a1a1a",border:`1px solid ${PRIMARY}44`,borderRadius:16,padding:"14px 16px",display:"flex",alignItems:"center",gap:12,boxShadow:"0 4px 24px rgba(0,0,0,0.5)",animation:"fadeUp 0.3s ease both" }}>
+          <div style={{ width:36,height:36,borderRadius:"50%",background:`${PRIMARY}22`,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center" }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+          </div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#fff",marginBottom:2 }}>Enable notifications</div>
+            <div style={{ fontFamily:FONT,fontSize:11,color:"#888" }}>Get streak alerts, AI summaries & workout reminders</div>
+          </div>
+          <div style={{ display:"flex",gap:8,flexShrink:0 }}>
+            <button onClick={()=>setShowPushBanner(false)} style={{ background:"none",border:"none",fontFamily:FONT,fontSize:12,color:"#555",cursor:"pointer",padding:"4px 8px" }}>Not now</button>
+            <button onClick={handleEnableNotifications} style={{ background:PRIMARY,border:"none",borderRadius:20,padding:"6px 14px",fontFamily:FONT,fontWeight:700,fontSize:12,color:"#fff",cursor:"pointer" }}>Allow</button>
+          </div>
+        </div>
+      )}
 
       {/* Bottom nav */}
       {!innerPage&&(
