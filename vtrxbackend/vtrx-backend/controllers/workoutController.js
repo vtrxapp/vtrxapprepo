@@ -167,6 +167,7 @@ const logWorkout = async (req, res) => {
     if (generateAI !== false) {
       generateAndSaveAISummary({
         workoutLogId:  workoutLog.id,
+        userId:        req.user.id,
         workoutName:   name,
         workoutType:   type,
         duration,
@@ -295,6 +296,7 @@ const updateStreak = async (userId) => {
 // ── HELPER: Generate and save AI summary ─────────────────────────────────────
 const generateAndSaveAISummary = async ({
   workoutLogId,
+  userId,
   workoutName,
   workoutType,
   duration,
@@ -304,18 +306,35 @@ const generateAndSaveAISummary = async ({
   userGoal,
   streakDays,
 }) => {
-  const { summary, keyInsights, recommendations, tokensUsed, model } = await aiService.generateWorkoutSummary({
-    workoutName,
-    workoutType,
-    duration,
-    caloriesBurned,
-    exercises,
-    energyLevel,
-    userGoal,
-    streakDays,
-  });
+  // Fetch previous personal bests for each exercise so AI can compare
+  const exerciseNames = (exercises || []).map(e => e.name).filter(Boolean);
+  const prevBestRows  = exerciseNames.length
+    ? await prisma.personalRecord.findMany({
+        where:   { userId, exerciseName: { in: exerciseNames } },
+        orderBy: { weight: 'desc' },
+      })
+    : [];
+  const personalBests = {};
+  for (const row of prevBestRows) {
+    if (!personalBests[row.exerciseName]) {
+      personalBests[row.exerciseName] = { weight: row.weight, reps: row.reps };
+    }
+  }
 
-  const saved = await prisma.aISummary.create({
+  const { summary, keyInsights, recommendations, recap, tokensUsed, model } =
+    await aiService.generateWorkoutSummary({
+      workoutName,
+      workoutType,
+      duration,
+      caloriesBurned,
+      exercises,
+      energyLevel,
+      userGoal,
+      streakDays,
+      personalBests,
+    });
+
+  await prisma.aISummary.create({
     data: {
       workoutLogId,
       summary,
@@ -324,14 +343,11 @@ const generateAndSaveAISummary = async ({
       energyKey:       energyLevel,
       model,
       tokensUsed,
+      recap:           recap || undefined,
     },
-    select: { workoutLog: { select: { userId: true } } },
   });
 
-  const userId = saved.workoutLog?.userId;
-  if (userId) {
-    notif.sendAISummaryReady({ userId, workoutName }).catch(() => {});
-  }
+  notif.sendAISummaryReady({ userId, workoutName }).catch(() => {});
 };
 
 // ── GET /api/workouts/stats — Weekly + monthly stats ─────────────────────────

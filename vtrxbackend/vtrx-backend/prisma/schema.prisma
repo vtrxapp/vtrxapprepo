@@ -205,15 +205,16 @@ model ProgressLog {
 // ── AI_SUMMARIES ──────────────────────────────────────────────────────────────
 // AI-generated coaching summaries after each workout
 model AISummary {
-  id           String     @id @default(uuid())
-  workoutLogId String     @unique
-  summary      String     // The AI-generated text
-  keyInsights  String[]   // Array of bullet points
-  recommendations String[] // What to do next
-  energyKey    String?    // Mood context used to generate it
-  model        String?    // "gpt-4o", "claude-3-5-sonnet" etc
-  tokensUsed   Int?
-  createdAt    DateTime   @default(now())
+  id              String     @id @default(uuid())
+  workoutLogId    String     @unique
+  summary         String
+  keyInsights     String[]
+  recommendations String[]
+  energyKey       String?
+  model           String?
+  tokensUsed      Int?
+  recap           Json?      // Rich structured recap: exerciseBreakdown, muscleGroups, metrics, achievements, moodAnalysis
+  createdAt       DateTime   @default(now())
 
   workoutLog   WorkoutLog @relation(fields: [workoutLogId], references: [id], onDelete: Cascade)
 
