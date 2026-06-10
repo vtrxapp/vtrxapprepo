@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, createContext, useContext } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
+import { getNotificationToken, onForegroundMessage } from "./firebase";
 
 // Stripe.js loaded once at module scope — publishable key is safe in client code
 const _stripePromise = import.meta?.env?.VITE_STRIPE_PUBLISHABLE_KEY
@@ -4664,10 +4665,66 @@ function NotifSettingsPage({ onBack }) {
 }
 
 // ── NOTIFICATIONS PAGE ────────────────────────────────────────────────────────
-function NotificationsPage({ onBack, onMarkAllRead, unreadIds, onRead }) {
+// Map backend notification types to icon keys for rendering
+const NOTIF_ICON_MAP = {
+  workout_reminder: 'workout',
+  ai_summary:       'goal',
+  ai_ready:         'goal',
+  streak_alert:     'streak',
+  streak_broken:    'streak',
+  weekly_summary:   'goal',
+  meal_reminder:    'meal',
+  hydration:        'water',
+  payment_failed:   'premium',
+  test:             'workout',
+};
+
+function NotificationsPage({ onBack, onMarkAllRead }) {
   const { dark } = useTheme();
   const T = dark ? DARK : LIGHT;
   const [showSettings, setShowSettings] = useState(false);
+  const [notifications, setNotifications] = useState(null); // null = loading
+  const [hasUnread, setHasUnread]         = useState(false);
+
+  useEffect(()=>{
+    if (!getAuthToken()) { setNotifications([]); return; }
+    apiCall('/notifications')
+      .then(d => {
+        const list = d?.data?.notifications;
+        if (Array.isArray(list)) {
+          setNotifications(list);
+          setHasUnread(list.some(n => !n.read));
+        } else {
+          setNotifications([]);
+        }
+      })
+      .catch(() => setNotifications([]));
+  }, []);
+
+  const markOne = (id) => {
+    setNotifications(p => p.map(n => n.id === id ? { ...n, read: true } : n));
+    setHasUnread(p => notifications.some(n => n.id !== id && !n.read));
+    if (getAuthToken()) apiCall(`/notifications/${id}/read`, { method:'PATCH' }).catch(()=>{});
+  };
+
+  const markAll = () => {
+    setNotifications(p => p.map(n => ({ ...n, read: true })));
+    setHasUnread(false);
+    if (getAuthToken()) apiCall('/notifications/read', { method:'PATCH' }).catch(()=>{});
+    onMarkAllRead?.();
+  };
+
+  // Fall back to static demo data until the API returns real notifications
+  const displayList = notifications && notifications.length > 0
+    ? notifications.map(n => ({
+        id:      n.id,
+        title:   n.title,
+        body:    n.body,
+        time:    new Date(n.createdAt).toLocaleDateString('en-GB', { day:'numeric', month:'short' }),
+        iconKey: NOTIF_ICON_MAP[n.type] || 'workout',
+        read:    n.read,
+      }))
+    : (notifications !== null ? [] : null);
 
   if (showSettings) return <NotifSettingsPage onBack={() => setShowSettings(false)}/>;
 
@@ -4688,19 +4745,28 @@ function NotificationsPage({ onBack, onMarkAllRead, unreadIds, onRead }) {
       </div>
 
       {/* Mark all read */}
-      {unreadIds.length > 0 && (
+      {hasUnread && (
         <div style={{ padding:"0 18px 10px", display:"flex", justifyContent:"flex-end", flexShrink:0 }}>
-          <button onClick={onMarkAllRead} style={{ background:"none", border:"none", fontFamily:FONT, fontWeight:600, fontSize:13, color:PRIMARY, cursor:"pointer" }}>
+          <button onClick={markAll} style={{ background:"none", border:"none", fontFamily:FONT, fontWeight:600, fontSize:13, color:PRIMARY, cursor:"pointer" }}>
             Mark all as read
           </button>
         </div>
       )}
 
       <div style={{ flex:1, overflowY:"auto", padding:"0 16px 32px" }}>
-        {NOTIF_DATA.map((n, i) => {
-          const isUnread = unreadIds.includes(n.id);
+        {displayList === null && (
+          <div style={{ textAlign:"center", padding:"40px 0", fontFamily:FONT, fontSize:13, color:"#555" }}>Loading...</div>
+        )}
+        {displayList !== null && displayList.length === 0 && (
+          <div style={{ textAlign:"center", padding:"60px 20px", fontFamily:FONT, fontSize:14, color:"#555" }}>
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#333" strokeWidth="1.5" style={{display:"block",margin:"0 auto 12px"}}><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+            No notifications yet
+          </div>
+        )}
+        {(displayList || NOTIF_DATA).map((n, i) => {
+          const isUnread = displayList ? !n.read : n.unread;
           return (
-            <div key={n.id} onClick={() => onRead(n.id)}
+            <div key={n.id} onClick={() => displayList ? markOne(n.id) : null}
               style={{ background: "#fff", borderRadius:18, padding:"16px 18px", marginBottom:12, display:"flex", gap:14, alignItems:"flex-start", cursor:"pointer", animation:`fadeUp 0.3s ease ${i*0.05}s both`, transition:"background 0.2s" }}>
               {/* Icon */}
               <div style={{ width:44, height:44, borderRadius:"50%", background: isUnread ? "#1a1a1a" : n.iconBg||"#1a1a1a", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
@@ -7020,7 +7086,7 @@ function getTailoredMealOptions(user) {
 }
 
 
-function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, streakDay=1, energyKey, onMoodSelect, weeklyWorkoutDays=0, weeklyAvgCal=null, weeklyAvgMin=null, apiWorkout=null }) {
+function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, streakDay=1, energyKey, onMoodSelect, weeklyWorkoutDays=0, weeklyAvgCal=null, weeklyAvgMin=null, apiWorkout=null, notifCount=0, onNotifReset }) {
   const { dark } = useTheme();
   const { user, profileImg, isPremium } = useUser();
   const [trialEndedDismissed, setTrialEndedDismissed] = useState(false);
@@ -7029,7 +7095,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
   const [showMood, setShowMood]   = useState(false);
   const [showNotifs, setShowNotifs]   = useState(false);
   const [showProfile, setShowProfile] = useState(false);
-  const [unreadIds, setUnreadIds]     = useState([1,2,3]);
+  const hasUnread = notifCount > 0;
   const [workoutDone,      setWorkoutDone]      = useState(false);
   const [freezeUsed,  setFreezeUsed]  = useState(()=>{
     try {
@@ -7039,7 +7105,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
   });
   const [showFreezeSheet, setShowFreezeSheet] = useState(false);
 
-  // Check for newly earned achievements and badge the bell
+  // Check for newly earned achievements (notification badging handled by notifCount from API)
   useEffect(()=>{
     const stats = {
       streakDays: streakDay, workoutsTotal: 0, earlyWorkouts:0,
@@ -7050,12 +7116,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
       const seen = JSON.parse(localStorage.getItem("vtrx_seen_achievements")||"[]");
       const earned = ACHIEVEMENTS.filter(a=>getProgress(a.req,stats)>=a.req.n);
       const newOnes = earned.filter(a=>!seen.includes(a.id));
-      if (newOnes.length>0) {
-        setUnreadIds(p=>{
-          const achId = 99; // achievement notification ID
-          return p.includes(achId) ? p : [...p, achId];
-        });
-      }
+      // Could surface achievement unlocks here in future
     } catch(_e){}
   }, [streakDay]);
   const freezesAvailable = isPremium ? (freezeUsed ? 0 : 1) : 0;
@@ -7099,7 +7160,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
 
       {showNotifs&&(
         <div style={{ position:"absolute",inset:0,zIndex:80,animation:"slideR 0.36s ease both" }}>
-          <NotificationsPage onBack={()=>setShowNotifs(false)} unreadIds={unreadIds} onRead={(id)=>setUnreadIds(p=>p.filter(x=>x!==id))} onMarkAllRead={()=>setUnreadIds([])}/>
+          <NotificationsPage onBack={()=>setShowNotifs(false)} onMarkAllRead={onNotifReset}/>
         </div>
       )}
       {showProfile&&(
@@ -7118,12 +7179,12 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
           </div>
         </div>
         <div style={{ display:"flex",gap:9 }}>
-          <button onClick={()=>setShowNotifs(true)} style={{ width:38,height:38,borderRadius:"50%",background:unreadIds.length>0?PRIMARY:CARD,border:`1px solid ${unreadIds.length>0?PRIMARY:BORDER}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",position:"relative",transition:"all 0.25s" }}>
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={unreadIds.length>0?"#fff":"#888"} strokeWidth="1.8">
+          <button onClick={()=>setShowNotifs(true)} style={{ width:38,height:38,borderRadius:"50%",background:hasUnread?PRIMARY:CARD,border:`1px solid ${hasUnread?PRIMARY:BORDER}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",position:"relative",transition:"all 0.25s" }}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={hasUnread?"#fff":"#888"} strokeWidth="1.8">
               <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/>
               <path d="M13.73 21a2 2 0 01-3.46 0"/>
             </svg>
-            {unreadIds.length>0&&<div style={{ position:"absolute",top:4,right:4,width:8,height:8,borderRadius:"50%",background:"#fff",border:`1.5px solid ${PRIMARY}` }}/>}
+            {hasUnread&&<div style={{ position:"absolute",top:4,right:4,width:8,height:8,borderRadius:"50%",background:"#fff",border:`1.5px solid ${PRIMARY}` }}/>}
           </button>
           <button onClick={()=>setShowFreezeSheet(p=>!p)} style={{ width:38,height:38,borderRadius:"50%",background:freezeUsed?"#0a1f0a":showFreezeSheet?PRIMARY+"22":CARD,border:"1px solid "+(freezeUsed?"#22C55E55":showFreezeSheet?PRIMARY:BORDER),display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.25s" }}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={freezeUsed?"#22C55E":showFreezeSheet?PRIMARY:"#888"} strokeWidth="1.8">
@@ -7487,6 +7548,34 @@ function VTRXAppInner({ setPaymentPlan }) {
     return () => { _openPaymentSheet = null; };
   }, []);
 
+  // Register FCM push token when user reaches the dashboard
+  useEffect(()=>{
+    if (phase !== "dashboard" || !getAuthToken()) return;
+    const registerPush = async () => {
+      try {
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') return;
+        const token = await getNotificationToken();
+        if (token) {
+          await apiCall('/notifications/register', {
+            method: 'POST',
+            body: JSON.stringify({ token, platform: 'web' }),
+          });
+        }
+      } catch(_e) {} // silently ignore: permission denied, VAPID key missing, etc.
+    };
+    registerPush();
+  }, [phase]);
+
+  // Listen for foreground push messages and increment badge
+  useEffect(()=>{
+    const unsub = onForegroundMessage(payload => {
+      const { title, body } = payload.notification || {};
+      setNotifCount(c => c + 1);
+    });
+    return unsub;
+  }, []);
+
   useEffect(()=>{
   const loadData = async () => {
       try {
@@ -7787,6 +7876,8 @@ function VTRXAppInner({ setPaymentPlan }) {
             setMealIdx={setMealIdx}
             streakDay={streakDay}
             energyKey={energyKey}
+            notifCount={notifCount}
+            onNotifReset={()=>setNotifCount(0)}
             onMoodSelect={(key)=>{
               setEnergyKey(key);
               try { localStorage.setItem("vtrx_mood", JSON.stringify({key, date:new Date().toISOString().slice(0,10)})); } catch(_e){}
