@@ -208,14 +208,18 @@ const normalizeRecipe = (r) => ({
   time:        `${r.prep_time || r.prepTime || r.mins || '?'} min`,
   prep:        `${r.prep_time || r.prepTime || r.mins || '?'} min`,
   servings:    r.servings  || 1,
-  desc:        r.description || r.summary || r.desc || '',
+  desc:        r.description || r.summary || r.desc || r.shortDescription || '',
   ingredients: (r.ingredients || []).map(ing =>
     typeof ing === 'string' ? ing
     : [ing.amount, ing.unit, ing.name].filter(Boolean).join(' ') || String(ing)
   ),
-  steps:       (r.instructions || r.directions || r.steps || []).map(s =>
-    typeof s === 'string' ? s : s.description || s.step || s.text || String(s)
-  ),
+  steps:       Array.isArray(r.instructions)
+    ? r.instructions.map(s => typeof s === 'string' ? s : s.description || s.step || s.text || String(s))
+    : Array.isArray(r.steps)
+      ? r.steps.map(s => typeof s === 'string' ? s : s.description || s.step || s.text || String(s))
+      : typeof r.instructions === 'string'
+        ? r.instructions.split('\n').filter(Boolean)
+        : [],
   tags:        r.tags || r.categories || r.cat || [],
 });
 

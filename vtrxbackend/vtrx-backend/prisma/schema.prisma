@@ -226,15 +226,17 @@ model Recipe {
   id           String      @id @default(uuid())
   name         String
   calories     Int
-  protein      Float       // grams
-  carbs        Float       // grams
-  fat          Float       // grams
-  prepTime     Int?        // minutes
+  protein      Float
+  carbs        Float
+  fat          Float
+  prepTime     Int?
   servings     Int?        @default(1)
   imageUrl     String?
-  tags         String[]    // ["High Protein", "Vegan", "Muscle Gain"]
-  instructions String?
-  ymoveId      String?     // Ymove recipe ID
+  tags         String[]
+  description  String?
+  ingredients  String[]
+  instructions String[]
+  ymoveId      String?
   isPublic     Boolean     @default(true)
   createdAt    DateTime    @default(now())
 
