@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, createContext, useContext } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
-import { getNotificationToken, onForegroundMessage } from "./firebase";
+import { getNotificationToken, onForegroundMessage, isPushSupported } from "./firebase";
 
 // Stripe.js loaded once at module scope — publishable key is safe in client code
 const _stripePromise = import.meta?.env?.VITE_STRIPE_PUBLISHABLE_KEY
@@ -7550,13 +7550,15 @@ function VTRXAppInner({ setPaymentPlan }) {
     return () => { _openPaymentSheet = null; };
   }, []);
 
-  // Show "Enable notifications" banner if permission not yet decided
+  // Show "Enable notifications" banner only if browser actually supports web push
   useEffect(()=>{
     if (phase !== "dashboard") return;
     if (typeof Notification === "undefined") return;
-    if (Notification.permission === "default") setShowPushBanner(true);
-    // If already granted, register token silently (no user gesture needed)
-    if (Notification.permission === "granted") registerPushToken();
+    isPushSupported().then(supported => {
+      if (!supported) return;
+      if (Notification.permission === "default") setShowPushBanner(true);
+      if (Notification.permission === "granted") registerPushToken();
+    });
   }, [phase]);
 
   const registerPushToken = async () => {
@@ -7581,11 +7583,11 @@ function VTRXAppInner({ setPaymentPlan }) {
 
   // Listen for foreground push messages and increment badge
   useEffect(()=>{
-    const unsub = onForegroundMessage(payload => {
-      const { title, body } = payload.notification || {};
+    let unsub = () => {};
+    onForegroundMessage(payload => {
       setNotifCount(c => c + 1);
-    });
-    return unsub;
+    }).then(fn => { unsub = fn; });
+    return () => unsub();
   }, []);
 
   useEffect(()=>{
