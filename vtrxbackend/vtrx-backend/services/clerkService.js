@@ -55,44 +55,36 @@ const findByEmail = async (email) => {
   return users[0] ?? null;
 };
 
-// ── Attempt email verification with fallback strategy ─────────────────────────
-// Clerk's BAPI attempt_verification sometimes requires verification_id.
-// The verification.id is not reliably returned by prepare_verification, so we
-// try multiple approaches in order until one succeeds or all are exhausted.
+// ── Attempt email verification ────────────────────────────────────────────────
+// Clerk's BAPI always requires verification_id — send it directly when available.
+// Falls back to code-only (then emailAddressId) only when we don't have a ver_xxx ID.
 const attemptEmailVerification = async (emailAddressId, code, verificationId) => {
   const endpoint = `/email_addresses/${emailAddressId}/attempt_verification`;
 
-  // Pass 1: standard BAPI — just the code
+  // Prefer ver_xxx verification_id — Clerk requires it and we have it from prepare_verification
+  const hasVerId = verificationId && !verificationId.startsWith('eoa_') && !verificationId.startsWith('idn_');
+
+  if (hasVerId) {
+    logger.info(`attempt_verification with verificationId: ${verificationId} | emailAddrId: ${emailAddressId}`);
+    return await clerkAPI('POST', endpoint, { code: String(code), verification_id: String(verificationId) });
+  }
+
+  // No ver_xxx ID — try code only first
+  logger.info(`attempt_verification without verificationId | emailAddrId: ${emailAddressId}`);
   try {
-    logger.info(`attempt_verification pass 1 (code only) for emailAddrId: ${emailAddressId}`);
     return await clerkAPI('POST', endpoint, { code: String(code) });
   } catch (err1) {
-    const msg1 = (err1?.errors?.[0]?.message || err1?.errors?.[0]?.longMessage || JSON.stringify(err1)).toLowerCase();
-    logger.warn(`attempt_verification pass 1 failed: ${msg1}`);
+    const errCode = err1?.errors?.[0]?.code || '';
+    const errMsg  = (err1?.errors?.[0]?.long_message || err1?.errors?.[0]?.message || JSON.stringify(err1)).toLowerCase();
+    logger.warn(`attempt_verification (no vid) failed: code=${errCode} msg=${errMsg}`);
 
-    if (!msg1.includes('verification_id') && !msg1.includes('verification id')) {
-      throw err1; // Not a missing-ID error — propagate as-is (wrong code, expired, etc.)
+    if (errCode !== 'form_param_missing' && !errMsg.includes('verification_id')) {
+      throw err1; // Wrong code, expired, etc. — don't try fallbacks
     }
 
-    // Pass 2: use the verificationId returned from prepare_verification (ver_xxx)
-    if (verificationId && !verificationId.startsWith('eoa_') && !verificationId.startsWith('idn_')) {
-      try {
-        logger.info(`attempt_verification pass 2 (with verificationId: ${verificationId})`);
-        return await clerkAPI('POST', endpoint, { code: String(code), verification_id: String(verificationId) });
-      } catch (err2) {
-        logger.warn(`attempt_verification pass 2 failed: ${JSON.stringify(err2?.errors?.[0])}`);
-      }
-    }
-
-    // Pass 3: use the email address ID itself as verification_id
-    // (Clerk may treat this as a reference to the active pending verification)
-    try {
-      logger.info(`attempt_verification pass 3 (verification_id = emailAddressId: ${emailAddressId})`);
-      return await clerkAPI('POST', endpoint, { code: String(code), verification_id: String(emailAddressId) });
-    } catch (err3) {
-      logger.warn(`attempt_verification pass 3 failed: ${JSON.stringify(err3?.errors?.[0])}`);
-      throw err3; // All attempts exhausted
-    }
+    // Last resort: use emailAddressId as verification_id
+    logger.info(`attempt_verification fallback: using emailAddressId as verification_id: ${emailAddressId}`);
+    return await clerkAPI('POST', endpoint, { code: String(code), verification_id: String(emailAddressId) });
   }
 };
 
