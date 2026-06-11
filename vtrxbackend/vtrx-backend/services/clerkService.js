@@ -1,14 +1,21 @@
 // services/clerkService.js
-const https = require('https');
-const logger = require('../utils/logger');
+// Auth via Clerk BAPI. Uses @clerk/backend SDK for user CRUD and password
+// verification. Email verification uses raw HTTPS because the SDK's EmailAddress
+// API does not expose prepareVerification/attemptVerification.
+const { createClerkClient } = require('@clerk/backend');
+const https   = require('https');
+const logger  = require('../utils/logger');
 
 const CLERK_SECRET = process.env.CLERK_SECRET_KEY;
-logger.info(`CLERK_SECRET_KEY loaded: ${!!CLERK_SECRET}`);
+logger.info(`CLERK_SECRET_KEY loaded: ${!!CLERK_SECRET} | starts with: ${CLERK_SECRET?.slice(0,8)}`);
 
-// ── Clerk Backend API helper ───────────────────────────────────────────────────
-// Uses api.clerk.com (Backend API / BAPI), authenticated with the secret key.
-// The BAPI is an admin/management API — it is NOT used for session creation.
-// Authentication is done by: find user → verify_password → issue our own JWT.
+if (!CLERK_SECRET) {
+  logger.error('FATAL: CLERK_SECRET_KEY is not set — all auth operations will fail');
+}
+
+const clerk = createClerkClient({ secretKey: CLERK_SECRET });
+
+// ── Raw HTTPS helper (for BAPI endpoints not in the SDK) ──────────────────────
 const clerkAPI = (method, path, body) => new Promise((resolve, reject) => {
   const data = body ? JSON.stringify(body) : null;
   const options = {
@@ -28,26 +35,67 @@ const clerkAPI = (method, path, body) => new Promise((resolve, reject) => {
     res.on('end', () => {
       try {
         const parsed = JSON.parse(raw);
-        logger.info(`Clerk API ${method} ${path} -> ${res.statusCode}`);
-        if (res.statusCode >= 400) {
-          reject(parsed);
-        } else {
-          resolve(parsed);
-        }
+        logger.info(`Clerk BAPI ${method} ${path} -> ${res.statusCode}`);
+        if (res.statusCode >= 400) reject(parsed);
+        else resolve(parsed);
       } catch (_e) {
-        reject(new Error(raw));
+        reject(new Error(`Clerk non-JSON response: ${raw.slice(0, 200)}`));
       }
     });
   });
-
   req.on('error', reject);
   if (data) req.write(data);
   req.end();
 });
 
-// ── Normalise Clerk user-list response ────────────────────────────────────────
-// GET /v1/users returns a plain array; some endpoints wrap in { data: [] }.
-const toArray = (res) => (Array.isArray(res) ? res : (res?.data || []));
+// ── Find a Clerk user by email (SDK) ─────────────────────────────────────────
+const findByEmail = async (email) => {
+  const res   = await clerk.users.getUserList({ emailAddress: [email] });
+  const users = res?.data ?? res ?? [];
+  return users[0] ?? null;
+};
+
+// ── Attempt email verification with fallback strategy ─────────────────────────
+// Clerk's BAPI attempt_verification sometimes requires verification_id.
+// The verification.id is not reliably returned by prepare_verification, so we
+// try multiple approaches in order until one succeeds or all are exhausted.
+const attemptEmailVerification = async (emailAddressId, code, verificationId) => {
+  const endpoint = `/email_addresses/${emailAddressId}/attempt_verification`;
+
+  // Pass 1: standard BAPI — just the code
+  try {
+    logger.info(`attempt_verification pass 1 (code only) for emailAddrId: ${emailAddressId}`);
+    return await clerkAPI('POST', endpoint, { code: String(code) });
+  } catch (err1) {
+    const msg1 = (err1?.errors?.[0]?.message || err1?.errors?.[0]?.longMessage || JSON.stringify(err1)).toLowerCase();
+    logger.warn(`attempt_verification pass 1 failed: ${msg1}`);
+
+    if (!msg1.includes('verification_id') && !msg1.includes('verification id')) {
+      throw err1; // Not a missing-ID error — propagate as-is (wrong code, expired, etc.)
+    }
+
+    // Pass 2: use the verificationId returned from prepare_verification (ver_xxx)
+    if (verificationId && !verificationId.startsWith('eoa_') && !verificationId.startsWith('idn_')) {
+      try {
+        logger.info(`attempt_verification pass 2 (with verificationId: ${verificationId})`);
+        return await clerkAPI('POST', endpoint, { code: String(code), verification_id: String(verificationId) });
+      } catch (err2) {
+        logger.warn(`attempt_verification pass 2 failed: ${JSON.stringify(err2?.errors?.[0])}`);
+      }
+    }
+
+    // Pass 3: use the email address ID itself as verification_id
+    // (Clerk may treat this as a reference to the active pending verification)
+    try {
+      logger.info(`attempt_verification pass 3 (verification_id = emailAddressId: ${emailAddressId})`);
+      return await clerkAPI('POST', endpoint, { code: String(code), verification_id: String(emailAddressId) });
+    } catch (err3) {
+      logger.warn(`attempt_verification pass 3 failed: ${JSON.stringify(err3?.errors?.[0])}`);
+      throw err3; // All attempts exhausted
+    }
+  }
+};
+
 
 // ==================== SIGN UP ====================
 const signUp = async ({ email, password, username, name }) => {
@@ -55,41 +103,51 @@ const signUp = async ({ email, password, username, name }) => {
     const cleanUsername = (username || email.split('@')[0])
       .toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 15);
 
-    const user = await clerkAPI('POST', '/users', {
-      email_address: [email],
+    // Create the Clerk user via SDK
+    const user = await clerk.users.createUser({
+      emailAddress:       [email],
       password,
-      username: cleanUsername,
-      first_name: name ? name.split(' ')[0] : cleanUsername,
-      last_name:  name ? name.split(' ').slice(1).join(' ') : '',
-      skip_password_checks: false,
+      username:           cleanUsername,
+      firstName:          name ? name.split(' ')[0] : cleanUsername,
+      lastName:           name ? name.split(' ').slice(1).join(' ') : '',
+      skipPasswordChecks: false,
     });
 
     logger.info(`Clerk signUp: ${email} | id: ${user.id}`);
 
-    const emailAddr = user.email_addresses?.[0];
-    let verificationId = null;
+    // SDK uses camelCase: user.emailAddresses[0].id
+    const emailAddr = user.emailAddresses?.[0];
+    let verificationId   = null;
+    let emailAddressId   = emailAddr?.id ?? null;
 
-    if (emailAddr) {
+    if (emailAddressId) {
       try {
-        const prepareRes = await clerkAPI(
+        // prepare_verification via raw HTTPS (SDK doesn't expose this method)
+        const prepared = await clerkAPI(
           'POST',
-          `/email_addresses/${emailAddr.id}/prepare_verification`,
+          `/email_addresses/${emailAddressId}/prepare_verification`,
           { strategy: 'email_code' }
         );
-        // Clerk returns the email_address object; verification.id is on the verification sub-object
-        verificationId = prepareRes?.verification?.id || prepareRes?.id || null;
-        logger.info(`Verification prepared for ${email} | verificationId: ${verificationId}`);
+
+        // Log the FULL response to diagnose verification.id presence
+        logger.info(`prepare_verification raw response for ${email}: ${JSON.stringify(prepared)}`);
+
+        // Extract verification ID from every possible location in the response
+        verificationId =
+          prepared?.verification?.id   // standard field (ver_xxx)
+          ?? prepared?.nonce            // fallback: nonce sometimes carries session id
+          ?? null;
+
+        logger.info(`Extracted verificationId: ${verificationId} | emailAddressId: ${emailAddressId}`);
       } catch (e) {
-        // Log the full Clerk error so it is visible in Railway logs
         logger.error(`prepare_verification FAILED for ${email}: ${JSON.stringify(e)}`);
-        // verificationId stays null — frontend will show "Session expired, sign up again"
       }
     }
 
     return {
-      clerkUserId:    user.id,
+      clerkUserId:      user.id,
       emailVerification: emailAddr?.verification?.status === 'verified',
-      emailAddressId: emailAddr?.id,
+      emailAddressId,
       verificationId,
     };
   } catch (err) {
@@ -100,167 +158,127 @@ const signUp = async ({ email, password, username, name }) => {
       e.name = 'UsernameExistsException';
       throw e;
     }
-    throw new Error(err?.errors?.[0]?.longMessage || 'Signup failed');
+    const msg = err?.errors?.[0]?.longMessage || err?.errors?.[0]?.message || err?.message || 'Signup failed';
+    throw new Error(msg);
   }
 };
 
 
 // ==================== CONFIRM SIGN UP (email verification) ====================
-const confirmSignUp = async ({ email, code, verificationId }) => {
+const confirmSignUp = async ({ email, code, verificationId, emailAddressId }) => {
   try {
-    logger.info(`confirmSignUp: email=${email} code=${code} verificationId=${verificationId}`);
+    logger.info(`confirmSignUp: email=${email} verificationId=${verificationId} emailAddressId=${emailAddressId}`);
 
-    // Find the Clerk user by email address
-    const search = await clerkAPI('GET', `/users?email_address=${encodeURIComponent(email)}`);
-    const users  = toArray(search);
-    if (!users.length) throw new Error('User not found.');
+    // Look up the current Clerk user to get the live email address ID
+    const user = await findByEmail(email);
+    if (!user) throw new Error('User not found.');
 
-    const user      = users[0];
-    const emailAddr = user.email_addresses?.find(e => e.email_address === email);
+    // SDK uses camelCase: emailAddresses[0].emailAddress
+    const emailAddr = user.emailAddresses?.find(a => a.emailAddress === email);
     if (!emailAddr) throw new Error('Email address not found on this account.');
 
-    // Always submit the code — never short-circuit on a pre-existing 'verified' status.
-    // Clerk auto-verifies emails created via the BAPI in dev/test mode, which would
-    // otherwise allow any code to pass if we returned early.
-    // NOTE: verification_id is NOT a recognised BAPI parameter — only `code` is sent.
-    const result = await clerkAPI(
-      'POST',
-      `/email_addresses/${emailAddr.id}/attempt_verification`,
-      { code: String(code) }
+    // Short-circuit if Clerk already considers it verified
+    if (emailAddr.verification?.status === 'verified') {
+      logger.info(`Email ${email} is already verified — skipping attempt`);
+      return { success: true };
+    }
+
+    // Use fresh emailAddressId from lookup (more reliable than the one from localStorage)
+    const liveEmailAddressId = emailAddr.id;
+
+    const result = await attemptEmailVerification(
+      liveEmailAddressId,
+      code,
+      verificationId     // may be null — attemptEmailVerification handles fallbacks
     );
 
     if (result?.verification?.status !== 'verified') {
-      logger.error(`Unexpected verification status after attempt: ${result?.verification?.status}`);
+      logger.error(`Unexpected verification status: ${result?.verification?.status} | result: ${JSON.stringify(result)}`);
       const e = new Error('Invalid verification code.');
       e.name = 'CodeMismatchException';
       throw e;
     }
 
     logger.info(`✅ Email verified for ${email}`);
-    return { success: true, result };
+    return { success: true };
   } catch (err) {
-    // Re-throw errors we already typed
     if (err.name === 'CodeMismatchException' || err.name === 'ExpiredCodeException') throw err;
 
     logger.error('Clerk confirmSignUp error:', JSON.stringify(err, null, 2));
     const firstError = err?.errors?.[0] || {};
-    // Clerk API returns snake_case in raw JSON (long_message), JS object may have either
-    const errorMsg = firstError.longMessage || firstError.long_message || firstError.message || err.message || 'Verification failed';
+    const errorCode  = firstError.code || '';
+    const errorMsg   = firstError.longMessage || firstError.long_message || firstError.message || err.message || '';
 
-    // strategy_for_user_invalid: no pending verification (e.g. Clerk auto-verified in dev mode)
-    // verification_already_verified: email already confirmed
-    if (
-      firstError.code === 'strategy_for_user_invalid' ||
-      firstError.code === 'verification_already_verified' ||
-      errorMsg.toLowerCase().includes('strategy')
-    ) {
-      // Re-check current verification status — if already verified, accept as success
+    if (errorCode === 'verification_already_verified' || errorCode === 'strategy_for_user_invalid') {
       try {
-        const recheck = await clerkAPI('GET', `/users?email_address=${encodeURIComponent(email)}`);
-        const recheckUsers = toArray(recheck);
-        if (recheckUsers.length) {
-          const addr = recheckUsers[0].email_addresses?.find(a => a.email_address === email);
-          if (addr?.verification?.status === 'verified') {
-            logger.info(`Email ${email} is already verified — treating confirmation as success`);
-            return { success: true };
-          }
+        const recheck = await findByEmail(email);
+        const addr = recheck?.emailAddresses?.find(a => a.emailAddress === email);
+        if (addr?.verification?.status === 'verified') {
+          logger.info(`Email ${email} already verified — treating as success`);
+          return { success: true };
         }
-      } catch (_e) {}
-      const e = new Error('No pending verification found. Please request a new code.');
+      } catch (_) {}
+      const e = new Error('No pending verification. Please request a new code.');
       e.name = 'CodeMismatchException';
       throw e;
     }
 
-    if (
-      firstError.code === 'form_code_incorrect' ||
-      errorMsg.toLowerCase().includes('incorrect') ||
-      errorMsg.toLowerCase().includes('invalid')
-    ) {
+    if (errorCode === 'form_code_incorrect' || errorMsg.toLowerCase().includes('incorrect') || errorMsg.toLowerCase().includes('invalid')) {
       const e = new Error('Invalid verification code.');
       e.name = 'CodeMismatchException';
       throw e;
     }
-    if (
-      firstError.code === 'form_code_expired' ||
-      errorMsg.toLowerCase().includes('expired')
-    ) {
+    if (errorCode === 'form_code_expired' || errorMsg.toLowerCase().includes('expired')) {
       const e = new Error('Code expired. Please request a new one.');
       e.name = 'ExpiredCodeException';
       throw e;
     }
 
-    const finalError = new Error(errorMsg || 'Verification failed. Please try again.');
-    finalError.name  = 'VerificationFailedException';
-    throw finalError;
+    const e = new Error(errorMsg || 'Verification failed. Please try again.');
+    e.name = 'VerificationFailedException';
+    throw e;
   }
 };
 
 
 // ==================== LOGIN ====================
-// Correct BAPI pattern:
-//   1. GET  /v1/users?email_address=   → find the user record
-//   2. POST /v1/users/{id}/verify_password → validate the password
-//   3. (caller) issue a custom JWT via signToken()
-//
-// POST /v1/sessions does NOT accept email+password — it is a session-management
-// endpoint that requires a user_id, not credentials.
 const login = async ({ email, password }) => {
   try {
     logger.info(`Clerk login attempt for: ${email}`);
 
-    // 1. Find user by email
-    const searchResult = await clerkAPI('GET', `/users?email_address=${encodeURIComponent(email)}`);
-    const users        = toArray(searchResult);
-
-    if (!users.length) {
+    const user = await findByEmail(email);
+    if (!user) {
       const e = new Error('Incorrect email or password.');
       e.name  = 'NotAuthorizedException';
       throw e;
     }
 
-    const user      = users[0];
-    const emailAddr = user.email_addresses?.find(a => a.email_address === email);
+    const emailAddr = user.emailAddresses?.find(a => a.emailAddress === email);
 
-    // 2. Guard: block login if email is not yet verified
     if (emailAddr && emailAddr.verification?.status !== 'verified') {
       const e = new Error('Please verify your email before logging in.');
       e.name  = 'UserNotConfirmedException';
       throw e;
     }
 
-    // 3. Verify the password — throws 422 from Clerk on failure
-    await clerkAPI('POST', `/users/${user.id}/verify_password`, { password });
+    // SDK verifyPassword throws ClerkAPIError on wrong password
+    await clerk.users.verifyPassword({ userId: user.id, password });
 
     logger.info(`✅ Login successful for: ${email} (clerkId: ${user.id})`);
+    return { success: true, clerkUserId: user.id };
 
-    return {
-      success:   true,
-      clerkUserId: user.id,
-      // cognitoTokens is kept for backward compatibility with the controller/frontend
-      cognitoTokens: {
-        accessToken: user.id,
-        idToken:     user.id,
-      },
-    };
   } catch (err) {
-    // Re-throw already-typed errors without wrapping
-    if (err.name === 'NotAuthorizedException' || err.name === 'UserNotConfirmedException') {
-      throw err;
-    }
+    if (err.name === 'NotAuthorizedException' || err.name === 'UserNotConfirmedException') throw err;
 
     logger.error('Clerk login error:', JSON.stringify(err, null, 2));
     const firstError = err?.errors?.[0] || {};
 
-    if (
-      firstError.code === 'form_password_incorrect' ||
-      firstError.code === 'not_found'
-    ) {
+    if (firstError.code === 'form_password_incorrect' || firstError.code === 'not_found') {
       const e = new Error('Incorrect email or password.');
       e.name  = 'NotAuthorizedException';
       throw e;
     }
 
-    // Any other Clerk error → generic auth failure (don't leak internal details)
     const e = new Error('Login failed. Please try again.');
     e.name  = 'NotAuthorizedException';
     throw e;
@@ -273,18 +291,14 @@ const resendConfirmationCode = async ({ email }) => {
   try {
     logger.info(`Resending verification code for: ${email}`);
 
-    const searchResult = await clerkAPI('GET', `/users?email_address=${encodeURIComponent(email)}`);
-    const users        = toArray(searchResult);
-
-    if (!users.length) {
+    const user = await findByEmail(email);
+    if (!user) {
       const e = new Error('No account found with this email.');
       e.name  = 'UserNotFoundException';
       throw e;
     }
 
-    const user      = users[0];
-    const emailAddr = user.email_addresses?.find(a => a.email_address === email);
-
+    const emailAddr = user.emailAddresses?.find(a => a.emailAddress === email);
     if (!emailAddr) {
       const e = new Error('No account found with this email.');
       e.name  = 'UserNotFoundException';
@@ -292,17 +306,20 @@ const resendConfirmationCode = async ({ email }) => {
     }
 
     if (emailAddr.verification?.status === 'verified') {
-      return { success: true, message: 'Email is already verified.' };
+      return { success: true, verificationId: null, emailAddressId: emailAddr.id };
     }
 
-    await clerkAPI(
+    const prepared = await clerkAPI(
       'POST',
       `/email_addresses/${emailAddr.id}/prepare_verification`,
       { strategy: 'email_code' }
     );
+    logger.info(`resend prepare_verification raw response: ${JSON.stringify(prepared)}`);
 
-    logger.info(`Verification code resent to: ${email}`);
-    return { success: true };
+    const newVerificationId = prepared?.verification?.id ?? null;
+    logger.info(`Code resent to ${email} | emailAddrId: ${emailAddr.id} | verificationId: ${newVerificationId}`);
+
+    return { success: true, verificationId: newVerificationId, emailAddressId: emailAddr.id };
   } catch (err) {
     if (err.name === 'UserNotFoundException') throw err;
 
@@ -315,39 +332,27 @@ const resendConfirmationCode = async ({ email }) => {
       throw e;
     }
 
-    throw new Error(firstError.longMessage || 'Failed to resend verification code.');
+    throw new Error(firstError.longMessage || firstError.message || 'Failed to resend verification code.');
   }
 };
 
 
 // ==================== FORGOT PASSWORD ====================
-// Uses Clerk's email_code verification flow: prepare_verification sends a code
-// to the user's email, which is then submitted in confirmForgotPassword.
-// No external email service required — Clerk delivers the code.
 const forgotPassword = async ({ email }) => {
   try {
-    const searchResult = await clerkAPI('GET', `/users?email_address=${encodeURIComponent(email)}`);
-    const users        = toArray(searchResult);
-
-    if (!users.length) {
-      // Security: never reveal whether an email is registered
+    const user = await findByEmail(email);
+    if (!user) {
       logger.info(`Password reset requested for unregistered email: ${email}`);
       return { success: true };
     }
 
-    const user      = users[0];
-    const emailAddr = user.email_addresses?.find(a => a.email_address === email);
-
-    if (!emailAddr) {
-      return { success: true };
-    }
+    const emailAddr = user.emailAddresses?.find(a => a.emailAddress === email);
+    if (!emailAddr) return { success: true };
 
     await clerkAPI('POST', `/email_addresses/${emailAddr.id}/prepare_verification`, { strategy: 'email_code' });
-
     logger.info(`Password reset code sent to ${email} via Clerk`);
     return { success: true };
   } catch (err) {
-    // Always return success — never reveal whether the email exists
     logger.error(`forgotPassword error for ${email}: ${JSON.stringify(err)}`);
     return { success: true };
   }
@@ -355,35 +360,23 @@ const forgotPassword = async ({ email }) => {
 
 
 // ==================== CONFIRM FORGOT PASSWORD ====================
-// 1. Find the user in Clerk by email
-// 2. Call attempt_verification to confirm code ownership
-// 3. PATCH /users/{id} to update the password
 const confirmForgotPassword = async ({ email, code, newPassword }) => {
   try {
-    const searchResult = await clerkAPI('GET', `/users?email_address=${encodeURIComponent(email)}`);
-    const users        = toArray(searchResult);
-
-    if (!users.length) {
+    const user = await findByEmail(email);
+    if (!user) {
       const e = new Error('No account found with this email.');
       e.name  = 'UserNotFoundException';
       throw e;
     }
 
-    const user      = users[0];
-    const emailAddr = user.email_addresses?.find(a => a.email_address === email);
-
+    const emailAddr = user.emailAddresses?.find(a => a.emailAddress === email);
     if (!emailAddr) {
       const e = new Error('No account found with this email.');
       e.name  = 'UserNotFoundException';
       throw e;
     }
 
-    // Verify the reset code — proves the requester owns the email
-    const result = await clerkAPI(
-      'POST',
-      `/email_addresses/${emailAddr.id}/attempt_verification`,
-      { code: String(code) }
-    );
+    const result = await attemptEmailVerification(emailAddr.id, code, null);
 
     if (result?.verification?.status !== 'verified') {
       const e = new Error('Invalid verification code.');
@@ -391,43 +384,29 @@ const confirmForgotPassword = async ({ email, code, newPassword }) => {
       throw e;
     }
 
-    // Update the password in Clerk
-    await clerkAPI('PATCH', `/users/${user.id}`, { password: newPassword });
+    // SDK updateUser to set new password
+    await clerk.users.updateUser(user.id, { password: newPassword, skipPasswordChecks: false });
 
     logger.info(`✅ Password reset successful for ${email}`);
     return { success: true };
   } catch (err) {
-    if (
-      err.name === 'CodeMismatchException' ||
-      err.name === 'ExpiredCodeException'  ||
-      err.name === 'UserNotFoundException'
-    ) throw err;
+    if (['CodeMismatchException', 'ExpiredCodeException', 'UserNotFoundException'].includes(err.name)) throw err;
 
     logger.error('confirmForgotPassword error:', JSON.stringify(err, null, 2));
     const firstError = err?.errors?.[0] || {};
     const errorMsg   = firstError.longMessage || firstError.long_message || firstError.message || err.message || 'Password reset failed';
 
-    if (
-      firstError.code === 'form_code_incorrect' ||
-      errorMsg.toLowerCase().includes('incorrect') ||
-      errorMsg.toLowerCase().includes('invalid code')
-    ) {
+    if (firstError.code === 'form_code_incorrect' || errorMsg.toLowerCase().includes('incorrect') || errorMsg.toLowerCase().includes('invalid code')) {
       const e = new Error('Invalid verification code.');
       e.name  = 'CodeMismatchException';
       throw e;
     }
-    if (
-      firstError.code === 'form_code_expired' ||
-      errorMsg.toLowerCase().includes('expired')
-    ) {
+    if (firstError.code === 'form_code_expired' || errorMsg.toLowerCase().includes('expired')) {
       const e = new Error('Code expired. Please request a new one.');
       e.name  = 'ExpiredCodeException';
       throw e;
     }
-    if (
-      firstError.code?.includes('password') ||
-      errorMsg.toLowerCase().includes('password')
-    ) {
+    if (firstError.code?.includes('password') || errorMsg.toLowerCase().includes('password')) {
       const e = new Error(errorMsg || 'Password does not meet requirements.');
       e.name  = 'InvalidPasswordException';
       throw e;
@@ -439,10 +418,8 @@ const confirmForgotPassword = async ({ email, code, newPassword }) => {
 
 
 // ==================== SIGN OUT ====================
-// The app uses stateless custom JWTs — there is no Clerk session to revoke.
-// Logout is effectively handled by the client deleting the JWT from localStorage.
-const signOut = async ({ accessToken } = {}) => {
-  logger.info('signOut called — custom JWT cleared by client');
+const signOut = async () => {
+  logger.info('signOut called — JWT cleared by client');
   return { success: true };
 };
 

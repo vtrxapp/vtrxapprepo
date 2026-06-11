@@ -13,12 +13,12 @@
 
 const jwt     = require('jsonwebtoken');
 const prisma  = require('../config/database');
-const cognito = require('../services/clerkService');
+const clerk  = require('../services/clerkService');
 const logger  = require('../utils/logger');
 const { validationResult } = require('express-validator');
 const notif   = require('../services/notificationService');
 
-// Helper: sign our own JWT (separate from Cognito tokens)
+// Helper: sign our own JWT
 const signToken = (userId) => {
   return jwt.sign(
     { userId },
@@ -37,12 +37,8 @@ const signup = async (req, res) => {
   const { email, password, username, name, gender, age } = req.body;
 
   try {
-    // Step 1: Create user in Clerk
-    const { 
-      clerkUserId, 
-      emailVerification,
-      verificationId   // ← New
-    } = await cognito.signUp({ email, password, username, name });
+    const { clerkUserId, emailVerification, verificationId, emailAddressId } =
+      await clerk.signUp({ email, password, username, name });
 
     // Step 2: Create user in database
     const user = await prisma.user.create({
@@ -70,12 +66,7 @@ const signup = async (req, res) => {
     res.status(201).json({
       success: true,
       message: 'Account created! Please check your email to verify your account.',
-      data: {
-        userId: user.id,
-        email: user.email,
-        emailVerification,
-        verificationId,        // ← Return this to frontend
-      },
+      data: { userId: user.id, email: user.email, emailVerification, verificationId, emailAddressId },
     });
   } catch (error) {
     if (error.name === 'UsernameExistsException') {
@@ -93,7 +84,7 @@ const confirmEmail = async (req, res) => {
     return res.status(400).json({ success: false, errors: errors.array() });
   }
 
-  const { email, code, verificationId } = req.body;
+  const { email, code, verificationId, emailAddressId } = req.body;
 
   if (!email || !code) {
     return res.status(400).json({
@@ -103,9 +94,9 @@ const confirmEmail = async (req, res) => {
   }
 
   try {
-    logger.info(`confirmEmail called with verificationId: ${verificationId} | code: ${code}`);
+    logger.info(`confirmEmail called with verificationId: ${verificationId} | emailAddressId: ${emailAddressId} | code: ${code}`);
 
-    await cognito.confirmSignUp({ email, code, verificationId });
+    await clerk.confirmSignUp({ email, code, verificationId, emailAddressId });
 
     res.json({
       success: true,
@@ -133,9 +124,7 @@ const login = async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    // login() returns { success, clerkUserId, cognitoTokens: { accessToken, idToken } }
-    const loginResult  = await cognito.login({ email, password });
-    const cognitoTokens = loginResult.cognitoTokens || {};
+    await clerk.login({ email, password });
 
     const user = await prisma.user.findUnique({
       where: { email: email.toLowerCase() },
@@ -174,17 +163,23 @@ const login = async (req, res) => {
       message: 'Login successful',
       data: {
         token,
-        cognitoTokens,
         user: {
-          id: user.id,
-          email: user.email,
-          username: user.username,
-          name: user.name,
-          avatarUrl: user.avatarUrl,
-          goal: user.goal,
-          isPremium: user.isPremium,
-          streakDays: user.streakDays,
-          plan: user.subscription?.plan || 'free',
+          id:           user.id,
+          email:        user.email,
+          username:     user.username,
+          name:         user.name,
+          avatarUrl:    user.avatarUrl,
+          goal:         user.goal,
+          fitnessLevel: user.fitnessLevel,
+          daysPerWeek:  user.daysPerWeek,
+          weight:       user.weight,
+          height:       user.height,
+          gender:       user.gender,
+          equipment:    user.equipment,
+          location:     user.location,
+          isPremium:    user.isPremium,
+          streakDays:   user.streakDays,
+          plan:         user.subscription?.plan || 'free',
         },
       },
     });
@@ -215,13 +210,8 @@ const login = async (req, res) => {
 
 // ── POST /api/auth/logout ─────────────────────────────────────────────────────
 const logout = async (req, res) => {
-  const { cognitoAccessToken } = req.body;
-
   try {
-    if (cognitoAccessToken) {
-      await cognito.signOut({ accessToken: cognitoAccessToken });
-    }
-    // Our JWT is stateless — the client just deletes it
+    await clerk.signOut();
     res.json({ success: true, message: 'Logged out successfully' });
   } catch (error) {
     logger.error('Logout error:', error);
@@ -235,7 +225,7 @@ const forgotPassword = async (req, res) => {
   const { email } = req.body;
 
   try {
-    await cognito.forgotPassword({ email });
+    await clerk.forgotPassword({ email });
     // Always return success even if email doesn't exist (security best practice)
     res.json({
       success: true,
@@ -255,8 +245,8 @@ const resendVerificationCode = async (req, res) => {
   if (!email) return res.status(400).json({ success: false, message: 'Email is required.' });
 
   try {
-    await cognito.resendConfirmationCode({ email });
-    res.json({ success: true, message: 'Verification code resent. Check your inbox.' });
+    const result = await clerk.resendConfirmationCode({ email });
+    res.json({ success: true, message: 'Verification code resent. Check your inbox.', data: { verificationId: result.verificationId || null, emailAddressId: result.emailAddressId || null } });
   } catch (error) {
     if (error.name === 'LimitExceededException') {
       return res.status(429).json({ success: false, message: 'Too many attempts. Please wait a few minutes.' });
@@ -278,7 +268,7 @@ const resetPassword = async (req, res) => {
   }
 
   try {
-    await cognito.confirmForgotPassword({ email, code, newPassword });
+    await clerk.confirmForgotPassword({ email, code, newPassword });
     res.json({ success: true, message: 'Password reset successful. You can now log in.' });
   } catch (error) {
     if (error.name === 'CodeMismatchException') {

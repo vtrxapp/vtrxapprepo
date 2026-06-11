@@ -2553,12 +2553,12 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
         }),
       });
 
-      // ✅ ADD THESE LINES RIGHT HERE (after successful signup)
-      if (data.success && data.data?.verificationId) {
-        if (typeof localStorage !== "undefined") {
-          localStorage.setItem("vtrx_verification_id", data.data.verificationId);
-          localStorage.setItem("vtrx_pending_email", f.email.trim().toLowerCase());
-        }
+      if (data.success && typeof localStorage !== "undefined") {
+        localStorage.setItem("vtrx_pending_email", f.email.trim().toLowerCase());
+        // Store both IDs — the verification session ID (ver_xxx) and the email address ID (eoa_xxx)
+        // backend uses both as fallbacks when attempt_verification requires verification_id
+        if (data.data?.verificationId)  localStorage.setItem("vtrx_verification_id", data.data.verificationId);
+        if (data.data?.emailAddressId)  localStorage.setItem("vtrx_email_address_id", data.data.emailAddressId);
       }
 
       onContinue(f.email.trim().toLowerCase());
@@ -2653,10 +2653,13 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState("");
   const [resent, setResent] = React.useState(false);
-
-  const verificationId = typeof localStorage !== "undefined" 
-    ? localStorage.getItem("vtrx_verification_id") || "" 
-    : "";
+  // Keep both IDs in state — updated atomically on resend so verify() always has the fresh pair
+  const [verificationId, setVerificationId] = React.useState(
+    typeof localStorage !== "undefined" ? localStorage.getItem("vtrx_verification_id") || "" : ""
+  );
+  const [emailAddressId, setEmailAddressId] = React.useState(
+    typeof localStorage !== "undefined" ? localStorage.getItem("vtrx_email_address_id") || "" : ""
+  );
 
   const verify = async () => {
   if (code.length !== 6) {
@@ -2671,38 +2674,43 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
   setLoading(true);
   setError("");
 
-  try {
-    const response = await apiCall("/auth/confirm-email", {
-      method: "POST",
-      body: JSON.stringify({ 
-        email, 
-        code: code.trim(), 
-        verificationId 
-      }),
-    });
+    try {
+      const response = await apiCall("/auth/confirm-email", {
+        method: "POST",
+        body: JSON.stringify({ email, code: code.trim(), verificationId, emailAddressId }),
+      });
 
-    // STRICT SUCCESS CHECK
-    if (response && response.success === true) {
-      if (typeof localStorage !== "undefined") {
-        localStorage.removeItem("vtrx_verification_id");
+      if (response && response.success === true) {
+        if (typeof localStorage !== "undefined") {
+          localStorage.removeItem("vtrx_verification_id");
+          localStorage.removeItem("vtrx_email_address_id");
+        }
+        onVerified();
+      } else {
+        throw new Error(response?.message || "Invalid verification code");
       }
-      onVerified();
-    } else {
-      throw new Error(response?.message || "Invalid verification code");
+    } catch (e) {
+      console.error("Verification failed:", e);
+      setError(e.message || "Invalid or expired code. Please try again.");
+    } finally {
+      setLoading(false);
     }
-  } catch (e) {
-    console.error("Verification failed:", e);
-    setError(e.message || "Invalid or expired code. Please try again.");
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   // ... rest of the component (resend + return JSX) remains the same
 
   const resend = async () => {
     try {
-      await apiCall("/auth/resend-code", { method:"POST", body:JSON.stringify({ email }) });
+      const res = await apiCall("/auth/resend-code", { method:"POST", body:JSON.stringify({ email }) });
+      const newVerId    = res?.data?.verificationId  || "";
+      const newAddrId   = res?.data?.emailAddressId  || emailAddressId;  // keep old if resend doesn't return new
+      setVerificationId(newVerId);
+      setEmailAddressId(newAddrId);
+      if (typeof localStorage !== "undefined") {
+        if (newVerId)  localStorage.setItem("vtrx_verification_id",  newVerId);
+        else           localStorage.removeItem("vtrx_verification_id");
+        if (newAddrId) localStorage.setItem("vtrx_email_address_id", newAddrId);
+      }
       setResent(true);
       setError("New code has been sent to your email.");
       setTimeout(() => { setResent(false); setError(""); }, 4000);
