@@ -23,7 +23,7 @@ const apiCall = async (endpoint, options = {}) => {
     // Return plausible mock responses per endpoint
     if (endpoint === "/auth/signup")         return { success:true, data:{ message:"Account created" } };
     if (endpoint === "/auth/confirm-email")  return { success:true, data:{ message:"Verified" } };
-    if (endpoint === "/auth/login")          return { success:true, data:{ token:"demo_token", user:{ id:"demo", name:"Demo User", email:"demo@vtrx.app" }, cognitoTokens:{} } };
+    if (endpoint === "/auth/login")          return { success:true, data:{ token:"demo_token", user:{ id:"demo", name:"Demo User", email:"demo@vtrx.app" } } };
     if (endpoint === "/auth/me")             return { success:true, data:{ user:{ id:"demo", name:"Demo User", email:"demo@vtrx.app", isPremium:false, streakDays:7, goal:"Build Muscle", fitnessLevel:"Intermediate", daysPerWeek:5, weight:"82", height:"180", gender:"Male" } } };
     if (endpoint === "/users/profile")       return { success:true, data:{ user:{ id:"demo", name:"Demo User", streakDays:7, goal:"Build Muscle", fitnessLevel:"Intermediate", daysPerWeek:5, weight:"82", height:"180", gender:"Male", workoutsTotal:12 } } };
     if (endpoint.startsWith("/workouts/history")) return { success:true, data:{ logs:[ { id:"1", name:"Chest & Triceps", type:"STRENGTH", duration:45, caloriesBurned:320, completedAt:new Date(Date.now()-86400000).toISOString() }, { id:"2", name:"HIIT Cardio", type:"CARDIO", duration:30, caloriesBurned:280, completedAt:new Date(Date.now()-2*86400000).toISOString() } ] } };
@@ -63,7 +63,6 @@ const clearAuth = () => {
   if (typeof localStorage === "undefined") return;
   localStorage.removeItem("vtrx_token");
   localStorage.removeItem("vtrx_user");
-  localStorage.removeItem("vtrx_cognito_token");
 };
 
 const getAuthToken = () => {
@@ -2447,10 +2446,6 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
         // Update global user state
         if (d.user) {
           setUser(u => ({...u, ...d.user}));
-        }
-
-        if (d.cognitoTokens?.accessToken) {
-          localStorage.setItem("vtrx_cognito_token", d.cognitoTokens.accessToken);
         }
 
         onLogin(d.user);
@@ -7761,12 +7756,7 @@ function VTRXAppInner({ setPaymentPlan }) {
   // ── Dashboard ─────────────────────────────────────────────────────────────
   const handleLogout = async () => {
     try {
-      const cognitoToken = typeof localStorage !== "undefined"
-        ? localStorage.getItem("vtrx_cognito_token") : null;
-      await apiCall("/auth/logout", {
-        method: "POST",
-        body:   JSON.stringify({ cognitoAccessToken: cognitoToken }),
-      });
+      await apiCall("/auth/logout", { method: "POST", body: JSON.stringify({}) });
     } catch(_e){} finally {
       clearAuth();
     }

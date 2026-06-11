@@ -19,10 +19,11 @@ datasource db {
 }
 
 // ── USERS ─────────────────────────────────────────────────────────────────────
-// Stores your app users. cognitoId links to AWS Cognito (the real auth system).
+// Stores your app users. cognitoId holds the Clerk user ID (column name kept for
+// backward compat — renaming with db push would drop and recreate, losing data).
 model User {
   id              String    @id @default(uuid())
-  cognitoId         String    @unique  // AWS Cognito user ID
+  cognitoId         String    @unique  // Clerk user ID (usr_xxx)
   email           String    @unique
   username        String    @unique
   name            String?

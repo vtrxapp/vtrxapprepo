@@ -248,15 +248,7 @@ const login = async ({ email, password }) => {
 
     logger.info(`✅ Login successful for: ${email} (clerkId: ${user.id})`);
 
-    return {
-      success:   true,
-      clerkUserId: user.id,
-      // cognitoTokens is kept for backward compatibility with the controller/frontend
-      cognitoTokens: {
-        accessToken: user.id,
-        idToken:     user.id,
-      },
-    };
+    return { success: true, clerkUserId: user.id };
   } catch (err) {
     // Re-throw already-typed errors without wrapping
     if (err.name === 'NotAuthorizedException' || err.name === 'UserNotConfirmedException') {

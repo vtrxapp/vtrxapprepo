@@ -1,79 +1,44 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // src/services/authService.js — Authentication Service
-// ─────────────────────────────────────────────────────────────────────────────
-// All authentication API calls in one place.
-// Your components call these functions — they never call the API directly.
+// Auth is handled by Clerk on the backend (clerkService.js).
+// The app uses a custom JWT issued on login — not Clerk sessions.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import api from './api';
 
-// ── Sign Up ───────────────────────────────────────────────────────────────────
 export const signup = async ({ email, password, username, name, gender, age }) => {
-  const data = await api.post('/auth/signup', {
-    email, password, username, name, gender, age,
-  });
-  return data;
+  return api.post('/auth/signup', { email, password, username, name, gender, age });
 };
 
-// ── Confirm Email (after signup) ──────────────────────────────────────────────
-// ── Confirm Email (after signup) ──────────────────────────────────────────────
 export const confirmEmail = async ({ email, code, verificationId }) => {
-  return api.post('/auth/confirm-email', { 
-    email, 
-    code, 
-    verificationId   // ← This was missing
-  });
+  return api.post('/auth/confirm-email', { email, code, verificationId });
 };
 
-// ── Login ─────────────────────────────────────────────────────────────────────
 export const login = async ({ email, password }) => {
   const data = await api.post('/auth/login', { email, password });
-
   if (data.success) {
-    // Store the token and user in localStorage for persistence
-    // This means the user stays logged in after refreshing the page
     localStorage.setItem('vtrx_token', data.data.token);
     localStorage.setItem('vtrx_user',  JSON.stringify(data.data.user));
-
-    // Also store Cognito access token (needed for logout)
-    if (data.data.cognitoTokens?.accessToken) {
-      localStorage.setItem('vtrx_cognito_token', data.data.cognitoTokens.accessToken);
-    }
   }
-
   return data;
 };
 
-// ── Logout ────────────────────────────────────────────────────────────────────
 export const logout = async () => {
-  const cognitoAccessToken = localStorage.getItem('vtrx_cognito_token');
-
   try {
-    await api.post('/auth/logout', { cognitoAccessToken });
+    await api.post('/auth/logout', {});
   } finally {
-    // Always clear local storage, even if the API call fails
     localStorage.removeItem('vtrx_token');
     localStorage.removeItem('vtrx_user');
-    localStorage.removeItem('vtrx_cognito_token');
   }
 };
 
-// ── Forgot Password ───────────────────────────────────────────────────────────
-export const forgotPassword = async ({ email }) => {
-  return api.post('/auth/forgot-password', { email });
-};
+export const forgotPassword = async ({ email }) => api.post('/auth/forgot-password', { email });
 
-// ── Reset Password ────────────────────────────────────────────────────────────
-export const resetPassword = async ({ email, code, newPassword }) => {
-  return api.post('/auth/reset-password', { email, code, newPassword });
-};
+export const resetPassword = async ({ email, code, newPassword }) =>
+  api.post('/auth/reset-password', { email, code, newPassword });
 
-// ── Get Current User ──────────────────────────────────────────────────────────
-export const getMe = async () => {
-  return api.get('/auth/me');
-};
+export const getMe = async () => api.get('/auth/me');
 
-// ── Get stored user (from localStorage — no API call) ────────────────────────
 export const getStoredUser = () => {
   try {
     const user = localStorage.getItem('vtrx_user');
@@ -83,7 +48,4 @@ export const getStoredUser = () => {
   }
 };
 
-// ── Check if user is logged in ────────────────────────────────────────────────
-export const isAuthenticated = () => {
-  return !!localStorage.getItem('vtrx_token');
-};
+export const isAuthenticated = () => !!localStorage.getItem('vtrx_token');

@@ -1,24 +1,20 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // controllers/authController.js — Authentication Controller
 // ─────────────────────────────────────────────────────────────────────────────
-// Controllers handle the business logic for each API endpoint.
-// They receive a request, do the work, and send a response.
-//
-// Auth flow:
-// 1. SIGNUP: Create user in Cognito + create user record in our database
-// 2. LOGIN:  Authenticate with Cognito → issue our own JWT for the app
-// 3. LOGOUT: Invalidate Cognito tokens
-// 4. FORGOT PASSWORD: Cognito sends reset email
+// Auth flow (powered by Clerk BAPI):
+// 1. SIGNUP: Create user in Clerk + create user record in our database
+// 2. LOGIN:  Verify credentials with Clerk → issue our own JWT for the app
+// 3. LOGOUT: Stateless JWT — client deletes token from localStorage
+// 4. FORGOT PASSWORD: Clerk sends reset email via email_code verification
 // ─────────────────────────────────────────────────────────────────────────────
 
-const jwt     = require('jsonwebtoken');
-const prisma  = require('../config/database');
-const cognito = require('../services/clerkService');
-const logger  = require('../utils/logger');
+const jwt    = require('jsonwebtoken');
+const prisma = require('../config/database');
+const clerk  = require('../services/clerkService');
+const logger = require('../utils/logger');
 const { validationResult } = require('express-validator');
-const notif   = require('../services/notificationService');
+const notif  = require('../services/notificationService');
 
-// Helper: sign our own JWT (separate from Cognito tokens)
 const signToken = (userId) => {
   return jwt.sign(
     { userId },
@@ -37,17 +33,12 @@ const signup = async (req, res) => {
   const { email, password, username, name, gender, age } = req.body;
 
   try {
-    // Step 1: Create user in Clerk
-    const { 
-      clerkUserId, 
-      emailVerification,
-      verificationId   // ← New
-    } = await cognito.signUp({ email, password, username, name });
+    const { clerkUserId, emailVerification, verificationId } =
+      await clerk.signUp({ email, password, username, name });
 
-    // Step 2: Create user in database
     const user = await prisma.user.create({
       data: {
-        cognitoId: clerkUserId,
+        cognitoId: clerkUserId,   // column keeps its name; value is the Clerk user ID
         email: email.toLowerCase(),
         username: username.toLowerCase(),
         name: name || username,
@@ -56,13 +47,8 @@ const signup = async (req, res) => {
       },
     });
 
-    // Step 3: Free subscription
     await prisma.subscription.create({
-      data: {
-        userId: user.id,
-        plan: 'free',
-        status: 'active',
-      },
+      data: { userId: user.id, plan: 'free', status: 'active' },
     });
 
     logger.info(`New user signed up: ${email}`);
@@ -70,12 +56,7 @@ const signup = async (req, res) => {
     res.status(201).json({
       success: true,
       message: 'Account created! Please check your email to verify your account.',
-      data: {
-        userId: user.id,
-        email: user.email,
-        emailVerification,
-        verificationId,        // ← Return this to frontend
-      },
+      data: { userId: user.id, email: user.email, emailVerification, verificationId },
     });
   } catch (error) {
     if (error.name === 'UsernameExistsException') {
@@ -96,30 +77,18 @@ const confirmEmail = async (req, res) => {
   const { email, code, verificationId } = req.body;
 
   if (!email || !code) {
-    return res.status(400).json({
-      success: false,
-      message: 'Email and code are required'
-    });
+    return res.status(400).json({ success: false, message: 'Email and code are required' });
   }
 
   try {
     logger.info(`confirmEmail called with verificationId: ${verificationId} | code: ${code}`);
 
-    await cognito.confirmSignUp({ email, code, verificationId });
+    await clerk.confirmSignUp({ email, code, verificationId });
 
-    res.json({
-      success: true,
-      message: 'Email confirmed successfully. You can now log in.'
-    });
+    res.json({ success: true, message: 'Email confirmed successfully. You can now log in.' });
   } catch (error) {
     logger.error('=== CONFIRM EMAIL ERROR ===', JSON.stringify(error, null, 2));
-
-    const message = error.message || 'Invalid or expired verification code.';
-
-    res.status(400).json({
-      success: false,
-      message: message
-    });
+    res.status(400).json({ success: false, message: error.message || 'Invalid or expired verification code.' });
   }
 };
 
@@ -133,9 +102,7 @@ const login = async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    // login() returns { success, clerkUserId, cognitoTokens: { accessToken, idToken } }
-    const loginResult  = await cognito.login({ email, password });
-    const cognitoTokens = loginResult.cognitoTokens || {};
+    await clerk.login({ email, password });
 
     const user = await prisma.user.findUnique({
       where: { email: email.toLowerCase() },
@@ -143,16 +110,10 @@ const login = async (req, res) => {
     });
 
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'Account not found. Please sign up.',
-      });
+      return res.status(404).json({ success: false, message: 'Account not found. Please sign up.' });
     }
 
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { lastActiveAt: new Date() },
-    });
+    await prisma.user.update({ where: { id: user.id }, data: { lastActiveAt: new Date() } });
 
     const token = signToken(user.id);
 
@@ -175,7 +136,6 @@ const login = async (req, res) => {
       message: 'Login successful',
       data: {
         token,
-        cognitoTokens,
         user: {
           id:           user.id,
           email:        user.email,
@@ -200,40 +160,25 @@ const login = async (req, res) => {
     logger.error('Login error:', error);
 
     if (error.name === 'NotAuthorizedException' || error.message?.toLowerCase().includes('incorrect') || error.message?.toLowerCase().includes('invalid')) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Incorrect email or password.' 
-      });
+      return res.status(401).json({ success: false, message: 'Incorrect email or password.' });
     }
 
     if (error.name === 'UserNotConfirmedException') {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Please verify your email before logging in.', 
-        code: 'EMAIL_NOT_CONFIRMED' 
-      });
+      return res.status(401).json({ success: false, message: 'Please verify your email before logging in.', code: 'EMAIL_NOT_CONFIRMED' });
     }
 
-    res.status(500).json({ 
-      success: false, 
-      message: 'Login failed. Please try again.' 
-    });
+    res.status(500).json({ success: false, message: 'Login failed. Please try again.' });
   }
 };
 
 // ── POST /api/auth/logout ─────────────────────────────────────────────────────
+// JWT is stateless — the client just deletes it. No server-side revocation needed.
 const logout = async (req, res) => {
-  const { cognitoAccessToken } = req.body;
-
   try {
-    if (cognitoAccessToken) {
-      await cognito.signOut({ accessToken: cognitoAccessToken });
-    }
-    // Our JWT is stateless — the client just deletes it
+    await clerk.signOut();
     res.json({ success: true, message: 'Logged out successfully' });
   } catch (error) {
     logger.error('Logout error:', error);
-    // Still return success — client should delete their token regardless
     res.json({ success: true, message: 'Logged out' });
   }
 };
@@ -243,27 +188,21 @@ const forgotPassword = async (req, res) => {
   const { email } = req.body;
 
   try {
-    await cognito.forgotPassword({ email });
-    // Always return success even if email doesn't exist (security best practice)
-    res.json({
-      success: true,
-      message: 'If an account exists with this email, you will receive a password reset code.',
-    });
+    await clerk.forgotPassword({ email });
+    res.json({ success: true, message: 'If an account exists with this email, you will receive a password reset code.' });
   } catch (error) {
     logger.error('Forgot password error:', error);
     res.json({ success: true, message: 'If an account exists with this email, you will receive a password reset code.' });
   }
 };
 
-
 // ── POST /api/auth/resend-code ────────────────────────────────────────────────
-// Resends the email verification code to a user who didn't receive it
 const resendVerificationCode = async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ success: false, message: 'Email is required.' });
 
   try {
-    const result = await cognito.resendConfirmationCode({ email });
+    const result = await clerk.resendConfirmationCode({ email });
     res.json({ success: true, message: 'Verification code resent. Check your inbox.', data: { verificationId: result.verificationId || null } });
   } catch (error) {
     if (error.name === 'LimitExceededException') {
@@ -286,54 +225,28 @@ const resetPassword = async (req, res) => {
   }
 
   try {
-    await cognito.confirmForgotPassword({ email, code, newPassword });
+    await clerk.confirmForgotPassword({ email, code, newPassword });
     res.json({ success: true, message: 'Password reset successful. You can now log in.' });
   } catch (error) {
-    if (error.name === 'CodeMismatchException') {
-      return res.status(400).json({ success: false, message: 'Invalid verification code.' });
-    }
-    if (error.name === 'ExpiredCodeException') {
-      return res.status(400).json({ success: false, message: 'Code expired. Please request a new one.' });
-    }
-    if (error.name === 'InvalidPasswordException') {
-      return res.status(400).json({ success: false, message: error.message || 'Password does not meet requirements.' });
-    }
-    if (error.name === 'UserNotFoundException') {
-      return res.status(404).json({ success: false, message: 'No account found with this email.' });
-    }
+    if (error.name === 'CodeMismatchException')    return res.status(400).json({ success: false, message: 'Invalid verification code.' });
+    if (error.name === 'ExpiredCodeException')     return res.status(400).json({ success: false, message: 'Code expired. Please request a new one.' });
+    if (error.name === 'InvalidPasswordException') return res.status(400).json({ success: false, message: error.message || 'Password does not meet requirements.' });
+    if (error.name === 'UserNotFoundException')    return res.status(404).json({ success: false, message: 'No account found with this email.' });
     logger.error('Reset password error:', error);
     res.status(500).json({ success: false, message: 'Password reset failed. Please try again.' });
   }
 };
 
 // ── GET /api/auth/me ──────────────────────────────────────────────────────────
-// Returns the currently logged in user's profile
 const getMe = async (req, res) => {
-  // req.user is set by the protect middleware
   const user = await prisma.user.findUnique({
     where: { id: req.user.id },
     include: {
       subscription: true,
-      _count: {
-        select: {
-          workoutLogs:   true,
-          savedWorkouts: true,
-          savedMeals:    true,
-        },
-      },
+      _count: { select: { workoutLogs: true, savedWorkouts: true, savedMeals: true } },
     },
   });
-
   res.json({ success: true, data: { user } });
 };
 
-module.exports = {
-  signup,
-  confirmEmail,
-  login,
-  logout,
-  forgotPassword,
-  resetPassword,
-  getMe,
-  resendVerificationCode,
-};
+module.exports = { signup, confirmEmail, login, logout, forgotPassword, resetPassword, getMe, resendVerificationCode };

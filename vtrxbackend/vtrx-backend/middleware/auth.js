@@ -44,7 +44,7 @@ const protect = async (req, res, next) => {
         username:     true,
         name:         true,
         isPremium:    true,
-        cognitoId:    true,
+        cognitoId:    true,   // column stores Clerk user ID (usr_xxx)
         goal:         true,
         fitnessLevel: true,
         streakDays:   true,
