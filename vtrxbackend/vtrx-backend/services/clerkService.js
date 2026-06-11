@@ -76,9 +76,10 @@ const signUp = async ({ email, password, username, name }) => {
           `/email_addresses/${emailAddr.id}/prepare_verification`,
           { strategy: 'email_code' }
         );
-        // Clerk returns the email_address object; verification.id is on the verification sub-object
-        verificationId = prepareRes?.verification?.id || prepareRes?.id || null;
-        logger.info(`Verification prepared for ${email} | verificationId: ${verificationId}`);
+        // prepareRes?.id is the email_address ID (eoa_xxx) — NOT the verification ID.
+        // Only use verification?.id (ver_xxx) if Clerk returns it.
+        verificationId = prepareRes?.verification?.id || null;
+        logger.info(`Verification prepared for ${email} | emailAddrId: ${emailAddr.id} | verificationId: ${verificationId}`);
       } catch (e) {
         // Log the full Clerk error so it is visible in Railway logs
         logger.error(`prepare_verification FAILED for ${email}: ${JSON.stringify(e)}`);
@@ -119,13 +120,29 @@ const confirmSignUp = async ({ email, code, verificationId }) => {
     const emailAddr = user.email_addresses?.find(e => e.email_address === email);
     if (!emailAddr) throw new Error('Email address not found on this account.');
 
-    // Always submit the code — never short-circuit on a pre-existing 'verified' status.
-    // NOTE: verification_id must be included in the BAPI attempt_verification body
-    const result = await clerkAPI(
-      'POST',
-      `/email_addresses/${emailAddr.id}/attempt_verification`,
-      { code: String(code), ...(verificationId ? { verification_id: String(verificationId) } : {}) }
-    );
+    // Try with just { code } first — the standard BAPI behavior.
+    // If Clerk returns an error explicitly requiring verification_id, retry with it.
+    let result;
+    try {
+      result = await clerkAPI(
+        'POST',
+        `/email_addresses/${emailAddr.id}/attempt_verification`,
+        { code: String(code) }
+      );
+    } catch (firstErr) {
+      const firstErrMsg = (firstErr?.errors?.[0]?.message || firstErr?.errors?.[0]?.longMessage || JSON.stringify(firstErr)).toLowerCase();
+      logger.error(`attempt_verification (no vid) failed for ${email}: ${JSON.stringify(firstErr)}`);
+      if ((firstErrMsg.includes('verification_id') || firstErrMsg.includes('verification id')) && verificationId) {
+        logger.info(`Retrying attempt_verification WITH verification_id: ${verificationId}`);
+        result = await clerkAPI(
+          'POST',
+          `/email_addresses/${emailAddr.id}/attempt_verification`,
+          { code: String(code), verification_id: String(verificationId) }
+        );
+      } else {
+        throw firstErr;
+      }
+    }
 
     if (result?.verification?.status !== 'verified') {
       logger.error(`Unexpected verification status after attempt: ${result?.verification?.status}`);
@@ -298,9 +315,10 @@ const resendConfirmationCode = async ({ email }) => {
       `/email_addresses/${emailAddr.id}/prepare_verification`,
       { strategy: 'email_code' }
     );
-    const newVerificationId = prepareRes?.verification?.id || prepareRes?.id || null;
+    // prepareRes?.id is the email_address ID (eoa_xxx) — not the verification ID
+    const newVerificationId = prepareRes?.verification?.id || null;
 
-    logger.info(`Verification code resent to: ${email} | new verificationId: ${newVerificationId}`);
+    logger.info(`Verification code resent to: ${email} | emailAddrId: ${emailAddr.id} | new verificationId: ${newVerificationId}`);
     return { success: true, verificationId: newVerificationId };
   } catch (err) {
     if (err.name === 'UserNotFoundException') throw err;

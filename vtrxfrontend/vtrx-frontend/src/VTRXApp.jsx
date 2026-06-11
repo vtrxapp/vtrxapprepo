@@ -2700,65 +2700,56 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState("");
   const [resent, setResent] = React.useState(false);
-
-  const verificationId = typeof localStorage !== "undefined" 
-    ? localStorage.getItem("vtrx_verification_id") || "" 
-    : "";
+  // Keep verificationId in state so verify() always reads the latest value after a resend
+  const [verificationId, setVerificationId] = React.useState(
+    typeof localStorage !== "undefined" ? localStorage.getItem("vtrx_verification_id") || "" : ""
+  );
 
   const verify = async () => {
-  if (code.length !== 6) {
-    setError("Please enter the full 6-digit code");
-    return;
-  }
-  if (!verificationId) {
-    setError("Session expired. Please sign up again.");
-    return;
-  }
-
-  setLoading(true);
-  setError("");
-
-  try {
-    const response = await apiCall("/auth/confirm-email", {
-      method: "POST",
-      body: JSON.stringify({ 
-        email, 
-        code: code.trim(), 
-        verificationId 
-      }),
-    });
-
-    // STRICT SUCCESS CHECK
-    if (response && response.success === true) {
-      if (typeof localStorage !== "undefined") {
-        localStorage.removeItem("vtrx_verification_id");
-      }
-      onVerified();
-    } else {
-      throw new Error(response?.message || "Invalid verification code");
+    if (code.length !== 6) {
+      setError("Please enter the full 6-digit code");
+      return;
     }
-  } catch (e) {
-    console.error("Verification failed:", e);
-    setError(e.message || "Invalid or expired code. Please try again.");
-  } finally {
-    setLoading(false);
-  }
-};
 
-  // ... rest of the component (resend + return JSX) remains the same
+    setLoading(true);
+    setError("");
+
+    try {
+      const response = await apiCall("/auth/confirm-email", {
+        method: "POST",
+        body: JSON.stringify({ email, code: code.trim(), verificationId }),
+      });
+
+      if (response && response.success === true) {
+        if (typeof localStorage !== "undefined") {
+          localStorage.removeItem("vtrx_verification_id");
+        }
+        onVerified();
+      } else {
+        throw new Error(response?.message || "Invalid verification code");
+      }
+    } catch (e) {
+      setError(e.message || "Invalid or expired code. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const resend = async () => {
     try {
       const res = await apiCall("/auth/resend-code", { method:"POST", body:JSON.stringify({ email }) });
-      // Update stored verificationId so the next attempt uses the fresh one
-      if (res?.data?.verificationId && typeof localStorage !== "undefined") {
-        localStorage.setItem("vtrx_verification_id", res.data.verificationId);
+      const newVerId = res?.data?.verificationId || "";
+      // Update both state and localStorage so the next verify() call uses the fresh ID
+      setVerificationId(newVerId);
+      if (typeof localStorage !== "undefined") {
+        if (newVerId) localStorage.setItem("vtrx_verification_id", newVerId);
+        else localStorage.removeItem("vtrx_verification_id");
       }
       setResent(true);
       setError("New code has been sent to your email.");
       setTimeout(() => { setResent(false); setError(""); }, 4000);
-    } catch(_e){
-      setError("Failed to resend code. Please try again.");
+    } catch (e) {
+      setError(e.message || "Failed to resend code. Please try again.");
     }
   };
 
