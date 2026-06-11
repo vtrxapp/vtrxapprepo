@@ -107,31 +107,45 @@ const signUp = async ({ email, password, username, name }) => {
 
 
 // ==================== CONFIRM SIGN UP (email verification) ====================
-const confirmSignUp = async ({ email, code, verificationId }) => {
+const confirmSignUp = async ({ email, code, verificationId, emailAddressId }) => {
   try {
-    logger.info(`confirmSignUp: email=${email} code=${code} verificationId=${verificationId}`);
+    logger.info(`confirmSignUp: email=${email} verificationId=${verificationId} emailAddressId=${emailAddressId}`);
 
-    // Find the Clerk user by email address
+    // Find the Clerk user by email address (for verified-status check)
     const search = await clerkAPI('GET', `/users?email_address=${encodeURIComponent(email)}`);
     const users  = toArray(search);
     if (!users.length) throw new Error('User not found.');
 
-    const user      = users[0];
+    const user = users[0];
+
+    // Short-circuit if any email address for this user is already verified
+    const verifiedAddr = user.email_addresses?.find(
+      e => e.email_address === email && e.verification?.status === 'verified'
+    );
+    if (verifiedAddr) {
+      logger.info(`Email ${email} is already verified — skipping attempt`);
+      return { success: true };
+    }
+
+    // Use the emailAddressId from signup (where prepare_verification was called).
+    // This MUST match the one used in prepare_verification — a fresh lookup can return
+    // a different idn_xxx object if the user has multiple email entries in Clerk.
     const emailAddr = user.email_addresses?.find(e => e.email_address === email);
-    if (!emailAddr) throw new Error('Email address not found on this account.');
+    const targetEmailAddrId = emailAddressId || emailAddr?.id;
+    if (!targetEmailAddrId) throw new Error('Email address not found on this account.');
 
     // Clerk requires verification_id — always include it when available.
     const attemptBody = verificationId
       ? { code: String(code), verification_id: String(verificationId) }
       : { code: String(code) };
 
-    logger.info(`attempt_verification for ${email} | emailAddrId: ${emailAddr.id} | hasVid: ${!!verificationId}`);
+    logger.info(`attempt_verification for ${email} | emailAddrId: ${targetEmailAddrId} | hasVid: ${!!verificationId}`);
 
     let result;
     try {
       result = await clerkAPI(
         'POST',
-        `/email_addresses/${emailAddr.id}/attempt_verification`,
+        `/email_addresses/${targetEmailAddrId}/attempt_verification`,
         attemptBody
       );
     } catch (firstErr) {
@@ -279,9 +293,9 @@ const login = async ({ email, password }) => {
 
 
 // ==================== RESEND CONFIRMATION CODE ====================
-const resendConfirmationCode = async ({ email }) => {
+const resendConfirmationCode = async ({ email, emailAddressId }) => {
   try {
-    logger.info(`Resending verification code for: ${email}`);
+    logger.info(`Resending verification code for: ${email} | emailAddressId: ${emailAddressId}`);
 
     const searchResult = await clerkAPI('GET', `/users?email_address=${encodeURIComponent(email)}`);
     const users        = toArray(searchResult);
@@ -302,19 +316,22 @@ const resendConfirmationCode = async ({ email }) => {
     }
 
     if (emailAddr.verification?.status === 'verified') {
-      return { success: true, message: 'Email is already verified.' };
+      return { success: true, verificationId: null, emailAddressId: emailAddr.id };
     }
+
+    // Use the emailAddressId from the original signup to stay consistent.
+    // The fresh lookup can return a different idn_xxx if the user has multiple entries.
+    const targetId = emailAddressId || emailAddr.id;
 
     const prepareRes = await clerkAPI(
       'POST',
-      `/email_addresses/${emailAddr.id}/prepare_verification`,
+      `/email_addresses/${targetId}/prepare_verification`,
       { strategy: 'email_code' }
     );
-    // prepareRes?.id is the email_address ID (eoa_xxx) — not the verification ID
     const newVerificationId = prepareRes?.verification?.id || null;
 
-    logger.info(`Verification code resent to: ${email} | emailAddrId: ${emailAddr.id} | new verificationId: ${newVerificationId}`);
-    return { success: true, verificationId: newVerificationId };
+    logger.info(`Code resent to: ${email} | emailAddrId: ${targetId} | new verificationId: ${newVerificationId}`);
+    return { success: true, verificationId: newVerificationId, emailAddressId: targetId };
   } catch (err) {
     if (err.name === 'UserNotFoundException') throw err;
 

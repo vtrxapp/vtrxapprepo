@@ -33,7 +33,7 @@ const signup = async (req, res) => {
   const { email, password, username, name, gender, age } = req.body;
 
   try {
-    const { clerkUserId, emailVerification, verificationId } =
+    const { clerkUserId, emailVerification, verificationId, emailAddressId } =
       await clerk.signUp({ email, password, username, name });
 
     const user = await prisma.user.create({
@@ -56,7 +56,7 @@ const signup = async (req, res) => {
     res.status(201).json({
       success: true,
       message: 'Account created! Please check your email to verify your account.',
-      data: { userId: user.id, email: user.email, emailVerification, verificationId },
+      data: { userId: user.id, email: user.email, emailVerification, verificationId, emailAddressId },
     });
   } catch (error) {
     if (error.name === 'UsernameExistsException') {
@@ -74,16 +74,16 @@ const confirmEmail = async (req, res) => {
     return res.status(400).json({ success: false, errors: errors.array() });
   }
 
-  const { email, code, verificationId } = req.body;
+  const { email, code, verificationId, emailAddressId } = req.body;
 
   if (!email || !code) {
     return res.status(400).json({ success: false, message: 'Email and code are required' });
   }
 
   try {
-    logger.info(`confirmEmail called with verificationId: ${verificationId} | code: ${code}`);
+    logger.info(`confirmEmail called with verificationId: ${verificationId} | emailAddressId: ${emailAddressId} | code: ${code}`);
 
-    await clerk.confirmSignUp({ email, code, verificationId });
+    await clerk.confirmSignUp({ email, code, verificationId, emailAddressId });
 
     res.json({ success: true, message: 'Email confirmed successfully. You can now log in.' });
   } catch (error) {
@@ -198,12 +198,12 @@ const forgotPassword = async (req, res) => {
 
 // ── POST /api/auth/resend-code ────────────────────────────────────────────────
 const resendVerificationCode = async (req, res) => {
-  const { email } = req.body;
+  const { email, emailAddressId } = req.body;
   if (!email) return res.status(400).json({ success: false, message: 'Email is required.' });
 
   try {
-    const result = await clerk.resendConfirmationCode({ email });
-    res.json({ success: true, message: 'Verification code resent. Check your inbox.', data: { verificationId: result.verificationId || null } });
+    const result = await clerk.resendConfirmationCode({ email, emailAddressId });
+    res.json({ success: true, message: 'Verification code resent. Check your inbox.', data: { verificationId: result.verificationId || null, emailAddressId: result.emailAddressId || null } });
   } catch (error) {
     if (error.name === 'LimitExceededException') {
       return res.status(429).json({ success: false, message: 'Too many attempts. Please wait a few minutes.' });
