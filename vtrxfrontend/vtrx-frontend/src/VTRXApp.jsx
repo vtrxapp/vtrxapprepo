@@ -4981,11 +4981,11 @@ function PersonalDetailsPage({ onBack }) {
   };
 
   const save = async () => {
-    setUser(u=>({...u, name, dob, gender, weight, height}));
+    setUser(u=>({...u, name, dob, age: dob, gender, weight, height}));
     setSaved(true);
     setTimeout(()=>setSaved(false), 2200);
     if (!DEMO_MODE && getAuthToken()) {
-      apiCall("/users/profile", { method:"PUT", body:JSON.stringify({ name, gender, weight, height }) }).catch(_e=>{});
+      apiCall("/users/profile", { method:"PUT", body:JSON.stringify({ name, age: dob, gender, weight, height }) }).catch(_e=>{});
     }
   };
 
@@ -5072,8 +5072,8 @@ function GoalIcon({ type }) {
 function FitnessGoalPage({ onBack }) {
   const { user, setUser } = useUser();
   const [goal, setGoal]   = useState(user.goal);
-  const [level, setLevel] = useState(user.level);
-  const [days, setDays]   = useState(user.days);
+  const [level, setLevel] = useState(user.fitnessLevel || user.level || "");
+  const [days, setDays]   = useState(Number(user.daysPerWeek || user.days) || 5);
   const [saved, setSaved] = useState(false);
 
   const goals = [
@@ -7552,14 +7552,19 @@ function VTRXAppInner({ setPaymentPlan }) {
       if (res?.data?.user) {
         const u = res.data.user;
         setUser(prev=>({...prev,
-          name:         u.name        || prev.name,
-          email:        u.email       || prev.email,
-          goal:         u.goal        || prev.goal,
-          fitnessLevel: u.fitnessLevel|| prev.fitnessLevel,
-          daysPerWeek:  u.daysPerWeek || prev.daysPerWeek,
-          weight:       u.weight      || prev.weight,
-          height:       u.height      || prev.height,
-          gender:       u.gender      || prev.gender,
+          name:         u.name         || prev.name,
+          email:        u.email        || prev.email,
+          goal:         u.goal         || prev.goal,
+          fitnessLevel: u.fitnessLevel || prev.fitnessLevel,
+          level:        u.fitnessLevel || prev.level,
+          daysPerWeek:  u.daysPerWeek  || prev.daysPerWeek,
+          days:         u.daysPerWeek  || prev.days,
+          weight:       u.weight       || prev.weight,
+          height:       u.height       || prev.height,
+          gender:       u.gender       || prev.gender,
+          age:          u.age          || prev.age,
+          equipment:    u.equipment    || prev.equipment,
+          location:     u.location     || prev.location,
         }));
         if (u.streakDays)             setStreakDay(u.streakDays);
         if (u._count?.workoutLogs)   setWorkoutsTotal(u._count.workoutLogs);

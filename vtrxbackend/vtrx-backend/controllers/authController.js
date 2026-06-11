@@ -142,6 +142,7 @@ const login = async (req, res) => {
           username:     user.username,
           name:         user.name,
           avatarUrl:    user.avatarUrl,
+          age:          user.age,
           goal:         user.goal,
           fitnessLevel: user.fitnessLevel,
           daysPerWeek:  user.daysPerWeek,
