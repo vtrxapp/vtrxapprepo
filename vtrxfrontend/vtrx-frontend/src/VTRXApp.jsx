@@ -2821,7 +2821,15 @@ function BodyScreen({ onContinue, onBack }) {
   };
 
   const handleContinue = () => {
-    setUser(u=>({...u, weight, height, dob, gender}));
+    const weightKg = toKg(weight, weightUnit);
+    const heightCm = toCm(height, heightUnit);
+    const ageVal   = calcAgeFromDob(dob);
+    try {
+      localStorage.setItem("vtrx_weight_unit", weightUnit);
+      localStorage.setItem("vtrx_height_unit", heightUnit);
+      if (dob) localStorage.setItem("vtrx_user_dob", dob);
+    } catch {}
+    setUser(u=>({...u, weight: weightKg, height: heightCm, dob, age: ageVal, gender}));
     onContinue();
   };
 
@@ -4884,15 +4892,65 @@ function DetailFieldIcon({ type }) {
   if (type==="ruler") return <svg {...s}><path d="M21 6H3a2 2 0 00-2 2v8a2 2 0 002 2h18a2 2 0 002-2V8a2 2 0 00-2-2z"/><line x1="7" y1="6" x2="7" y2="10"/><line x1="12" y1="6" x2="12" y2="12"/><line x1="17" y1="6" x2="17" y2="10"/></svg>;
   return <svg {...s}><circle cx="12" cy="12" r="10"/></svg>;
 }
+
+// ─── Measurement helpers ──────────────────────────────────────────────────────
+function calcAgeFromDob(dob) {
+  if (!dob || typeof dob !== "string") return null;
+  const parts = dob.split("/");
+  let d;
+  if (parts.length === 3 && parts[2]?.length === 4) {
+    d = new Date(`${parts[2]}-${parts[1].padStart(2,"0")}-${parts[0].padStart(2,"0")}`);
+  } else { d = new Date(dob); }
+  if (isNaN(d.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - d.getFullYear();
+  const m = today.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < d.getDate())) age--;
+  return age >= 1 ? age : null;
+}
+function kgToDisplay(kg, unit) {
+  const v = parseFloat(kg); if (!v) return "";
+  return unit === "lbs" ? (v * 2.20462).toFixed(1) : String(v);
+}
+function cmToDisplay(cm, unit) {
+  const v = parseFloat(cm); if (!v) return "";
+  if (unit === "ft") {
+    const totalIn = v / 2.54;
+    const ft = Math.floor(totalIn / 12);
+    const ins = Math.round(totalIn % 12);
+    return `${ft}'${ins}`;
+  }
+  return String(Math.round(v));
+}
+function toKg(val, unit) {
+  const v = parseFloat(val);
+  if (isNaN(v) || v <= 0) return null;
+  return unit === "lbs" ? parseFloat((v * 0.453592).toFixed(1)) : v;
+}
+function toCm(val, unit) {
+  if (unit === "ft") {
+    const m = String(val).match(/(\d+)[^\d]*(\d*)/);
+    if (!m) return null;
+    const cm = Math.round((parseInt(m[1]) || 0) * 30.48 + (parseInt(m[2] || 0) || 0) * 2.54);
+    return cm > 0 ? cm : null;
+  }
+  const v = parseFloat(val);
+  return isNaN(v) || v <= 0 ? null : Math.round(v);
+}
+function getUnitPref(key, fallback) {
+  try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
+}
 function PersonalDetailsPage({ onBack }) {
   const { user, setUser } = useUser();
+  const initWU = getUnitPref("vtrx_weight_unit", "kg");
+  const initHU = getUnitPref("vtrx_height_unit", "cm");
   const [name,       setName]       = useState(user.name || "");
-  const [dob,        setDob]        = useState(user.dob || user.age || "");
+  const [dob,        setDob]        = useState(() => { try { return localStorage.getItem("vtrx_user_dob") || ""; } catch { return ""; } });
   const [gender,     setGender]     = useState(user.gender || "");
-  const [weight,     setWeight]     = useState(user.weight || "");
-  const [height,     setHeight]     = useState(user.height || "");
-  const [weightUnit, setWeightUnit] = useState("lbs");
-  const [heightUnit, setHeightUnit] = useState("ft");
+  const [weightUnit, setWeightUnit] = useState(initWU);
+  const [heightUnit, setHeightUnit] = useState(initHU);
+  const [weight,     setWeight]     = useState(() => kgToDisplay(user.weight, initWU));
+  const [height,     setHeight]     = useState(() => cmToDisplay(user.height, initHU));
   const [saved,      setSaved]      = useState(false);
 
   // Weight unit conversion
@@ -4937,11 +4995,19 @@ function PersonalDetailsPage({ onBack }) {
   };
 
   const save = async () => {
-    setUser(u=>({...u, name, dob, gender, weight, height}));
+    const ageVal   = calcAgeFromDob(dob);
+    const weightKg = toKg(weight, weightUnit);
+    const heightCm = toCm(height, heightUnit);
+    try {
+      localStorage.setItem("vtrx_weight_unit", weightUnit);
+      localStorage.setItem("vtrx_height_unit", heightUnit);
+      if (dob) localStorage.setItem("vtrx_user_dob", dob);
+    } catch {}
+    setUser(u=>({...u, name, dob, age: ageVal, gender, weight: weightKg, height: heightCm}));
     setSaved(true);
     setTimeout(()=>setSaved(false), 2200);
     if (!DEMO_MODE && getAuthToken()) {
-      apiCall("/users/profile", { method:"PUT", body:JSON.stringify({ name, gender, weight, height }) }).catch(_e=>{});
+      apiCall("/users/profile", { method:"PUT", body:JSON.stringify({ name, age: ageVal, gender, weight: weightKg, height: heightCm }) }).catch(_e=>{});
     }
   };
 
@@ -4962,7 +5028,23 @@ function PersonalDetailsPage({ onBack }) {
       {/* Name, DOB, Gender */}
       <div style={{ background:"#ffffff",borderRadius:20,border:"1px solid #e8e8e8",padding:"20px",marginBottom:14 }}>
         <DarkInput label="FULL NAME" value={name} onChange={setName}/>
-        <DarkInput label="DATE OF BIRTH" value={dob} onChange={setDob} placeholder="DD/MM/YYYY"/>
+        <div style={{ marginBottom:16 }}>
+          <div style={{ fontFamily:FONT,fontWeight:600,fontSize:12,color:"#888888",letterSpacing:0.5,marginBottom:7 }}>DATE OF BIRTH</div>
+          <input value={dob} placeholder="DD/MM/YYYY" inputMode="numeric"
+            onChange={e=>{
+              let v = e.target.value.replace(/[^0-9]/g,"");
+              if (v.length > 2) v = v.slice(0,2)+"/"+v.slice(2);
+              if (v.length > 5) v = v.slice(0,5)+"/"+v.slice(5);
+              if (v.length > 10) v = v.slice(0,10);
+              setDob(v);
+            }}
+            style={{ width:"100%",background:CARD2,border:`1.5px solid ${BORDER}`,borderRadius:14,padding:"14px 16px",fontFamily:FONT,fontSize:14,fontWeight:500,color:"#ffffff",outline:"none",boxSizing:"border-box",transition:"border-color 0.2s" }}/>
+          {dob && calcAgeFromDob(dob) != null && (
+            <div style={{ fontFamily:FONT,fontSize:12,color:"#888",marginTop:6 }}>
+              Age: {calcAgeFromDob(dob)} years
+            </div>
+          )}
+        </div>
         <div style={{ marginBottom:16 }}>
           <div style={{ fontFamily:FONT,fontWeight:600,fontSize:12,color:"#888888",letterSpacing:0.5,marginBottom:8 }}>GENDER</div>
           <div style={{ display:"flex",gap:8 }}>
@@ -5736,7 +5818,13 @@ function AccountSettingsPage({ onBack, onLogout }) {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#bbb" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
           </button>
           <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",padding:"14px 0",borderBottom:"1px solid #f0f0f0" }}>
-            {[{lbl:"Age",val:`${user.age} years`},{lbl:"Gender",val:user.gender},{lbl:"Weight",val:`${user.weight} kg`},{lbl:"Height",val:`${user.height} cm`}].map((s,i)=>(
+            {(()=>{
+              const wu = getUnitPref("vtrx_weight_unit","kg");
+              const hu = getUnitPref("vtrx_height_unit","cm");
+              const wDisp = kgToDisplay(user.weight, wu);
+              const hDisp = cmToDisplay(user.height, hu);
+              return [{lbl:"Age",val:user.age ? `${user.age} yrs` : "—"},{lbl:"Gender",val:user.gender||"—"},{lbl:"Weight",val:wDisp ? `${wDisp} ${wu}` : "—"},{lbl:"Height",val:hDisp ? `${hDisp} ${hu}` : "—"}];
+            })().map((s,i)=>(
               <div key={i} style={{ padding:"6px 0" }}>
                 <div style={{ fontFamily:FONT,fontSize:12,color:"#aaa",marginBottom:3 }}>{s.lbl}</div>
                 <div style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:"#111" }}>{s.val}</div>
