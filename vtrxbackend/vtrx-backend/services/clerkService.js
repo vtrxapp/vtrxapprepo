@@ -120,28 +120,31 @@ const confirmSignUp = async ({ email, code, verificationId }) => {
     const emailAddr = user.email_addresses?.find(e => e.email_address === email);
     if (!emailAddr) throw new Error('Email address not found on this account.');
 
-    // Try with just { code } first — the standard BAPI behavior.
-    // If Clerk returns an error explicitly requiring verification_id, retry with it.
+    // Clerk requires verification_id — always include it when available.
+    const attemptBody = verificationId
+      ? { code: String(code), verification_id: String(verificationId) }
+      : { code: String(code) };
+
+    logger.info(`attempt_verification for ${email} | emailAddrId: ${emailAddr.id} | hasVid: ${!!verificationId}`);
+
     let result;
     try {
       result = await clerkAPI(
         'POST',
         `/email_addresses/${emailAddr.id}/attempt_verification`,
-        { code: String(code) }
+        attemptBody
       );
     } catch (firstErr) {
-      const firstErrMsg = (firstErr?.errors?.[0]?.message || firstErr?.errors?.[0]?.longMessage || JSON.stringify(firstErr)).toLowerCase();
-      logger.error(`attempt_verification (no vid) failed for ${email}: ${JSON.stringify(firstErr)}`);
-      if ((firstErrMsg.includes('verification_id') || firstErrMsg.includes('verification id')) && verificationId) {
-        logger.info(`Retrying attempt_verification WITH verification_id: ${verificationId}`);
-        result = await clerkAPI(
-          'POST',
-          `/email_addresses/${emailAddr.id}/attempt_verification`,
-          { code: String(code), verification_id: String(verificationId) }
-        );
-      } else {
-        throw firstErr;
+      const errCode = firstErr?.errors?.[0]?.code || '';
+      const errMsg  = (firstErr?.errors?.[0]?.long_message || firstErr?.errors?.[0]?.message || JSON.stringify(firstErr)).toLowerCase();
+      logger.error(`attempt_verification failed for ${email}: ${JSON.stringify(firstErr)}`);
+
+      if (errCode === 'form_param_missing' && errMsg.includes('verification_id') && !verificationId) {
+        const e = new Error('Session expired. Please sign up again or resend the code.');
+        e.name = 'CodeMismatchException';
+        throw e;
       }
+      throw firstErr;
     }
 
     if (result?.verification?.status !== 'verified') {
