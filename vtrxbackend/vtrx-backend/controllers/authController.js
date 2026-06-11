@@ -263,8 +263,8 @@ const resendVerificationCode = async (req, res) => {
   if (!email) return res.status(400).json({ success: false, message: 'Email is required.' });
 
   try {
-    await cognito.resendConfirmationCode({ email });
-    res.json({ success: true, message: 'Verification code resent. Check your inbox.' });
+    const result = await cognito.resendConfirmationCode({ email });
+    res.json({ success: true, message: 'Verification code resent. Check your inbox.', data: { verificationId: result.verificationId || null } });
   } catch (error) {
     if (error.name === 'LimitExceededException') {
       return res.status(429).json({ success: false, message: 'Too many attempts. Please wait a few minutes.' });

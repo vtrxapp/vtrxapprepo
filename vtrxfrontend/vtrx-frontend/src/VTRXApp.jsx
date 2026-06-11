@@ -2749,7 +2749,11 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
 
   const resend = async () => {
     try {
-      await apiCall("/auth/resend-code", { method:"POST", body:JSON.stringify({ email }) });
+      const res = await apiCall("/auth/resend-code", { method:"POST", body:JSON.stringify({ email }) });
+      // Update stored verificationId so the next attempt uses the fresh one
+      if (res?.data?.verificationId && typeof localStorage !== "undefined") {
+        localStorage.setItem("vtrx_verification_id", res.data.verificationId);
+      }
       setResent(true);
       setError("New code has been sent to your email.");
       setTimeout(() => { setResent(false); setError(""); }, 4000);

@@ -120,13 +120,11 @@ const confirmSignUp = async ({ email, code, verificationId }) => {
     if (!emailAddr) throw new Error('Email address not found on this account.');
 
     // Always submit the code — never short-circuit on a pre-existing 'verified' status.
-    // Clerk auto-verifies emails created via the BAPI in dev/test mode, which would
-    // otherwise allow any code to pass if we returned early.
-    // NOTE: verification_id is NOT a recognised BAPI parameter — only `code` is sent.
+    // NOTE: verification_id must be included in the BAPI attempt_verification body
     const result = await clerkAPI(
       'POST',
       `/email_addresses/${emailAddr.id}/attempt_verification`,
-      { code: String(code) }
+      { code: String(code), ...(verificationId ? { verification_id: String(verificationId) } : {}) }
     );
 
     if (result?.verification?.status !== 'verified') {
@@ -295,14 +293,15 @@ const resendConfirmationCode = async ({ email }) => {
       return { success: true, message: 'Email is already verified.' };
     }
 
-    await clerkAPI(
+    const prepareRes = await clerkAPI(
       'POST',
       `/email_addresses/${emailAddr.id}/prepare_verification`,
       { strategy: 'email_code' }
     );
+    const newVerificationId = prepareRes?.verification?.id || prepareRes?.id || null;
 
-    logger.info(`Verification code resent to: ${email}`);
-    return { success: true };
+    logger.info(`Verification code resent to: ${email} | new verificationId: ${newVerificationId}`);
+    return { success: true, verificationId: newVerificationId };
   } catch (err) {
     if (err.name === 'UserNotFoundException') throw err;
 
