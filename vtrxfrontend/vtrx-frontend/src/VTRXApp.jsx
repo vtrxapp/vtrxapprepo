@@ -8086,11 +8086,8 @@ function SplashScreen() {
         opacity: visible ? 1 : 0, transform: visible ? "scale(1)" : "scale(0.88)",
         transition:"opacity 0.6s ease, transform 0.6s ease" }}>
         <VTRXLogo size={64}/>
-        <div style={{ fontFamily:FONT, fontWeight:900, fontSize:36, color:PRIMARY, letterSpacing:8, lineHeight:1 }}>
+        <div style={{ fontFamily:FONT, fontWeight:900, fontSize:28, color:PRIMARY, letterSpacing:8, lineHeight:1 }}>
           VTRX
-        </div>
-        <div style={{ fontFamily:FONT, fontWeight:600, fontSize:11, color:"rgba(255,255,255,0.45)", letterSpacing:3.5, marginTop:2 }}>
-          UNLOCK YOUR FULL POTENTIAL
         </div>
       </div>
     </div>
