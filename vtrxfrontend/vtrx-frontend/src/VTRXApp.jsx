@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, createContext, useContext } from "react";
 import { loadStripe } from "@stripe/stripe-js";
-import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
+import { Elements, PaymentElement, PaymentRequestButtonElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { getNotificationToken, onForegroundMessage, isPushSupported } from "./firebase";
 
 // Stripe.js loaded once at module scope — publishable key is safe in client code
@@ -6083,6 +6083,7 @@ function PaymentSheet({ initialPlan = "monthly", onClose }) {
               <CheckoutForm
                 plan={plan}
                 isTrial={isTrial}
+                clientSecret={clientSecret}
                 onSuccess={onClose}
                 onBack={()=>setClientSecret(null)}
               />
@@ -6099,39 +6100,76 @@ function PaymentSheet({ initialPlan = "monthly", onClose }) {
   );
 }
 
-function CheckoutForm({ plan, isTrial, onSuccess, onBack }) {
+function CheckoutForm({ plan, isTrial, clientSecret, onSuccess, onBack }) {
   const stripe    = useStripe();
   const elements  = useElements();
   const { setIsPremium } = useUser();
-  const [loading, setLoading] = useState(false);
-  const [err,     setErr]     = useState("");
-  const [done,    setDone]    = useState(false);
+  const [loading,   setLoading]   = useState(false);
+  const [err,       setErr]       = useState("");
+  const [done,      setDone]      = useState(false);
+  const [payReq,    setPayReq]    = useState(null);
+  const [prChecked, setPrChecked] = useState(false);
 
-  const PLAN_LABEL = { monthly:"$9.99 / month", annual:"$69.99 / year" };
+  const PLAN_LABEL  = { monthly:"$9.99 / month", annual:"$69.99 / year" };
+  const PLAN_AMOUNT = { monthly: 999, annual: 6999 };
+
+  // Build a PaymentRequest so we can show native Apple Pay / Google Pay buttons
+  useEffect(() => {
+    if (!stripe || !clientSecret) return;
+    const pr = stripe.paymentRequest({
+      country:  "US",
+      currency: "usd",
+      total: {
+        label:  isTrial ? "VTRX Premium (30-day free trial)" : `VTRX Premium ${plan === "annual" ? "Annual" : "Monthly"}`,
+        amount: isTrial ? 0 : (PLAN_AMOUNT[plan] || 999),
+      },
+      requestPayerName:  false,
+      requestPayerEmail: false,
+    });
+
+    pr.canMakePayment().then(result => {
+      if (result) setPayReq(pr);
+      setPrChecked(true);
+    });
+
+    pr.on("paymentmethod", async (ev) => {
+      setLoading(true); setErr("");
+      const confirmFn = isTrial ? stripe.confirmSetup : stripe.confirmPayment;
+      const { error } = await confirmFn({
+        clientSecret,
+        confirmParams: { payment_method: ev.paymentMethod.id },
+        redirect: "if_required",
+      });
+      if (error) {
+        ev.complete("fail");
+        setErr(error.message || "Payment failed.");
+        setLoading(false);
+      } else {
+        ev.complete("success");
+        setIsPremium(true);
+        setDone(true);
+        setTimeout(onSuccess, 2600);
+      }
+    });
+  }, [stripe, clientSecret, plan, isTrial]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!stripe || !elements) return;
     setLoading(true); setErr("");
-
-    // SetupIntent (trial) → confirmSetup; PaymentIntent → confirmPayment
     const confirmFn = isTrial
       ? (opts) => stripe.confirmSetup(opts)
       : (opts) => stripe.confirmPayment(opts);
-
     const { error } = await confirmFn({
       elements,
       confirmParams: { return_url: window.location.origin },
       redirect: "if_required",
     });
-
     if (error) {
       setErr(error.message || "Payment failed. Please check your card details.");
       setLoading(false);
       return;
     }
-
-    // Payment confirmed — update UI immediately; webhook syncs DB in background
     setIsPremium(true);
     setDone(true);
     setTimeout(onSuccess, 2600);
@@ -6165,14 +6203,35 @@ function CheckoutForm({ plan, isTrial, onSuccess, onBack }) {
         </div>
       </div>
 
-      {/* Stripe Payment Element — handles card + Apple Pay + Google Pay */}
-      <PaymentElement
-        options={{
-          layout:  { type:"tabs", defaultCollapsed:false },
-          wallets: { applePay:"auto", googlePay:"auto" },
-          fields:  { billingDetails:{ name:"auto" } },
-        }}
-      />
+      {/* Apple Pay / Google Pay — shown as a prominent button when the browser supports it */}
+      {prChecked && payReq && (
+        <>
+          <PaymentRequestButtonElement
+            options={{
+              paymentRequest: payReq,
+              style: { paymentRequestButton: { type:"default", theme:"dark", height:"50px" } },
+            }}
+          />
+          <div style={{ display:"flex",alignItems:"center",gap:10,margin:"16px 0 14px" }}>
+            <div style={{ flex:1,height:1,background:"rgba(255,255,255,0.1)" }}/>
+            <span style={{ fontFamily:FONT,fontSize:11,color:"#555",letterSpacing:0.4 }}>or pay with card</span>
+            <div style={{ flex:1,height:1,background:"rgba(255,255,255,0.1)" }}/>
+          </div>
+        </>
+      )}
+
+      {/* Card form — wallets hidden when the PaymentRequestButton is already showing them */}
+      {prChecked && (
+        <PaymentElement
+          options={{
+            layout:  { type:"tabs", defaultCollapsed:false },
+            wallets: payReq
+              ? { applePay:"never", googlePay:"never" }
+              : { applePay:"auto",  googlePay:"auto"  },
+            fields:  { billingDetails:{ name:"auto" } },
+          }}
+        />
+      )}
 
       {err&&<div style={{ fontFamily:FONT,fontSize:13,color:"#EF4444",marginTop:14,textAlign:"center",lineHeight:1.4 }}>{err}</div>}
 
