@@ -539,6 +539,8 @@ const getRecommendation = async (req, res) => {
                 videoUrl:     we.exercise.videoUrl     || null,
                 ymoveId:      we.exercise.ymoveId      || null,
                 thumbnailUrl: we.exercise.thumbnailUrl || null,
+                instructions: we.exercise.instructions || null,
+                description:  we.exercise.description  || null,
               }));
 
             // Only pad if the workout has fewer than MIN_EXERCISES total

@@ -867,17 +867,20 @@ function parseReps(repsStr) {
 // Normalise an exercise from either the API shape or the hardcoded EXERCISES shape
 function normaliseExercise(ex) {
   return {
-    id:          ex.id          || null,
-    name:        ex.name        || 'Exercise',
-    sets:        ex.sets        || 3,
-    reps:        ex.reps        || '8-12',
-    muscles:     ex.muscleGroup || ex.muscles || '',
-    cal:         ex.cal         || 0,
-    img:         ex.thumbnailUrl || ex.img     || '',
-    videoUrl:    ex.videoUrl    || null,
-    ymoveId:     ex.ymoveId     || null,
-    thumbnailUrl: ex.thumbnailUrl || ex.img    || null,
-    restSecs:    ex.restSecs    || 60,
+    id:           ex.id           || null,
+    name:         ex.name         || 'Exercise',
+    sets:         ex.sets         || 3,
+    reps:         ex.reps         || '8-12',
+    muscles:      ex.muscleGroup  || ex.muscles || '',
+    equipment:    ex.equipment    || null,
+    cal:          ex.cal          || 0,
+    img:          ex.thumbnailUrl || ex.img     || '',
+    videoUrl:     ex.videoUrl     || null,
+    ymoveId:      ex.ymoveId      || null,
+    thumbnailUrl: ex.thumbnailUrl || ex.img     || null,
+    restSecs:     ex.restSecs     || 60,
+    instructions: ex.instructions || null,
+    description:  ex.description  || null,
   };
 }
 
@@ -886,10 +889,9 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onStop, onExercise, co
   const [completedEx, setCompletedEx] = useState([]);
   const [showStopModal, setShowStopModal] = useState(false);
 
-  // Use exercises from workout API data, filter to video-only, fall back to hardcoded
   const exercises = (Array.isArray(workout?.exercises) && workout.exercises.length > 0)
-    ? workout.exercises.map(normaliseExercise).filter(ex => ex.videoUrl)
-    : EXERCISES.map(normaliseExercise).filter(ex => ex.videoUrl);
+    ? workout.exercises.map(normaliseExercise)
+    : EXERCISES.map(normaliseExercise);
 
   const fmt     = (s) => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
   const toggleEx = (i) => setCompletedEx(p => p.includes(i) ? p.filter(x=>x!==i) : [...p,i]);
@@ -1432,6 +1434,178 @@ function VideoPlayer({ videoUrl, thumbnailUrl, exerciseName, onProgress, onVideo
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ── EXERCISE INSTRUCTIONS LOOKUP ─────────────────────────────────────────────
+// Returns an array of step strings for "How to do this exercise"
+// Priority: DB instructions → name lookup → muscle-group fallback
+// ─────────────────────────────────────────────────────────────────────────────
+const EXERCISE_INSTRUCTIONS_MAP = {
+  // ── BICEPS ──────────────────────────────────────────────────────────────
+  "alternating dumbbell curl":["Stand with feet shoulder-width apart, a dumbbell in each hand with palms facing forward","Keep your upper arms still and elbows pinned close to your torso throughout","Curl one dumbbell up toward your shoulder, squeezing your bicep hard at the top","Lower slowly over 2–3 seconds, then repeat on the other arm","Alternate sides for each rep — avoid swinging or using momentum"],
+  "dumbbell curl":["Stand feet shoulder-width apart, dumbbells at your sides with palms facing forward","Keep elbows pinned to your sides and curl both dumbbells up to shoulder height","Squeeze your biceps hard at the top for a full contraction","Lower slowly over 2–3 seconds back to full extension","Avoid swinging — keep the movement strictly controlled"],
+  "bicep curl":["Stand feet shoulder-width apart, dumbbells at your sides with palms facing forward","Keep elbows pinned to your sides and curl both dumbbells up to shoulder height","Squeeze your biceps hard at the top for a full contraction","Lower slowly over 2–3 seconds back to full extension","Avoid swinging — keep the movement strictly controlled"],
+  "barbell curl":["Stand feet shoulder-width apart, grip the barbell underhand at hip level","Keep your elbows close to your body and curl the bar up toward your chest","Squeeze your biceps at the top and hold for 1 second","Lower the bar slowly over 2–3 seconds — keep your back straight","Avoid leaning back to cheat the weight up"],
+  "hammer curl":["Stand feet shoulder-width apart, dumbbells at your sides with palms facing inward (thumbs up)","Without rotating your wrists, curl both dumbbells up toward your shoulders","Squeeze at the top then lower slowly back over 2–3 seconds","This neutral grip targets the brachialis alongside the biceps for thicker arms"],
+  "preacher curl":["Sit at the preacher bench and rest the back of your upper arms flat against the pad","Hold the barbell or dumbbell underhand with arms nearly fully extended","Curl the weight up toward your chin, squeezing your biceps hard at the top","Lower slowly — do not fully lock out at the bottom to keep constant tension"],
+  "concentration curl":["Sit on a bench, feet wide apart — rest your right upper arm against your inner right thigh","Hold a dumbbell with your right hand and let it hang fully extended","Curl the weight up toward your shoulder, rotating your pinky slightly outward at the top","Lower slowly and complete all reps before switching arms"],
+  "cable curl":["Attach a straight bar or EZ-bar to the low pulley of a cable machine","Stand close, grip the bar underhand at hip height with elbows tucked in","Curl the bar up toward your chest against the constant cable tension","Squeeze at the top then lower slowly — the cable keeps tension through the whole movement"],
+  "incline dumbbell curl":["Set a bench to 45–60° incline and sit back with dumbbells hanging at full extension","The incline creates a long-head bicep stretch at the bottom for greater muscle development","Curl both dumbbells up toward your shoulders keeping elbows pulled back","Squeeze at the top and lower slowly — feel the full stretch at the bottom"],
+  // ── CHEST ───────────────────────────────────────────────────────────────
+  "bench press":["Lie flat on the bench with feet firmly on the floor for stability","Grip the bar slightly wider than shoulder-width with an overhand grip","Unrack the bar and lower it to your mid-chest — keep elbows at 45° from your body","Press the bar upward explosively until your arms are fully extended","Lower the weight slowly over 2–3 seconds — never bounce off your chest"],
+  "barbell bench press":["Lie flat on the bench with feet firmly on the floor for stability","Grip the bar slightly wider than shoulder-width with an overhand grip","Lower the bar to your mid-chest — elbows at roughly 45° to your torso","Press upward until arms are fully extended, squeezing your chest at the top","Lower slowly over 2–3 seconds — never bounce off your chest"],
+  "dumbbell bench press":["Lie flat on the bench, hold a dumbbell in each hand at chest level","Press both dumbbells upward until your arms are straight, bringing them slightly together","Squeeze your chest at the top of the movement","Lower the dumbbells slowly — feel a stretch across your chest at the bottom","Keep feet flat, back slightly arched, and shoulders retracted throughout"],
+  "incline bench press":["Set the bench to 30–45° and lie back with feet flat on the floor","Grip the bar just outside shoulder-width and unrack it","Lower the bar to your upper chest — keep elbows at 45–60° from your body","Press back up powerfully until arms are extended — squeeze your upper chest","Lower slowly — the incline targets the upper pectoral muscle"],
+  "incline dumbbell press":["Set the bench to 30–45°, sit back with a dumbbell in each hand resting on your thighs","Kick the dumbbells up as you lie back, positioning them at chest level","Press both dumbbells up and slightly together until arms are straight","Squeeze your upper chest at the top, then lower slowly back to the starting position"],
+  "push up":["Place hands slightly wider than shoulder-width on the floor, fingers pointing forward","Start in a straight-arm plank — keep your body in a rigid straight line from head to heels","Lower your chest toward the floor, keeping elbows at roughly 45° from your body","Press back up powerfully until your arms are fully extended","Keep your core tight throughout — don't let your hips sag or pike up"],
+  "push-up":["Place hands slightly wider than shoulder-width on the floor, fingers pointing forward","Start in a straight-arm plank — keep your body in a rigid straight line from head to heels","Lower your chest toward the floor, keeping elbows at roughly 45° from your body","Press back up powerfully until your arms are fully extended","Keep your core tight throughout — don't let your hips sag or pike up"],
+  "pushup":["Place hands slightly wider than shoulder-width on the floor, fingers pointing forward","Start in a straight-arm plank — keep your body in a rigid straight line from head to heels","Lower your chest toward the floor, keeping elbows at roughly 45° from your body","Press back up powerfully until your arms are fully extended","Keep your core tight throughout — don't let your hips sag or pike up"],
+  "dumbbell flye":["Lie flat on a bench, hold dumbbells above your chest with a slight bend in your elbows","Open your arms in a wide arc, lowering dumbbells out to your sides until you feel a chest stretch","Squeeze your chest and bring the dumbbells back together in the same arc motion","Maintain the slight elbow bend throughout — do not straighten or over-bend your arms"],
+  "cable flye":["Set both cable stations to the high position and stand in the center","Hold a handle in each hand and lean forward slightly at the hips","Bring your hands together in front of your lower chest in a wide arc, squeezing your pecs","Slowly let your arms return to the starting position — feel the chest stretch"],
+  "chest dip":["Grip the parallel bars and support your bodyweight with arms straight","Lean your torso forward slightly — this shifts focus to the chest rather than triceps","Lower your body by bending your elbows until they reach 90° or slightly below","Press back up strongly until arms are fully straight, squeezing your chest at the top"],
+  // ── BACK ────────────────────────────────────────────────────────────────
+  "pull up":["Hang from the bar with an overhand grip, hands slightly wider than shoulder-width","Start from a dead hang with arms fully extended and shoulders engaged","Pull your chest toward the bar — drive your elbows down and back toward your hips","Squeeze your lats and upper back when your chin clears the bar","Lower yourself slowly over 2–3 seconds back to the full hang"],
+  "pull-up":["Hang from the bar with an overhand grip, hands slightly wider than shoulder-width","Start from a dead hang with arms fully extended and shoulders engaged","Pull your chest toward the bar — drive your elbows down and back toward your hips","Squeeze your lats and upper back when your chin clears the bar","Lower yourself slowly over 2–3 seconds back to the full hang"],
+  "chin up":["Hang from the bar with an underhand (supinated) grip, hands shoulder-width apart","Start from a dead hang with arms fully extended","Pull your chin above the bar by driving your elbows down and back","Squeeze your biceps and lats at the top, then lower slowly"],
+  "lat pulldown":["Sit at the machine and adjust the thigh pad to lock your legs in","Grip the bar slightly wider than shoulder-width with an overhand grip","Lean back slightly and pull the bar down to your upper chest, leading with your elbows","Squeeze your lats hard at the bottom — hold for a second","Slowly return the bar to the top, maintaining muscle tension throughout"],
+  "bent over row":["Stand with feet hip-width apart, grip the bar overhand at hip level","Hinge forward at the hips until your torso is roughly parallel to the floor","Keep your back flat, core braced — pull the bar to your lower chest or upper abdomen","Drive your elbows back and squeeze your shoulder blades together at the top","Lower slowly under control back to the start"],
+  "barbell row":["Stand with feet hip-width apart, grip the bar overhand at hip level","Hinge forward at the hips until your torso is roughly parallel to the floor","Keep your back flat, core braced — pull the bar to your lower chest or upper abdomen","Drive your elbows back and squeeze your shoulder blades together at the top","Lower slowly under control back to the start"],
+  "dumbbell row":["Place your left knee and hand on a flat bench for support","Hold a dumbbell in your right hand and let it hang fully extended","Row the dumbbell to your hip by driving your elbow straight back — keep your back flat","Squeeze your lat at the top and lower slowly","Complete all reps then switch sides"],
+  "seated cable row":["Sit at the cable row machine with feet on the platform and knees slightly bent","Grip the handle and sit tall with your back straight and chest up","Pull the handle to your abdomen, driving your elbows back and squeezing your shoulder blades","Hold the contraction for a second, then slowly extend arms back to the start","Avoid rocking your torso — keep the movement isolated to your back"],
+  "deadlift":["Stand with feet hip-width apart, barbell over your mid-foot","Hinge at your hips and bend your knees to grip the bar just outside your legs","Take a big breath, brace your core, and drive through your heels to pull the bar up","Keep the bar dragging close to your body — up your shins and thighs","Stand fully upright squeezing glutes at the top, then hinge back down under control"],
+  "romanian deadlift":["Stand with feet hip-width apart, hold the barbell in front of your thighs with an overhand grip","Push your hips back while keeping your back flat and chest tall","Lower the bar along your legs until you feel a deep hamstring stretch","Drive your hips forward to return to standing, squeezing your glutes at the top","Keep the bar close to your body and maintain a neutral spine throughout"],
+  "rdl":["Stand with feet hip-width apart, hold the barbell in front of your thighs with an overhand grip","Push your hips back while keeping your back flat and chest tall","Lower the bar along your legs until you feel a deep hamstring stretch","Drive your hips forward to return to standing, squeezing your glutes at the top"],
+  // ── SHOULDERS ───────────────────────────────────────────────────────────
+  "overhead press":["Stand feet shoulder-width apart, hold the barbell at shoulder height with an overhand grip","Brace your core — keep your ribs down and glutes tight to protect your spine","Press the bar straight overhead until your arms are fully extended","Shrug your traps slightly at the top to lock out the shoulder joint","Lower the bar slowly back to your shoulders under control"],
+  "barbell overhead press":["Stand feet shoulder-width apart, hold the barbell at shoulder height with an overhand grip","Brace your core — keep your ribs down and glutes tight","Press the bar straight overhead until your arms are fully extended","Shrug your traps slightly at the top to lock out the shoulder joint","Lower the bar slowly back to your shoulders under control"],
+  "military press":["Stand feet shoulder-width apart, grip the barbell at shoulder height","Brace your core tightly — do not arch your lower back","Press the bar straight overhead until your arms are fully locked out","Keep the bar over your center of mass throughout the movement","Lower the bar slowly back to shoulder level under control"],
+  "dumbbell shoulder press":["Sit on an upright bench, hold dumbbells at shoulder height with palms facing forward","Brace your core and press both dumbbells directly overhead until arms are extended","Bring the dumbbells slightly together at the top without touching","Lower slowly back to shoulder level — full range of motion on every rep"],
+  "arnold press":["Sit upright, hold dumbbells in front of your shoulders with palms facing you (like a top curl position)","As you press upward, rotate your palms outward — palms face forward by full extension","Reverse the rotation as you lower back to the starting position","This rotation targets the anterior and medial deltoid across a full range of motion"],
+  "lateral raise":["Stand feet shoulder-width apart, hold dumbbells at your sides with a slight elbow bend","Raise both arms out to the sides until they reach shoulder height — lead with your elbows","At the top, let your pinkies be slightly higher than your thumbs for full medial delt activation","Lower the dumbbells slowly over 3 seconds — control the descent","Avoid using momentum — keep the movement strict and isolated"],
+  "front raise":["Stand feet shoulder-width apart, hold dumbbells in front of your thighs with palms facing down","With a slight elbow bend, raise one or both arms forward to shoulder height","Pause at the top, then lower slowly back to the start","Avoid swinging — this targets the anterior (front) deltoid"],
+  "rear delt fly":["Stand and hinge forward at the hips about 45°, or use an incline bench","Hold dumbbells hanging down with a slight bend in your elbows","Raise both arms out to the sides in a wide arc — squeeze your rear delts and upper back at the top","Lower slowly back to the starting position — feel the stretch in your rear delts"],
+  "face pull":["Attach a rope to a cable machine at approximately head height","Grip the rope with both hands and step back with arms extended","Pull the rope toward your face, driving your elbows back and out to the sides","Externally rotate your shoulders at the end — thumbs pointing back behind you","Slowly return to the start — great for shoulder health and rear delt development"],
+  "upright row":["Stand feet shoulder-width apart, grip the barbell narrow with an overhand grip","Pull the bar straight up toward your chin, leading with your elbows","Elbows should travel up and flare out — keep the bar close to your body","Lower the bar slowly back to hip level under full control"],
+  // ── TRICEPS ─────────────────────────────────────────────────────────────
+  "tricep dip":["Support your bodyweight on parallel bars with arms straight","Keep your torso upright (vertical) to target the triceps","Lower your body by bending your elbows until they reach 90°","Press back up powerfully until your arms are fully extended — squeeze triceps at the top"],
+  "skull crusher":["Lie flat on a bench, hold the EZ-bar or dumbbells directly above your forehead with arms extended","Keeping your upper arms stationary and vertical, bend your elbows to lower the weight toward your forehead","Stop just before the weight reaches your head, then extend your arms back to the top","Control the descent — do not rush this movement","Only your forearms should move — upper arms stay fixed and vertical"],
+  "overhead tricep extension":["Stand or sit and hold a dumbbell with both hands, raising it overhead with arms extended","Keeping your upper arms close to your head, lower the dumbbell behind your head by bending your elbows","Feel the stretch in your triceps at the bottom of the movement","Extend your arms back overhead — squeeze your triceps hard at full extension"],
+  "tricep pushdown":["Stand at the cable machine with a straight bar or rope attached to the high pulley","Grip the attachment and pin your elbows to your sides — keep them locked throughout","Push the bar or rope down until your arms are fully extended, squeezing your triceps hard","Slowly allow the weight to rise back up — control the movement throughout"],
+  "close grip bench press":["Lie flat on the bench and grip the bar with hands about shoulder-width apart (narrower than a normal bench press)","Lower the bar to your lower chest keeping your elbows tucked close to your body","Press the bar back up — squeeze your triceps hard at full extension","The close grip shifts the focus from the chest to the triceps"],
+  "diamond push up":["Get into push-up position but place your hands close together, forming a diamond with thumbs and index fingers","Keep your elbows tucked in close to your body throughout","Lower your chest toward your hands then press back up powerfully","This variation places maximum stress on the triceps"],
+  // ── LEGS ────────────────────────────────────────────────────────────────
+  "squat":["Stand with feet shoulder-width apart, toes pointing slightly outward","Brace your core and sit back and down as if lowering into a chair","Keep your chest tall and knees tracking over your toes — do not let them cave in","Lower until your thighs are at least parallel to the floor","Drive through your heels to stand, squeezing your glutes at the top"],
+  "barbell squat":["Set the bar across your upper traps, grip outside shoulder-width, and unrack","Step back with feet shoulder-width apart and toes slightly out","Brace your core — break at the hips and knees simultaneously and descend until thighs are parallel","Drive powerfully through your heels to stand — knees track over toes throughout","Keep your chest tall and lower back neutral — no rounding"],
+  "goblet squat":["Hold a dumbbell or kettlebell vertically at your chest with both hands","Stand with feet shoulder-width apart, toes turned slightly outward","Squat down keeping your chest tall — let your elbows brush inside your knees at the bottom","Drive through your heels to stand, squeezing your glutes at the top"],
+  "leg press":["Sit in the leg press machine with your back and head firmly against the pad","Place feet shoulder-width on the platform, toes slightly turned out","Unlock the safety handles and lower the platform toward you until knees reach 90°","Do not let your lower back round off the pad at the bottom","Drive the platform away pressing through your heels until legs are nearly straight — do not lock out"],
+  "lunge":["Stand tall with feet hip-width apart, hands on hips or holding dumbbells at your sides","Step forward with one leg and lower your back knee toward the floor","Keep your front shin vertical and torso upright — front knee should not travel past your toes","Push back off your front foot to return to the starting position","Alternate legs for each rep — focus on balance and control"],
+  "walking lunge":["Stand tall holding dumbbells at your sides","Step forward with your right foot and lower your left knee toward the floor","Keep your torso upright and front shin vertical","Push through your right heel and step forward with your left foot to continue walking","Alternate legs continuously — keep the movement smooth and controlled"],
+  "leg extension":["Sit in the leg extension machine and adjust the pad to rest just above your lower shins","Grip the handles and extend your legs until fully straight — squeeze your quads hard at the top","Hold the top position for a second, then lower slowly over 2–3 seconds","Stop just before the weights touch — keep constant tension on the quads"],
+  "leg curl":["Lie face down on the leg curl machine — position the pad just above your heels","Grip the handles and curl your heels toward your glutes, squeezing your hamstrings at the top","Hold the contraction for a second at the top","Lower slowly over 2–3 seconds back to the start"],
+  "hip thrust":["Sit on the floor with your upper back against a bench and a barbell across your hips","Plant your feet flat on the floor, hip-width apart, shins vertical","Drive your hips toward the ceiling by squeezing your glutes — create a straight line from knees to shoulders","Pause at the top for a full glute contraction","Lower your hips back down slowly and repeat — keep chin tucked throughout"],
+  "glute bridge":["Lie flat on your back with knees bent and feet flat on the floor, hip-width apart","Drive your hips toward the ceiling by squeezing your glutes hard","Create a straight line from your knees to your shoulders at the top","Pause and squeeze hard, then lower slowly back to the floor"],
+  "calf raise":["Stand with the balls of your feet on the edge of a step or raised platform","Let your heels drop below the platform level to get a full calf stretch","Rise up onto your toes as high as possible — squeeze your calves hard at the top","Lower slowly over 3 seconds — feel the full stretch at the bottom","Avoid bouncing — slow controlled reps build the most muscle"],
+  "seated calf raise":["Sit at the seated calf raise machine with pads resting on your lower thighs","Place the balls of your feet on the platform, heels hanging off the edge","Push up onto your toes as high as possible — squeeze your calves hard at the top","Lower slowly — this seated variation particularly targets the soleus muscle"],
+  // ── CORE ────────────────────────────────────────────────────────────────
+  "plank":["Place forearms on the floor with elbows directly under your shoulders","Lift your body into a rigid straight line from head to heels — squeeze everything tight","Keep your hips level — do not let them sag down or pike up","Look slightly forward, breathe steadily and hold the position","Quality over duration — a perfect 30 seconds beats a sloppy 2 minutes"],
+  "crunch":["Lie flat on your back with knees bent and feet flat on the floor","Place hands lightly behind your head — do not pull your neck forward","Engage your abs and curl your upper body upward, bringing your chest toward your knees","Pause at the top with a full ab contraction, then lower slowly","Focus on the contraction — a short intense range of motion is all you need"],
+  "sit up":["Lie flat with knees bent and feet flat on the floor","Cross arms over your chest or place hands behind your head","Engage your core and lift your torso all the way up toward your knees","Lower slowly back to the floor — keep the movement controlled throughout"],
+  "leg raise":["Lie flat on your back with legs extended and hands under your glutes for support","Keep your legs straight and raise them toward the ceiling until they reach 90°","Lower your legs slowly — stop just before they touch the floor to keep tension","Avoid arching your lower back — press it into the floor throughout"],
+  "hanging leg raise":["Hang from a pull-up bar with an overhand grip, body fully extended","Keep your legs straight and raise them up to hip height or higher","Avoid swinging — control the movement entirely with your abs","Lower your legs slowly, stopping just before the dead hang position"],
+  "russian twist":["Sit with knees bent and feet slightly off the floor, or flat for an easier version","Lean back to about 45° and hold your hands or a weight in front of you","Rotate your torso side to side, bringing your hands toward the floor on each side","Keep your core tight and movements controlled — feel the obliques working"],
+  "mountain climber":["Get into a straight-arm plank with hands directly under your shoulders","Drive your right knee toward your chest, then quickly switch — left knee in as right goes back","Keep your hips low and your core tight throughout — don't let them rise up","Maintain a quick alternating pace while holding full core tension"],
+  "bicycle crunch":["Lie flat with hands behind your head and legs raised off the floor","Bring your right elbow and left knee toward each other while extending your right leg straight","Rotate to the other side in a smooth pedaling motion — left elbow to right knee","Keep your lower back pressed into the floor throughout"],
+  "cable crunch":["Kneel in front of a high cable machine with a rope attachment","Hold the rope beside your head and keep your hips completely stationary","Crunch downward by contracting your abs — bring your elbows toward your knees","Pause at the bottom with a full contraction then slowly return to the start"],
+  // ── FULL BODY / CARDIO ──────────────────────────────────────────────────
+  "burpee":["Stand with feet shoulder-width apart","Drop your hands to the floor and jump your feet back to a plank position","Perform a push-up, then jump your feet back toward your hands","Explode upward, jumping with your arms raised overhead","Land softly and immediately go into the next rep"],
+  "kettlebell swing":["Stand feet hip-width apart, kettlebell on the floor in front of you","Hinge at the hips to grip the kettlebell — back flat, chest up","Swing the kettlebell back between your legs to load your hips and hamstrings","Drive your hips forward explosively to swing the bell to shoulder height","Let the bell swing back down and immediately load your hips for the next rep"],
+  "box jump":["Stand facing a box, feet shoulder-width apart","Bend your knees and swing your arms back to load up","Explode upward and forward, pulling your knees toward your chest","Land softly on top of the box with knees slightly bent to absorb the impact","Step back down carefully and reset for the next rep"],
+  "jump squat":["Stand feet shoulder-width apart, toes slightly out","Descend into a squat until thighs reach parallel — arms swinging back","Explode upward through the balls of your feet, leaving the floor","Land softly with knees slightly bent to absorb the impact","Immediately descend into the next squat rep"],
+};
+
+function getExerciseInstructions(ex) {
+  // 1. Use DB instructions if present
+  if (ex.instructions) {
+    const parsed = ex.instructions.split(/\n|;/).map(s => s.trim()).filter(Boolean);
+    if (parsed.length >= 2) return parsed;
+  }
+
+  // 2. Name-based lookup (normalized)
+  const name = (ex.name || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (EXERCISE_INSTRUCTIONS_MAP[name]) return EXERCISE_INSTRUCTIONS_MAP[name];
+
+  // Partial match — key contains all words of name, or name contains key
+  const keys = Object.keys(EXERCISE_INSTRUCTIONS_MAP);
+  const nameWords = name.split(' ').filter(w => w.length > 2);
+  let bestKey = null;
+  let bestScore = 0;
+  for (const key of keys) {
+    const keyWords = key.split(' ');
+    const hits = nameWords.filter(w => keyWords.includes(w)).length;
+    if (hits > bestScore) { bestScore = hits; bestKey = key; }
+  }
+  if (bestScore >= 2) return EXERCISE_INSTRUCTIONS_MAP[bestKey];
+
+  // 3. Muscle-group fallback
+  const m = (ex.muscles || '').toLowerCase();
+  const e = (ex.equipment || '').toLowerCase();
+  if (m.includes('bicep')) return [
+    "Stand or sit in a stable position, gripping the weight with palms facing up",
+    "Pin your elbows close to your sides — keep them stationary throughout",
+    "Curl the weight upward by bending at the elbow, squeezing your bicep at the top",
+    "Lower slowly over 2–3 seconds back to full extension",
+    "Avoid swinging — the movement should be fully controlled",
+  ];
+  if (m.includes('tricep')) return [
+    "Set up with your upper arm stationary in a fixed position",
+    "Begin with your elbow bent and the weight loaded on your tricep",
+    "Extend your arm fully — squeeze your tricep hard at full extension",
+    "Slowly return to the starting position, feeling the stretch in your tricep",
+  ];
+  if (m.includes('chest') || m.includes('pec')) return [
+    "Set up in a stable position with shoulder blades retracted and chest tall",
+    "Lower the weight in a controlled arc — feel the stretch across your chest at the bottom",
+    "Press or push back to the starting position, squeezing your chest at the top",
+    "Exhale on the effort, inhale as you return — maintain controlled breathing throughout",
+  ];
+  if (m.includes('back') || m.includes('lat')) return [
+    "Set up and retract your shoulder blades to initiate the movement",
+    "Pull by driving your elbows back toward your hips — not just with your arms",
+    "Squeeze your back muscles hard at the point of full contraction",
+    "Return to the starting position slowly — feel the stretch in your lats",
+  ];
+  if (m.includes('shoulder') || m.includes('delt')) return [
+    "Set up in a stable position with shoulders relaxed and core braced",
+    "Execute the movement in a controlled deliberate arc — quality over weight",
+    "Squeeze your deltoids at the peak of the movement",
+    "Return to the starting position slowly, maintaining muscle tension throughout",
+  ];
+  if (m.includes('quad') || m.includes('hamstring') || m.includes('glute') || m.includes('leg')) return [
+    "Set up with feet in the appropriate position — core braced, neutral spine",
+    "Lower yourself in a controlled manner — knees tracking over your toes",
+    "Drive through your heels to return to the starting position",
+    "Squeeze your glutes and quads at the top of each rep",
+  ];
+  if (m.includes('calf')) return [
+    "Position the balls of your feet on the platform — heels free to drop",
+    "Lower your heels for a full calf stretch before each rep",
+    "Rise as high as possible onto your toes — squeeze your calves hard at the top",
+    "Lower slowly over 3 seconds to maximize time under tension",
+  ];
+  if (m.includes('core') || m.includes('ab')) return [
+    "Engage your core fully before initiating the movement",
+    "Exhale as you contract your abs during the crunch or exertion phase",
+    "Focus on quality contractions rather than speed or momentum",
+    "Return to the starting position slowly to maintain constant tension",
+  ];
+  return [
+    "Set up in a stable, balanced position before starting",
+    "Engage your core and maintain good posture throughout the movement",
+    "Perform the exercise through the full range of motion in a controlled manner",
+    "Exhale during the exertion phase and inhale on the return",
+    "Focus on quality contractions — avoid using momentum or swinging",
+  ];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // ── NEW INNER PAGE: EXERCISE DETAIL ──────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
 function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutFmt, onAutoStartWorkout }) {
@@ -1497,14 +1671,7 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
 
   const updateSet = (i,field,val) => setSets(s=>s.map((x,idx)=>idx===i?{...x,[field]:val}:x));
 
-  const instructions = [
-    "Lie flat on the bench with feet firmly on the floor",
-    "Hold dumbbells at chest level, elbows at 45°",
-    "Take a deep breath and press upward until arms are fully extended",
-    "Pause briefly at the top — squeeze your chest",
-    "Lower the weight slowly (3 seconds down) — control is key",
-    "Return to start position and repeat",
-  ];
+  const instructions = getExerciseInstructions(ex);
 
   const aiTips = [
     { icon:"clock", label:"Rest Time", value:"60–90 seconds between sets", color:"#00A3FF" },
@@ -1523,7 +1690,11 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
         <button onClick={onBack} style={{ width:36,height:36,borderRadius:"50%",background:CARD,border:`1px solid ${BORDER}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"#fff",fontSize:20,marginTop:2 }}>‹</button>
         <div style={{ flex:1,textAlign:"center",padding:"0 12px" }}>
           <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:"#fff" }}>{ex.name}</div>
-          <div style={{ fontFamily:FONT,fontSize:12,color:"#888888",marginTop:3 }}>Chest · Strength · Beginner-friendly</div>
+          {(ex.muscles || ex.equipment) && (
+            <div style={{ fontFamily:FONT,fontSize:12,color:"#888888",marginTop:3 }}>
+              {[ex.muscles, ex.equipment].filter(Boolean).join(' · ')}
+            </div>
+          )}
         </div>
         <div style={{ width:36 }}/>
       </div>
