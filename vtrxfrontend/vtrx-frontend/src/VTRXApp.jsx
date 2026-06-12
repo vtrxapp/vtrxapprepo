@@ -8617,26 +8617,25 @@ function VTRXAppInner({ setPaymentPlan }) {
               if (s.avgMinutes)  setWeeklyAvgMin(s.avgMinutes);
             }
           } catch(_e){}
-          const today = new Date();
+          const today   = new Date();
+          const dateStr = today.toLocaleDateString("en-GB", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
+          const timeStr = today.toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit" });
           setLoggedWorkouts(prev => [...prev, { date:today, type:wType, cal:actCal, duration:mins, name:activeW.name }]);
+          setLastWorkoutStats({
+            calories:  actCal,
+            duration:  mins,
+            exercises: Array.isArray(activeW.exercises) ? activeW.exercises.length : (activeW.exercises || 3),
+            name:      activeW.name || "Workout",
+            date:      dateStr,
+            time:      timeStr,
+          });
+          setShowComplete(true);
         }
 
-        const today   = new Date();
-        const dateStr = today.toLocaleDateString("en-GB", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
-        const timeStr = today.toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit" });
-        setLastWorkoutStats({
-          calories:  actCal,
-          duration:  mins,
-          exercises: Array.isArray(activeW.exercises) ? activeW.exercises.length : (activeW.exercises || 3),
-          name:      activeW.name || "Workout",
-          date:      dateStr,
-          time:      timeStr,
-        });
         setWorkoutStarted(false);
         setWorkoutElapsed(0);
         setCompletedExNames([]);
         setLoggedExSets({});
-        setShowComplete(true);
         setInnerPage(null);
         setActiveTab(0);
       }}

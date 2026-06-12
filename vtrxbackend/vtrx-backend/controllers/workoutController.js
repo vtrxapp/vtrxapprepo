@@ -104,9 +104,9 @@ const logWorkout = async (req, res) => {
   }
 
   // Enforce minimum duration by workout type
+  const workoutType = (type || '').toLowerCase();
   if (duration !== undefined) {
     const durationMins = parseInt(duration);
-    const workoutType  = (type || '').toLowerCase();
     const minMins      = workoutType === 'cardio' ? 5 : 10;
     if (!isNaN(durationMins) && durationMins < minMins) {
       return res.status(400).json({
@@ -114,6 +114,11 @@ const logWorkout = async (req, res) => {
         message: `${workoutType === 'cardio' ? 'Cardio' : 'Strength/HIIT'} workouts under ${minMins} minutes are not logged`,
       });
     }
+  }
+
+  // Strength and HIIT require at least one logged exercise
+  if ((workoutType === 'strength' || workoutType === 'hiit') && (!exercises || exercises.length === 0)) {
+    return res.status(400).json({ success: false, message: 'Strength and HIIT workouts require at least one logged exercise' });
   }
 
   try {
