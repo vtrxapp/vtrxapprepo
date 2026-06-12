@@ -3769,7 +3769,7 @@ function CalendarPage({ onBack, loggedWorkouts=[] }) {
 
   useEffect(()=>{
     apiCall('/workouts/history?limit=90')
-      .then(d=>{ if(d?.data?.history) setCalHistory(d.data.history); })
+      .then(d=>{ if(d?.data?.logs) setCalHistory(d.data.logs); })
       .catch(()=>{});
   }, []);
 
@@ -8571,7 +8571,7 @@ function VTRXAppInner({ setPaymentPlan }) {
           <NutritionHub onBack={()=>setActiveTab(0)} energyKey={energyKey} onLogout={handleLogout}/>
         )}
         {activeTab===2&&!innerPage&&(
-          <WeightsHub onLogout={handleLogout} onNavigate={navigate}/>
+          <WeightsHub onLogout={handleLogout} onNavigate={navigate} loggedWorkouts={loggedWorkouts}/>
         )}
       </div>
 
