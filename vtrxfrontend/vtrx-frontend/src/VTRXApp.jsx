@@ -2386,9 +2386,10 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
     try {
       const data = await apiCall("/auth/login", {
         method: "POST",
-        body: JSON.stringify({ 
-          email: email.trim().toLowerCase(), 
-          password: pass 
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          password: pass,
+          clientHour: new Date().getHours(),
         }),
       });
 
@@ -4943,14 +4944,20 @@ function getUnitPref(key, fallback) {
 function PersonalDetailsPage({ onBack }) {
   const { user, setUser } = useUser();
   const initWU = getUnitPref("vtrx_weight_unit", "kg");
-  const initHU = getUnitPref("vtrx_height_unit", "cm");
+  // If stored height is already a ft display string (e.g. "5'7"), keep ft mode
+  const storedHtIsFt = typeof user.height === "string" && user.height.includes("'");
+  const initHU = storedHtIsFt ? "ft" : getUnitPref("vtrx_height_unit", "cm");
   const [name,       setName]       = useState(user.name || "");
   const [dob,        setDob]        = useState(() => { try { return localStorage.getItem("vtrx_user_dob") || ""; } catch { return ""; } });
   const [gender,     setGender]     = useState(user.gender || "");
   const [weightUnit, setWeightUnit] = useState(initWU);
   const [heightUnit, setHeightUnit] = useState(initHU);
   const [weight,     setWeight]     = useState(() => kgToDisplay(user.weight, initWU));
-  const [height,     setHeight]     = useState(() => cmToDisplay(user.height, initHU));
+  const [height,     setHeight]     = useState(() => {
+    if (storedHtIsFt) return String(user.height);
+    const n = parseFloat(user.height);
+    return (isNaN(n) || n < 50) ? "" : cmToDisplay(n, initHU);
+  });
   const [saved,      setSaved]      = useState(false);
 
   // Weight unit conversion
@@ -5822,8 +5829,12 @@ function AccountSettingsPage({ onBack, onLogout }) {
               const wu = getUnitPref("vtrx_weight_unit","kg");
               const hu = getUnitPref("vtrx_height_unit","cm");
               const wDisp = kgToDisplay(user.weight, wu);
-              const hDisp = cmToDisplay(user.height, hu);
-              return [{lbl:"Age",val:user.age ? `${user.age} yrs` : "—"},{lbl:"Gender",val:user.gender||"—"},{lbl:"Weight",val:wDisp ? `${wDisp} ${wu}` : "—"},{lbl:"Height",val:hDisp ? `${hDisp} ${hu}` : "—"}];
+              // Handle legacy ft-format strings (e.g. "5'7") and corrupt small values
+              const hIsLegacyFt = typeof user.height === "string" && user.height.includes("'");
+              const hNum = parseFloat(user.height);
+              const hDisp = hIsLegacyFt ? user.height : ((!isNaN(hNum) && hNum >= 50) ? cmToDisplay(hNum, hu) : "");
+              const hUnit = hIsLegacyFt ? "ft" : hu;
+              return [{lbl:"Age",val:user.age ? `${user.age} yrs` : "—"},{lbl:"Gender",val:user.gender||"—"},{lbl:"Weight",val:wDisp ? `${wDisp} ${wu}` : "—"},{lbl:"Height",val:hDisp ? `${hDisp} ${hUnit}` : "—"}];
             })().map((s,i)=>(
               <div key={i} style={{ padding:"6px 0" }}>
                 <div style={{ fontFamily:FONT,fontSize:12,color:"#aaa",marginBottom:3 }}>{s.lbl}</div>
