@@ -866,7 +866,7 @@ function parseReps(repsStr) {
 
 // Generate a descriptive workout title from the exercises' muscle groups
 function generateWorkoutTitle(exercises) {
-  if (!exercises || exercises.length === 0) return null;
+  if (!Array.isArray(exercises) || exercises.length === 0) return null;
   const norm = (mg) => {
     const m = (mg || '').toLowerCase();
     if (m.includes('bicep'))                                        return 'Biceps';
