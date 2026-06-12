@@ -6008,7 +6008,7 @@ function AccountSettingsPage({ onBack, onLogout }) {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.8"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
             <div style={{ flex:1 }}>
               <div style={{ fontFamily:FONT,fontWeight:600,fontSize:15,color:"#111" }}>Fitness Goal</div>
-              <div style={{ fontFamily:FONT,fontSize:12,color:"#888888",marginTop:2 }}>{user.goal} · Change in Fitness Preferences</div>
+              <div style={{ fontFamily:FONT,fontSize:12,color:"#888888",marginTop:2 }}>{user.goal || "Not set"} · Change in Fitness Preferences</div>
             </div>
           </div>
         </div>
@@ -6140,14 +6140,49 @@ function AccountSettingsPage({ onBack, onLogout }) {
 // ── FITNESS PREFERENCES ───────────────────────────────────────────────────────
 function FitnessPreferencesPage({ onBack }) {
   const fitnessScrollRef = useScrollPos("fitness-prefs");
-  const [goal, setGoal] = useState("Muscle Gain");
-  const [level, setLevel] = useState("Intermediate");
-  const [env, setEnv] = useState("Gym");
-  const [days, setDays] = useState(5);
-  const [env2, setEnv2] = useState("Full Gym");
-  const [equip, setEquip] = useState([]);
-  const [saved, setSaved] = useState(false);
+  const { user, setUser } = useUser();
 
+  // Normalize environment value: onboarding stores "Full Gym"/"Mix of both", this page uses "Gym"/"Mix"
+  const normalizeEnv = (v) => {
+    if (!v) return "Gym";
+    if (v === "Full Gym") return "Gym";
+    if (v === "Mix of both") return "Mix";
+    return v;
+  };
+
+  const [goal,  setGoal]  = useState(user.goal         || "Build Muscle");
+  const [level, setLevel] = useState(user.fitnessLevel || user.level || "Intermediate");
+  const [env,   setEnv]   = useState(normalizeEnv(user.location));
+  const [days,  setDays]  = useState(Number(user.daysPerWeek || user.days) || 5);
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    // Map env back to the canonical location value
+    const locationVal = env === "Gym" ? "Full Gym" : env === "Mix" ? "Mix of both" : env;
+    setUser(u => ({
+      ...u,
+      goal,
+      fitnessLevel: level,
+      level,
+      daysPerWeek:  days,
+      days,
+      location:     locationVal,
+      workoutLocation: locationVal,
+    }));
+    if (getAuthToken()) {
+      try {
+        await apiCall("/users/profile", {
+          method: "PUT",
+          body: JSON.stringify({ goal, fitnessLevel: level, daysPerWeek: days, location: locationVal }),
+        });
+      } catch (_e) {}
+    }
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2200);
+  };
 
   return (
     <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column" }}>
@@ -6159,9 +6194,9 @@ function FitnessPreferencesPage({ onBack }) {
       </div>
       <div ref={fitnessScrollRef} style={{ flex:1,overflowY:"auto",padding:"0 16px 32px" }}>
         {[
-          { label:"PRIMARY GOAL", options:["Build Muscle","Lose Weight","Stay Active","Improve Endurance","Get Toned"], value:goal, onChange:setGoal },
-          { label:"EXPERIENCE LEVEL", options:["Beginner","Intermediate","Advanced"], value:level, onChange:setLevel },
-          { label:"PREFERRED ENVIRONMENT", options:["Gym","Home","Outdoors","Mix"], value:env, onChange:setEnv },
+          { label:"PRIMARY GOAL",        options:["Build Muscle","Lose Weight","Stay Active","Improve Endurance","Get Toned"], value:goal,  onChange:setGoal  },
+          { label:"EXPERIENCE LEVEL",    options:["Beginner","Intermediate","Advanced"],                                      value:level, onChange:setLevel },
+          { label:"PREFERRED ENVIRONMENT", options:["Gym","Home","Outdoors","Mix"],                                           value:env,   onChange:setEnv   },
         ].map((s,i)=>(
           <div key={i} style={{ background:"#ffffff",borderRadius:20,border:"1px solid #e8e8e8",padding:"18px",marginBottom:14 }}>
             <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888888",letterSpacing:1,marginBottom:14 }}>{s.label}</div>
@@ -6170,7 +6205,7 @@ function FitnessPreferencesPage({ onBack }) {
         ))}
 
         {/* Days per week */}
-        <div style={{ background:"#ffffff",borderRadius:20,border:"1px solid #e8e8e8",padding:"18px",marginBottom:14 }}>
+        <div style={{ background:"#ffffff",borderRadius:20,border:"1px solid #e8e8e8",padding:"18px",marginBottom:20 }}>
           <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888888",letterSpacing:1,marginBottom:14 }}>DAYS PER WEEK</div>
           <div style={{ display:"flex",gap:10 }}>
             {[2,3,4,5].map(d=>(
@@ -6179,8 +6214,8 @@ function FitnessPreferencesPage({ onBack }) {
           </div>
         </div>
 
-        <button onClick={()=>{ setSaved(true); setTimeout(()=>setSaved(false),2000); }} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:saved?"#22C55E":`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1,cursor:"pointer",transition:"background 0.3s",boxShadow:`0 4px 20px ${PRIMARY}44` }}>
-          {saved?"SAVED!":"SAVE PREFERENCES"}
+        <button onClick={handleSave} disabled={saving} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:saved?"#22C55E":saving?"#1a1a1a":`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:saving?`1px solid ${BORDER}`:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:saving?"#555":"#fff",letterSpacing:1,cursor:saving?"not-allowed":"pointer",transition:"background 0.3s",boxShadow:saving?"none":`0 4px 20px ${PRIMARY}44` }}>
+          {saved ? "SAVED!" : saving ? "Saving..." : "SAVE PREFERENCES"}
         </button>
       </div>
     </div>
@@ -6590,7 +6625,9 @@ function ProfilePage({ onBack, onLogout, streakDay=1, workoutsTotal=0 }) {
               onChange={e=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=ev=>setProfileImg(ev.target.result); r.readAsDataURL(f); }}/>
           </div>
           <div style={{ fontFamily:FONT,fontWeight:900,fontSize:22,color:"#ffffff",marginBottom:4,textAlign:"center" }}>{user.name}</div>
-          <div style={{ fontFamily:FONT,fontSize:13,color:"#888888",textAlign:"center" }}>Fitness Goal: {user.goal}</div>
+          <div style={{ fontFamily:FONT,fontSize:13,color:"#888888",textAlign:"center" }}>
+            Fitness Goal: <span style={{ color: user.goal ? PRIMARY : "#555", fontWeight: user.goal ? 700 : 400 }}>{user.goal || "Not set"}</span>
+          </div>
 
         </div>
 
