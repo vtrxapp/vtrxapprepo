@@ -7277,7 +7277,8 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
   const pct         = (workoutDays / daysPerWeek) * 100;
   const hr          = new Date().getHours();
   const greeting    = hr < 12 ? "Good Morning" : hr < 17 ? "Good Afternoon" : "Good Evening";
-  const displayName = (user?.name || "").split(" ")[0] || "Athlete";
+  const _rawDisplay = (user?.name || user?.username || "").split(" ")[0];
+  const displayName = _rawDisplay ? _rawDisplay.charAt(0).toUpperCase() + _rawDisplay.slice(1) : "Athlete";
 
   // Workout-type banner images for the card header
   const WORKOUT_BANNERS = {
