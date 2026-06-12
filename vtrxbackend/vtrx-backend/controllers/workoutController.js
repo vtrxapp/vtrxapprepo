@@ -103,8 +103,12 @@ const logWorkout = async (req, res) => {
     return res.status(400).json({ success: false, message: 'No exercises completed' });
   }
 
+  if (!type) {
+    return res.status(400).json({ success: false, message: 'Workout type is required' });
+  }
+
   // Enforce minimum duration by workout type
-  const workoutType = (type || '').toLowerCase();
+  const workoutType = type.toLowerCase();
   if (duration !== undefined) {
     const durationMins = parseInt(duration);
     const minMins      = workoutType === 'cardio' ? 5 : 10;
@@ -116,9 +120,12 @@ const logWorkout = async (req, res) => {
     }
   }
 
-  // Strength and HIIT require at least one logged exercise
-  if ((workoutType === 'strength' || workoutType === 'hiit') && (!exercises || exercises.length === 0)) {
-    return res.status(400).json({ success: false, message: 'Strength and HIIT workouts require at least one logged exercise' });
+  // Strength and HIIT require at least one exercise with at least one set
+  if (workoutType === 'strength' || workoutType === 'hiit') {
+    const hasLoggableSets = exercises && exercises.some(ex => ex.sets && ex.sets.length > 0);
+    if (!hasLoggableSets) {
+      return res.status(400).json({ success: false, message: 'Strength and HIIT workouts require at least one logged set' });
+    }
   }
 
   try {
@@ -128,7 +135,7 @@ const logWorkout = async (req, res) => {
         userId:               req.user.id,
         workoutId:            workoutId || null,
         name,
-        type,
+        type:                 workoutType,
         duration:             parseInt(duration),
         caloriesBurned:       caloriesBurned ? parseInt(caloriesBurned) : null,
         volume:               volume ? parseFloat(volume) : null,

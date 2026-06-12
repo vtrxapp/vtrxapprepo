@@ -8596,13 +8596,14 @@ function VTRXAppInner({ setPaymentPlan }) {
             const completeRes = await apiCall("/workouts/log", {
               method: "POST",
               body: JSON.stringify({
-                workoutId:      activeW.workoutId || undefined,
-                name:           activeW.name,
-                type:           activeW.type,
-                duration:       mins,
-                caloriesBurned: actCal,
-                energyLevel:    energyKey || "okay",
-                exercises:      exPayload,
+                workoutId:            activeW.workoutId || undefined,
+                name:                 activeW.name,
+                type:                 activeW.type,
+                duration:             mins,
+                caloriesBurned:       actCal,
+                energyLevel:          energyKey || "okay",
+                completionPercentage: 100,
+                exercises:            exPayload,
               }),
             });
             if (completeRes?.data?.workoutLog?.id) setLastWorkoutLogId(completeRes.data.workoutLog.id);
@@ -8633,6 +8634,7 @@ function VTRXAppInner({ setPaymentPlan }) {
         }
 
         setWorkoutStarted(false);
+        setWorkoutPaused(false);
         setWorkoutElapsed(0);
         setCompletedExNames([]);
         setLoggedExSets({});
