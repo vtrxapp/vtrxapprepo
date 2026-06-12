@@ -3283,13 +3283,29 @@ function RecordIcon({ name }) {
   if (name==="Shoulder Press") return <svg width={W} height={H} viewBox={V} fill={F} stroke="white" strokeWidth={SW}><polyline points="12 19 12 5"/><polyline points="5 12 12 5 19 12"/></svg>;
   return <svg width={W} height={H} viewBox={V} fill={F} stroke="white" strokeWidth={SW}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
 }
+// Consistent per-exercise colour — same exercise always gets the same colour everywhere
+const PR_PALETTE = ["#EF4444","#22C55E","#00A3FF","#F97316","#8B5CF6","#EAB308","#06B6D4","#F59E0B"];
+const PR_EXERCISE_COLORS = {
+  "Bench Press":    "#EF4444",
+  "Deadlift":       "#22C55E",
+  "5K Run":         "#00A3FF",
+  "Squat":          "#F97316",
+  "Pull-ups":       "#8B5CF6",
+  "Shoulder Press": "#EAB308",
+};
+function getPRColor(name, fallbackIdx=0) {
+  return PR_EXERCISE_COLORS[name] || PR_PALETTE[fallbackIdx % PR_PALETTE.length];
+}
+
+// Placeholder shells — shown for new users with no real PRs yet.
+// Values and dates are intentionally blank; they fill in once real records exist.
 const RECORDS = [
-  { name:"Bench Press",   color:"#EF4444", bg:"#EF444422", val:"225 lbs", when:"3 days ago",  history:[185,195,205,210,220,225], dates:["Apr 1","Apr 5","Apr 10","Apr 15","Apr 20","Apr 24"] },
-  { name:"Deadlift",      color:"#22C55E", bg:"#22C55E22", val:"315 lbs", when:"1 week ago",  history:[250,265,280,295,305,315], dates:["Mar 28","Apr 3","Apr 8","Apr 13","Apr 18","Apr 22"] },
-  { name:"5K Run",        color:PRIMARY,   bg:`${PRIMARY}22`, val:"18:42",when:"2 weeks ago", history:[24,22,21,20,19,18.7],     dates:["Mar 25","Apr 2","Apr 7","Apr 12","Apr 17","Apr 19"] },
-  { name:"Squat",         color:"#F97316", bg:"#F9731622", val:"275 lbs", when:"5 days ago",  history:[200,220,240,255,265,275], dates:["Mar 30","Apr 4","Apr 9","Apr 14","Apr 19","Apr 24"] },
-  { name:"Pull-ups",      color:"#8B5CF6", bg:"#8B5CF622", val:"18 reps", when:"2 days ago",  history:[10,12,13,14,16,18],       dates:["Apr 2","Apr 7","Apr 11","Apr 16","Apr 21","Dec 27"] },
-  { name:"Shoulder Press",color:"#EAB308", bg:"#EAB30822", val:"135 lbs", when:"1 week ago",  history:[95,105,110,115,125,135],  dates:["Apr 1","Apr 6","Apr 11","Apr 16","Apr 20","Apr 22"] },
+  { name:"Bench Press",    history:[], dates:[] },
+  { name:"Deadlift",       history:[], dates:[] },
+  { name:"5K Run",         history:[], dates:[] },
+  { name:"Squat",          history:[], dates:[] },
+  { name:"Pull-ups",       history:[], dates:[] },
+  { name:"Shoulder Press", history:[], dates:[] },
 ];
 
 // ── HISTORY ──────────────────────────────────────────────────────────────────
@@ -3761,7 +3777,6 @@ function PersonalRecordsPage({ onBack }) {
 
   const fmtWeight = (w) => w ? `${w} lbs` : '—';
   const fmtDate   = (d) => d ? new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : '—';
-  const RECORD_COLORS = ['#00A3FF','#22C55E','#F59E0B','#EF4444','#8B5CF6','#F97316','#06B6D4'];
 
   return (
     <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column" }}>
@@ -3801,7 +3816,7 @@ function PersonalRecordsPage({ onBack }) {
           )}
 
           {!loading && filtered.map((r,i)=>{
-            const color = RECORD_COLORS[i % RECORD_COLORS.length];
+            const color = getPRColor(r.exerciseName, i);
             return (
               <div key={r.id} onClick={()=>setSelected(r.exerciseName)}
                 style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"16px 18px",marginBottom:12,display:"flex",alignItems:"center",gap:14,cursor:"pointer",animation:`fadeUp 0.3s ease ${i*0.06}s both` }}>
@@ -3824,7 +3839,7 @@ function PersonalRecordsPage({ onBack }) {
         <div style={{ flex:1,overflowY:"auto",padding:"0 16px 32px",animation:"fadeUp 0.3s ease both" }}>
           {(() => {
             const idx   = records.findIndex(r=>r.exerciseName===selected);
-            const color = RECORD_COLORS[idx % RECORD_COLORS.length] || PRIMARY;
+            const color = getPRColor(selected, idx);
             return (
               <>
                 <div style={{ background:`linear-gradient(135deg,${color}22,${color}11)`,border:`1.5px solid ${color}44`,borderRadius:22,padding:"28px 24px",textAlign:"center",marginBottom:16 }}>
@@ -4483,31 +4498,36 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
             <button onClick={()=>setSubPage("records")} style={{ background:"none",border:"none",cursor:"pointer",fontFamily:FONT,fontWeight:700,fontSize:13,color:PRIMARY }}>View All</button>
           </div>
           {(()=>{
-            const PR_COLORS=["#EF4444","#22C55E","#00A3FF","#F97316","#8B5CF6","#EAB308"];
-            const displayPRs = previewPRs.length > 0
-              ? previewPRs.slice(0,3).map((r,i)=>({
-                  name:  r.exerciseName || r.name || "Exercise",
-                  color: PR_COLORS[i%PR_COLORS.length],
-                  bg:    `${PR_COLORS[i%PR_COLORS.length]}22`,
-                  val:   r.weight ? `${r.weight} lbs` : (r.reps ? `${r.reps} reps` : "—"),
-                  when:  r.achievedAt ? new Date(r.achievedAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : "—",
-                }))
-              : RECORDS.slice(0,3);
-            return displayPRs.length === 0
-              ? <div style={{fontFamily:FONT,fontSize:13,color:"#555",textAlign:"center",padding:"16px 0"}}>Complete workouts to earn personal records</div>
-              : displayPRs.map((r,i)=>(
-                <div key={i} onClick={()=>setSubPage("records")} style={{ background:CARD2,borderRadius:14,padding:"14px 16px",marginBottom:i<displayPRs.length-1?10:0,display:"flex",alignItems:"center",gap:14,cursor:"pointer" }}>
-                  <div style={{ width:44,height:44,borderRadius:"50%",background:r.bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}><RecordIcon name={r.name}/></div>
-                  <div style={{ flex:1 }}>
-                    <div style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:"#fff",marginBottom:2 }}>{r.name}</div>
-                    <div style={{ fontFamily:FONT,fontSize:12,color:"#888888" }}>Personal Best</div>
-                  </div>
-                  <div style={{ textAlign:"right" }}>
-                    <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:r.color }}>{r.val}</div>
-                    <div style={{ fontFamily:FONT,fontSize:11,color:"#444",marginTop:2 }}>{r.when}</div>
-                  </div>
+            const hasPRs = previewPRs.length > 0;
+            const displayPRs = hasPRs
+              ? previewPRs.slice(0,3).map((r,i)=>{
+                  const name  = r.exerciseName || r.name || "Exercise";
+                  const color = getPRColor(name, i);
+                  return {
+                    name,
+                    color,
+                    bg:    `${color}22`,
+                    val:   r.weight ? `${r.weight} lbs` : (r.reps ? `${r.reps} reps` : "—"),
+                    when:  r.achievedAt ? new Date(r.achievedAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : null,
+                  };
+                })
+              : RECORDS.slice(0,3).map((r,i)=>{
+                  const color = getPRColor(r.name, i);
+                  return { name:r.name, color, bg:`${color}22`, val:"—", when:null };
+                });
+            return displayPRs.map((r,i)=>(
+              <div key={i} onClick={()=>setSubPage("records")} style={{ background:CARD2,borderRadius:14,padding:"14px 16px",marginBottom:i<displayPRs.length-1?10:0,display:"flex",alignItems:"center",gap:14,cursor:"pointer" }}>
+                <div style={{ width:44,height:44,borderRadius:"50%",background:r.bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}><RecordIcon name={r.name}/></div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:"#fff",marginBottom:2 }}>{r.name}</div>
+                  <div style={{ fontFamily:FONT,fontSize:12,color:"#888888" }}>{hasPRs ? "Personal Best" : "No record yet"}</div>
                 </div>
-              ));
+                <div style={{ textAlign:"right" }}>
+                  <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:r.val==="—"?"#555":r.color }}>{r.val}</div>
+                  {r.when && <div style={{ fontFamily:FONT,fontSize:11,color:"#444",marginTop:2 }}>{r.when}</div>}
+                </div>
+              </div>
+            ));
           })()}
         </div>
 
