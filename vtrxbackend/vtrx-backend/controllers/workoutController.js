@@ -525,9 +525,9 @@ const getRecommendation = async (req, res) => {
           description:  dbWorkout.description,
           imageUrl:     dbWorkout.imageUrl,
           exercises:    await (async () => {
-            const MIN_VIDEOS = 5;
+            const MIN_EXERCISES = 5;
+            // Include ALL linked exercises — don't require a video URL
             const linked = dbWorkout.exercises
-              .filter(we => we.exercise.videoUrl)
               .map(we => ({
                 id:           we.exercise.id,
                 name:         we.exercise.name,
@@ -536,32 +536,31 @@ const getRecommendation = async (req, res) => {
                 sets:         we.sets,
                 reps:         we.reps,
                 restSecs:     we.restSecs,
-                videoUrl:     we.exercise.videoUrl,
-                ymoveId:      we.exercise.ymoveId,
-                thumbnailUrl: we.exercise.thumbnailUrl,
+                videoUrl:     we.exercise.videoUrl     || null,
+                ymoveId:      we.exercise.ymoveId      || null,
+                thumbnailUrl: we.exercise.thumbnailUrl || null,
               }));
 
-            // Pad to MIN_VIDEOS using exercises from the same muscle groups
-            if (linked.length < MIN_VIDEOS) {
+            // Only pad if the workout has fewer than MIN_EXERCISES total
+            if (linked.length < MIN_EXERCISES) {
               const linkedIds    = linked.map(e => e.id);
               const muscleGroups = [...new Set(linked.map(e => e.muscleGroup).filter(Boolean))];
-              const need         = MIN_VIDEOS - linked.length;
+              const need         = MIN_EXERCISES - linked.length;
 
-              // First try muscle-group-specific exercises for relevant padding
+              // Prefer muscle-group-specific padding exercises (with videos preferred but not required)
               let extra = await prisma.exercise.findMany({
                 where: {
-                  videoUrl:    { not: null },
-                  id:          { notIn: linkedIds },
+                  id: { notIn: linkedIds },
                   ...(muscleGroups.length > 0 && { muscleGroup: { in: muscleGroups } }),
                 },
                 take:    need,
-                orderBy: { name: 'asc' },
+                orderBy: [{ videoUrl: 'asc' }, { name: 'asc' }],
               });
 
               // Fall back to any exercise if not enough muscle-group matches
               if (extra.length < need) {
                 const fallback = await prisma.exercise.findMany({
-                  where: { videoUrl: { not: null }, id: { notIn: [...linkedIds, ...extra.map(e => e.id)] } },
+                  where: { id: { notIn: [...linkedIds, ...extra.map(e => e.id)] } },
                   take:    need - extra.length,
                   orderBy: { name: 'asc' },
                 });
@@ -571,7 +570,7 @@ const getRecommendation = async (req, res) => {
               extra.forEach(e => linked.push({
                 id: e.id, name: e.name, muscleGroup: e.muscleGroup,
                 equipment: e.equipment, sets: 3, reps: '10', restSecs: 60,
-                videoUrl: e.videoUrl, ymoveId: e.ymoveId, thumbnailUrl: e.thumbnailUrl,
+                videoUrl: e.videoUrl || null, ymoveId: e.ymoveId || null, thumbnailUrl: e.thumbnailUrl || null,
               }));
             }
 
