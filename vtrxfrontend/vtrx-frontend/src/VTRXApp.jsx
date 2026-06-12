@@ -1736,25 +1736,23 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
   const exScrollRef = useScrollPos("exercise-" + (exercise?.name||""));
   const ex = exercise ? normaliseExercise(exercise) : normaliseExercise(EXERCISES[0]);
 
-  // Fetch a fresh (non-expired) video URL from our proxy endpoint when this
-  // exercise has a ymove ID but no pre-loaded URL in the exercise object.
   const [resolvedVideoUrl, setResolvedVideoUrl] = useState(ex.videoUrl || null);
+  const [resumePos, setResumePos] = useState(0);
   useEffect(()=>{
-    setResolvedVideoUrl(ex.videoUrl || null); // reset when exercise changes
-    if (!ex.ymoveId || ex.videoUrl) return;
+    setResolvedVideoUrl(ex.videoUrl || null); // show stored URL immediately while fresh one loads
+    if (!ex.ymoveId) return;                  // no ymoveId = no video source to refresh
     const token = getAuthToken();
     if (!token) return;
-    // Check localStorage resume position for this exercise
+    // Restore resume position
     try {
       const saved = JSON.parse(localStorage.getItem('vtrx_vidprog_' + ex.ymoveId) || 'null');
       if (saved?.pos > 5) setResumePos(saved.pos);
     } catch(_e){}
+    // Always fetch a fresh URL — ymove CDN links expire after 48 h, so stored URLs go stale
     apiCall(`/workouts/exercise-video/${ex.ymoveId}`)
       .then(d => { if (d?.data?.videoUrl) setResolvedVideoUrl(d.data.videoUrl); })
       .catch(()=>{});
   }, [ex.ymoveId, ex.videoUrl]);
-
-  const [resumePos, setResumePos] = useState(0);
 
   const [sets, setSets] = useState([{reps:"",weight:"",done:false},{reps:"",weight:"",done:false}]);
   const MIN_SETS = 2; // first 2 sets cannot be deleted
