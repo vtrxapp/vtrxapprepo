@@ -252,6 +252,52 @@ const AI_SUGGESTIONS = {
   peak:  { title:"Max Effort Nutrition",     tip:"Carb-loading the night before helps. Post-workout window is critical — eat within 30 min for optimal recovery.",     rec:[0,9,10] },
 };
 
+// Rotates daily (Mon–Sun). Each entry drives the VTRX Smart Nutrition banner.
+const DAILY_NUTRITION_FACTS = [
+  {
+    focus:    "Complex Carbohydrates",
+    fact:     "Complex carbs are your body's preferred fuel source. Unlike simple sugars, they digest slowly — giving you steady energy throughout your workout and keeping you fuller for longer.",
+    examples: "Best sources: oats, sweet potatoes, brown rice, quinoa, lentils, whole-grain bread, chickpeas.",
+    recipeTag:"High Protein",
+  },
+  {
+    focus:    "Protein & Muscle Repair",
+    fact:     "After training, your muscle fibres micro-tear and need protein to rebuild stronger. Spread your intake across meals — your body can only absorb around 30–40 g per sitting.",
+    examples: "Best sources: chicken breast, eggs, Greek yoghurt, cottage cheese, salmon, tofu, edamame.",
+    recipeTag:"High Protein",
+  },
+  {
+    focus:    "Healthy Fats",
+    fact:     "Healthy fats support hormone production, joint lubrication, and help absorb fat-soluble vitamins (A, D, E, K). They also provide long-lasting energy, ideal for lower-intensity days.",
+    examples: "Best sources: avocado, extra-virgin olive oil, almonds, walnuts, chia seeds, fatty fish, nut butters.",
+    recipeTag:"Low Carb",
+  },
+  {
+    focus:    "Hydration & Performance",
+    fact:     "Even 2% dehydration can reduce strength and endurance by up to 20%. Water regulates body temperature, carries nutrients to cells, and removes waste from muscles.",
+    examples: "Aim for 2.5–3.5 L daily. Around intense sessions, add electrolytes: sodium, potassium, magnesium.",
+    recipeTag:"Vegan",
+  },
+  {
+    focus:    "Pre-Workout Nutrition",
+    fact:     "Eating 1–2 hours before training fills your glycogen stores and gives muscles a pool of amino acids to draw from — directly improving power output and delaying fatigue.",
+    examples: "Ideas: banana + peanut butter, oat porridge with berries, brown rice with chicken, rice cakes + turkey.",
+    recipeTag:"High Protein",
+  },
+  {
+    focus:    "Post-Workout Recovery",
+    fact:     "The 30–60 min window after training is prime for nutrient uptake. Fast protein triggers muscle protein synthesis, while carbs replenish glycogen and blunt the cortisol spike.",
+    examples: "Ideas: protein shake + banana, Greek yoghurt with granola, chicken & rice bowl, salmon with sweet potato.",
+    recipeTag:"High Protein",
+  },
+  {
+    focus:    "Micronutrients & Recovery",
+    fact:     "Vitamins and minerals act as co-factors in hundreds of metabolic reactions. Iron carries oxygen to muscles, magnesium calms the nervous system, and vitamin C speeds tissue repair.",
+    examples: "Eat the rainbow: leafy greens, berries, bell peppers, pumpkin seeds, legumes, citrus fruit, dark chocolate.",
+    recipeTag:"Vegan",
+  },
+];
+
 const EXERCISES = [
   { name: "Dumbell Upper Chest", sets: 4, reps: 8, muscles: "Pectorals, Triceps, Front Delts", cal: 50, img: "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=200&q=70" },
   { name: "Lower Chest Fly", sets: 4, reps: 8, muscles: "Pectorals, Triceps, Front Delts", cal: 50, img: "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=200&q=70" },
@@ -7330,15 +7376,17 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
           <div>
             {/* VTRX Smart Nutrition */}
             {(() => {
+              const nFact = DAILY_NUTRITION_FACTS[selectedDay] || DAILY_NUTRITION_FACTS[0];
+              // Find one recipe whose tags match the fact's focus tag
+              const recipeMatch = displayRecipes.find(r =>
+                (r.tags||[]).some(t => t.toLowerCase().includes(nFact.recipeTag.toLowerCase()))
+              ) || displayRecipes[0] || normalizeRecipe(RECIPES[0]);
+              // Today's macros from meal plan (premium)
               const todayMacros = MEAL_SLOTS.reduce((acc, slot) => {
                 const meal = getMealForDay(selectedDay, slot);
                 if (meal) { acc.cal += meal.cal||0; acc.protein += meal.protein||0; acc.carbs += meal.carbs||0; acc.fat += meal.fats||0; }
                 return acc;
               }, { cal:0, protein:0, carbs:0, fat:0 });
-              const todayRecs = [0,1].map(i => {
-                const ri = (aiSug.rec||[0,1])[i] ?? i;
-                return displayRecipes[ri] || normalizeRecipe(RECIPES[ri] || RECIPES[0]);
-              }).filter(Boolean);
               return (
                 <div style={{ background:`${PRIMARY}12`,border:`1px solid ${PRIMARY}30`,borderRadius:16,marginBottom:12,overflow:"hidden" }}>
                   {/* Header */}
@@ -7356,9 +7404,14 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
                   </div>
                   {bannerOpen && (
                     <div style={{ padding:"0 14px 14px" }}>
+                      {/* Nutrition fact — visible to everyone */}
+                      <div style={{ background:"rgba(255,255,255,0.04)",borderRadius:12,padding:"12px 12px",marginBottom:12,borderLeft:`3px solid ${PRIMARY}` }}>
+                        <div style={{ fontFamily:FONT,fontWeight:800,fontSize:12,color:PRIMARY,marginBottom:6,letterSpacing:0.3 }}>{nFact.focus}</div>
+                        <div style={{ fontFamily:FONT,fontSize:12,color:"#ccc",lineHeight:1.65,marginBottom:8 }}>{nFact.fact}</div>
+                        <div style={{ fontFamily:FONT,fontSize:11,color:"#888",lineHeight:1.55 }}>{nFact.examples}</div>
+                      </div>
                       {isPremium ? (
                         <>
-                          <div style={{ fontFamily:FONT,fontSize:11,color:"#888",marginBottom:10 }}>Today's nutrition — {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][selectedDay]}</div>
                           {/* Macro tiles */}
                           <div style={{ display:"flex",gap:6,marginBottom:14 }}>
                             {[{l:"Calories",v:todayMacros.cal||"—",u:"kcal",c:"#FF6B35"},{l:"Protein",v:todayMacros.protein||"—",u:"g",c:PRIMARY},{l:"Carbs",v:todayMacros.carbs||"—",u:"g",c:"#F59E0B"},{l:"Fat",v:todayMacros.fat||"—",u:"g",c:"#A855F7"}].map(m=>(
@@ -7369,56 +7422,43 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
                               </div>
                             ))}
                           </div>
-                          {/* 2 recommended recipes */}
-                          <div style={{ fontFamily:FONT,fontSize:11,color:"#888",marginBottom:8 }}>Recommended for today</div>
-                          <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
-                            {todayRecs.map((sr,i)=>(
-                              <div key={i} onClick={()=>setSelectedRecipe(sr)}
-                                style={{ display:"flex",alignItems:"center",gap:12,borderRadius:14,overflow:"hidden",cursor:"pointer",background:"rgba(255,255,255,0.06)",padding:"8px" }}>
-                                <div style={{ width:56,height:56,borderRadius:10,overflow:"hidden",flexShrink:0 }}>
-                                  <img src={sr.img} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
-                                </div>
-                                <div style={{ flex:1 }}>
-                                  <div style={{ fontFamily:FONT,fontSize:13,fontWeight:700,color:"#fff",lineHeight:1.3,marginBottom:3 }}>{sr.name}</div>
-                                  <div style={{ display:"flex",gap:8,alignItems:"center" }}>
-                                    <span style={{ fontFamily:FONT,fontSize:11,color:"#888" }}>{sr.cal} cal</span>
-                                    <span style={{ fontFamily:FONT,fontSize:11,color:PRIMARY }}>{sr.protein}g protein</span>
-                                  </div>
-                                </div>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#bbb" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+                          {/* One recommended recipe */}
+                          <div style={{ fontFamily:FONT,fontSize:11,color:"#888",marginBottom:8 }}>Try this today</div>
+                          <div onClick={()=>setSelectedRecipe(recipeMatch)}
+                            style={{ display:"flex",alignItems:"center",gap:12,borderRadius:14,overflow:"hidden",cursor:"pointer",background:"rgba(255,255,255,0.06)",padding:"8px" }}>
+                            <div style={{ width:60,height:60,borderRadius:10,overflow:"hidden",flexShrink:0 }}>
+                              <img src={recipeMatch.img} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+                            </div>
+                            <div style={{ flex:1 }}>
+                              <div style={{ fontFamily:FONT,fontSize:13,fontWeight:700,color:"#fff",lineHeight:1.3,marginBottom:4 }}>{recipeMatch.name}</div>
+                              <div style={{ display:"flex",gap:10,alignItems:"center" }}>
+                                <span style={{ fontFamily:FONT,fontSize:11,color:"#888" }}>{recipeMatch.cal} cal</span>
+                                <span style={{ fontFamily:FONT,fontSize:11,color:PRIMARY }}>{recipeMatch.protein}g protein</span>
+                                <span style={{ fontFamily:FONT,fontSize:11,color:"#888" }}>{recipeMatch.time}</span>
                               </div>
-                            ))}
+                            </div>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#bbb" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
                           </div>
                         </>
                       ) : (
                         <>
-                          <div style={{ fontFamily:FONT,fontSize:12,color:"#aaa",lineHeight:1.55,marginBottom:12 }}>
-                            Daily nutrition facts, macro tracking &amp; AI-curated recipe recommendations tailored to your goals.
-                          </div>
-                          {/* Blurred macros teaser */}
-                          <div style={{ display:"flex",gap:6,marginBottom:12,filter:"blur(4px)",pointerEvents:"none",userSelect:"none" }}>
-                            {[{l:"Calories",v:"1,840",u:"kcal",c:"#FF6B35"},{l:"Protein",v:"142",u:"g",c:PRIMARY},{l:"Carbs",v:"210",u:"g",c:"#F59E0B"},{l:"Fat",v:"58",u:"g",c:"#A855F7"}].map(m=>(
-                              <div key={m.l} style={{ flex:1,background:"rgba(255,255,255,0.06)",borderRadius:10,padding:"8px 4px",textAlign:"center" }}>
-                                <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:m.c }}>{m.v}</div>
-                                <div style={{ fontFamily:FONT,fontSize:9,color:"#888",marginTop:1 }}>{m.u}</div>
-                                <div style={{ fontFamily:FONT,fontSize:9,color:"#555",marginTop:1 }}>{m.l}</div>
+                          {/* Blurred recipe teaser */}
+                          <div style={{ position:"relative",marginBottom:14 }}>
+                            <div style={{ filter:"blur(5px)",pointerEvents:"none",userSelect:"none",display:"flex",alignItems:"center",gap:12,borderRadius:14,overflow:"hidden",background:"rgba(255,255,255,0.06)",padding:"8px" }}>
+                              <div style={{ width:60,height:60,borderRadius:10,overflow:"hidden",flexShrink:0 }}>
+                                <img src={recipeMatch.img} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
                               </div>
-                            ))}
-                          </div>
-                          {/* Blurred recipe teasers */}
-                          <div style={{ display:"flex",gap:8,marginBottom:14,filter:"blur(5px)",pointerEvents:"none",userSelect:"none" }}>
-                            {[0,1].map(i => {
-                              const sr = displayRecipes[i] || normalizeRecipe(RECIPES[i]||RECIPES[0]);
-                              return (
-                                <div key={i} style={{ flex:1,background:"rgba(255,255,255,0.06)",borderRadius:12,overflow:"hidden" }}>
-                                  <div style={{ height:60,overflow:"hidden" }}><img src={sr.img} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/></div>
-                                  <div style={{ padding:"6px 8px" }}>
-                                    <div style={{ fontFamily:FONT,fontSize:11,fontWeight:700,color:"#fff",lineHeight:1.3 }}>{sr.name}</div>
-                                    <div style={{ fontFamily:FONT,fontSize:10,color:"#888" }}>{sr.cal} cal</div>
-                                  </div>
+                              <div style={{ flex:1 }}>
+                                <div style={{ fontFamily:FONT,fontSize:13,fontWeight:700,color:"#fff",lineHeight:1.3,marginBottom:4 }}>{recipeMatch.name}</div>
+                                <div style={{ display:"flex",gap:10 }}>
+                                  <span style={{ fontFamily:FONT,fontSize:11,color:"#888" }}>{recipeMatch.cal} cal</span>
+                                  <span style={{ fontFamily:FONT,fontSize:11,color:PRIMARY }}>{recipeMatch.protein}g protein</span>
                                 </div>
-                              );
-                            })}
+                              </div>
+                            </div>
+                            <div style={{ position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center" }}>
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                            </div>
                           </div>
                           {/* CTA */}
                           <button onClick={()=>setShowUpgrade(true)}
