@@ -1131,7 +1131,7 @@ function SwipeableSet({ set:s, index:i, activeSet, onUpdate, onComplete, onDelet
 // ─────────────────────────────────────────────────────────────────────────────
 const PLAYBACK_SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
-function VideoPlayer({ videoUrl, thumbnailUrl, exerciseName, onProgress, onVideoComplete, initialPositionSecs = 0 }) {
+function VideoPlayer({ videoUrl, thumbnailUrl, exerciseName, onProgress, onVideoComplete, initialPositionSecs = 0, fillContainer = false, onPortraitDetected }) {
   const videoRef    = useRef(null);
   const containerRef = useRef(null);
   const seekBarRef  = useRef(null);
@@ -1174,7 +1174,13 @@ function VideoPlayer({ videoUrl, thumbnailUrl, exerciseName, onProgress, onVideo
     const onPause    = () => { setIsPlaying(false); setShowControls(true); clearTimeout(hideTimer.current); };
     const onLoading  = () => setIsLoading(true);
     const onCanPlay  = () => { setIsLoading(false); setHasError(false); };
-    const onMeta     = () => { setDuration(v.duration || 0); if (initialPositionSecs > 0) v.currentTime = initialPositionSecs; };
+    const onMeta     = () => {
+      setDuration(v.duration || 0);
+      if (initialPositionSecs > 0) v.currentTime = initialPositionSecs;
+      if (onPortraitDetected && v.videoWidth && v.videoHeight) {
+        onPortraitDetected(v.videoHeight > v.videoWidth);
+      }
+    };
     const onTime     = () => {
       setCurrentTime(v.currentTime);
       if (onProgress && v.duration > 0) onProgress(v.currentTime, v.duration);
@@ -1307,7 +1313,7 @@ function VideoPlayer({ videoUrl, thumbnailUrl, exerciseName, onProgress, onVideo
     );
   }
 
-  const playerHeight = isFullscreen ? '100vh' : 210;
+  const playerHeight = fillContainer ? '100%' : (isFullscreen ? '100vh' : 210);
 
   return (
     <div
@@ -1642,6 +1648,12 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
   const [restCount, setRestCount] = useState(0);
   const timerRef = useRef(null);
 
+  const [isPortrait, setIsPortrait]   = useState(false);
+  const [panelOpen,  setPanelOpen]    = useState(true);
+  const [panelDragY, setPanelDragY]   = useState(0);
+  const dragRef      = useRef({ startY: 0, active: false });
+  const panelDragYRef = useRef(0);
+
   const completedSets = sets.filter(s=>s.done).length;
   const allDone = completedSets === sets.length;
 
@@ -1682,6 +1694,256 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
 
   const progressPct = (completedSets / sets.length) * 100;
 
+  // Portrait panel drag handlers (only handle drag-handle touch, not scroll area)
+  const onHandleTouchStart = (e) => {
+    dragRef.current = { startY: e.touches[0].clientY, active: true };
+  };
+  const onHandleTouchMove = (e) => {
+    if (!dragRef.current.active) return;
+    const dy = Math.max(0, e.touches[0].clientY - dragRef.current.startY);
+    panelDragYRef.current = dy;
+    setPanelDragY(dy);
+  };
+  const onHandleTouchEnd = () => {
+    if (panelDragYRef.current > 80) setPanelOpen(false);
+    setPanelDragY(0);
+    panelDragYRef.current = 0;
+    dragRef.current.active = false;
+  };
+
+  const exSubtitle = [ex.muscles, ex.equipment].filter(Boolean).join(' · ');
+
+  const videoProps = {
+    videoUrl: resolvedVideoUrl,
+    thumbnailUrl: ex.thumbnailUrl || ex.img || null,
+    exerciseName: ex.name,
+    initialPositionSecs: resumePos,
+    onPortraitDetected: setIsPortrait,
+    onProgress: (pos, dur) => {
+      if (ex.ymoveId || ex.id) {
+        const KEY = 'vtrx_vidprog_' + (ex.ymoveId || ex.id);
+        try { localStorage.setItem(KEY, JSON.stringify({ pos: Math.floor(pos), dur: Math.floor(dur) })); } catch(_e){}
+      }
+    },
+    onVideoComplete: () => { if (onAutoStartWorkout) onAutoStartWorkout(); },
+  };
+
+  // Shared panel body used in both portrait and landscape layouts
+  const innerContent = (
+    <>
+      {restTimer && (
+        <div style={{ background:"linear-gradient(135deg,#00A3FF,#0068CC)",borderRadius:16,padding:"14px 18px",marginBottom:14,display:"flex",alignItems:"center",gap:14,animation:"fadeUp 0.3s ease both" }}>
+          <div style={{ width:50,height:50,borderRadius:"50%",background:"rgba(255,255,255,0.2)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+            <span style={{ fontFamily:FONT,fontWeight:900,fontSize:18,color:"#fff" }}>{restCount}</span>
+          </div>
+          <div>
+            <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",marginBottom:2 }}>Rest Time</div>
+            <div style={{ fontFamily:FONT,fontSize:12,color:"rgba(255,255,255,0.8)" }}>Take adequate rest between sets for optimal performance</div>
+          </div>
+        </div>
+      )}
+      <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,marginBottom:14,overflow:"hidden" }}>
+        <button onClick={()=>setTipsOpen(o=>!o)} style={{ width:"100%",padding:"14px 18px",background:"none",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between" }}>
+          <div style={{ display:"flex",alignItems:"center",gap:10 }}>
+            <div style={{ width:34,height:34,borderRadius:10,background:"linear-gradient(135deg,#6D28D9,#4C1D95)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16 }}><svg width="12" height="12" viewBox="0 0 24 24" fill="#00A3FF" stroke="none"><polygon points="12 2 13.5 10.5 22 12 13.5 13.5 12 22 10.5 13.5 2 12 10.5 10.5 12 2"/></svg></div>
+            <div style={{ textAlign:"left" }}>
+              <div style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:"#8B5CF6",letterSpacing:1.5 }}>VTRXAI</div>
+              <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#fff" }}>Smart Tips</div>
+            </div>
+          </div>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" style={{ transform:tipsOpen?"rotate(180deg)":"rotate(0deg)",transition:"transform 0.25s" }}><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        {tipsOpen && (
+          <div style={{ padding:"0 16px 16px",display:"flex",flexDirection:"column",gap:10,animation:"fadeUp 0.25s ease both" }}>
+            {aiTips.map((t,i)=>(
+              <div key={i} style={{ display:"flex",alignItems:"center",gap:12,background:"#1a1a1a",borderRadius:12,padding:"12px 14px",border:`1px solid ${BORDER}` }}>
+                <div style={{ width:36,height:36,borderRadius:10,background:`${t.color}18`,border:`1px solid ${t.color}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:t.color }}><AiTipIcon type={t.icon}/></div>
+                <div>
+                  <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:t.color,letterSpacing:1,marginBottom:2 }}>{t.label.toUpperCase()}</div>
+                  <div style={{ fontFamily:FONT,fontSize:13,color:"rgba(255,255,255,0.8)" }}>{t.value}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div style={{ background:CARD,borderRadius:16,border:`1px solid ${BORDER}`,padding:"14px 18px",marginBottom:14 }}>
+        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10 }}>
+          <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#fff" }}>Sets Progress</div>
+          <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:PRIMARY }}>{completedSets}/{sets.length} sets</div>
+        </div>
+        <div style={{ height:8,background:"#222",borderRadius:8,overflow:"hidden" }}>
+          <div style={{ height:"100%",width:`${progressPct}%`,background:`linear-gradient(90deg,${PRIMARY},#22C55E)`,borderRadius:8,transition:"width 0.6s ease" }}/>
+        </div>
+        <div style={{ display:"flex",justifyContent:"space-between",marginTop:8 }}>
+          {sets.map((_,i)=>(
+            <div key={i} style={{ flex:1,textAlign:"center" }}>
+              <div style={{ width:10,height:10,borderRadius:"50%",background:sets[i].done?"#22C55E":i===activeSet?PRIMARY:"#2a2a2a",margin:"0 auto",border:`1.5px solid ${sets[i].done?"#22C55E":i===activeSet?PRIMARY:"#333"}`,transition:"all 0.3s" }}/>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"16px",marginBottom:14 }}>
+        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16 }}>
+          <div style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff" }}>Log Your Sets</div>
+          <div style={{ fontFamily:FONT,fontSize:11,color:"#888888" }}>Target: 8–12 reps</div>
+        </div>
+        {sets.map((s,i)=>(
+          <SwipeableSet key={i}
+            set={s} index={i} activeSet={activeSet}
+            onUpdate={(field,val)=>updateSet(i,field,val)}
+            onComplete={()=>!s.done&&markSetDone(i)}
+            onDelete={i>=MIN_SETS&&!s.done ? ()=>setSets(p=>p.filter((_,j)=>j!==i)) : null}
+          />
+        ))}
+        <button onClick={addSet} style={{ width:"100%",padding:"12px 0",borderRadius:12,background:"transparent",border:`1.5px dashed ${BORDER}`,fontFamily:FONT,fontWeight:600,fontSize:13,color:"#888888",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:4,transition:"all 0.2s" }}>
+          <span style={{ fontSize:18,lineHeight:1 }}>+</span> Add Set
+        </button>
+      </div>
+      <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,marginBottom:16,overflow:"hidden" }}>
+        <button onClick={()=>setInstructOpen(o=>!o)} style={{ width:"100%",padding:"16px 18px",background:"none",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between" }}>
+          <div style={{ display:"flex",alignItems:"center",gap:10 }}>
+            <div style={{ display:"flex",alignItems:"center",justifyContent:"center",width:24,height:24 }}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></div>
+            <div style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:"#fff" }}>How to do this exercise</div>
+          </div>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" style={{ transform:instructOpen?"rotate(180deg)":"rotate(0deg)",transition:"transform 0.25s" }}><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        {instructOpen && (
+          <div style={{ padding:"0 18px 18px",animation:"fadeUp 0.25s ease both" }}>
+            {instructions.map((step,i)=>(
+              <div key={i} style={{ display:"flex",gap:14,marginBottom:i<instructions.length-1?14:0 }}>
+                <div style={{ width:26,height:26,borderRadius:"50%",background:`${PRIMARY}22`,border:`1.5px solid ${PRIMARY}55`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:FONT,fontWeight:800,fontSize:12,color:PRIMARY }}>{i+1}</div>
+                <div style={{ fontFamily:FONT,fontSize:14,color:"rgba(255,255,255,0.78)",lineHeight:1.55,paddingTop:3 }}>{step}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div style={{ background:"linear-gradient(135deg,#0f172a,#1e1b4b)",borderRadius:16,border:`1px solid ${PRIMARY}22`,padding:"14px 18px",marginBottom:4,display:"flex",alignItems:"center",justifyContent:"space-between" }}>
+        <div style={{ display:"flex",alignItems:"center",gap:12 }}>
+          <div style={{ display:"flex",alignItems:"center",justifyContent:"center" }}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#aaa" strokeWidth="1.8"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div>
+          <div>
+            <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#fff" }}>Recommended Weight</div>
+            <div style={{ fontFamily:FONT,fontSize:12,color:"#888888",marginTop:2 }}>Based on your last session</div>
+          </div>
+        </div>
+        <div style={{ background:`${PRIMARY}18`,border:`1px solid ${PRIMARY}33`,borderRadius:20,padding:"6px 14px" }}>
+          <span style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:PRIMARY }}>Unlock soon</span>
+        </div>
+      </div>
+    </>
+  );
+
+  const cta = (
+    <div style={{ position:"absolute",bottom:0,left:0,right:0,padding:"12px 16px 28px",background:`linear-gradient(180deg,transparent 0%,${BG} 30%)`,paddingTop:20 }}>
+      {!allDone ? (
+        <div style={{ display:"flex",flexDirection:"column",gap:10 }}>
+          {(()=>{
+            const ready = started && canComplete(activeSet) && activeSet < sets.length && !sets[activeSet].done;
+            const btnBg = !started ? `linear-gradient(135deg,${PRIMARY},#0068CC)` : ready ? `linear-gradient(135deg,${PRIMARY},#0068CC)` : "linear-gradient(135deg,#1a1a1a,#222)";
+            return (
+              <button
+                onClick={()=>{ if(!started) setStarted(true); else if(ready) markSetDone(activeSet); }}
+                style={{ width:"100%",padding:"14px 0",borderRadius:50,border:ready||!started?`none`:`1px solid ${BORDER}`,background:btnBg,fontFamily:FONT,fontWeight:800,fontSize:14,color:ready||!started?"#fff":"#444",letterSpacing:1,cursor:ready||!started?"pointer":"not-allowed",display:"flex",alignItems:"center",justifyContent:"center",gap:10,boxShadow:ready||!started?`0 4px 28px ${PRIMARY}55`:"none",transition:"all 0.2s" }}>
+                {!started
+                  ? <><svg width="13" height="13" viewBox="0 0 13 13" fill="white"><polygon points="0,0 13,6.5 0,13"/></svg> START EXERCISE</>
+                  : <>
+                      <span style={{ fontFamily:"monospace",fontSize:14,fontWeight:900,color:ready?"#fff":"#555",letterSpacing:2,minWidth:52 }}>
+                        {workoutFmt ? workoutFmt(workoutElapsed) : "00:00"}
+                      </span>
+                      <span style={{ color:ready?"#fff":"#555" }}>·</span>
+                      <span>{ready ? `COMPLETE SET ${activeSet+1}` : `LOG WEIGHT & REPS FIRST`}</span>
+                    </>
+                }
+              </button>
+            );
+          })()}
+          <button onClick={onBack} style={{ width:"100%",padding:"11px 0",borderRadius:50,background:"transparent",border:`1px solid ${BORDER}`,fontFamily:FONT,fontWeight:600,fontSize:13,color:"#888888",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="5 12 19 12"/><polyline points="13 6 19 12 13 18"/></svg>
+            Skip this exercise
+          </button>
+        </div>
+      ) : (
+        <button onClick={()=>{ if(onComplete) onComplete(); onBack(); }} style={{ width:"100%",padding:"16px 0",borderRadius:50,border:"none",background:"linear-gradient(135deg,#22C55E,#16A34A)",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1,cursor:"pointer",boxShadow:"0 4px 24px rgba(34,197,94,0.5)" }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" style={{display:"inline",marginRight:6,verticalAlign:"middle"}}><polyline points="20 6 9 17 4 12"/></svg>
+          EXERCISE COMPLETE — NEXT
+        </button>
+      )}
+    </div>
+  );
+
+  // ── PORTRAIT LAYOUT: video fills screen, panel slides from bottom ───────────
+  if (isPortrait && resolvedVideoUrl) {
+    const panelTransform = panelOpen ? `translateY(${panelDragY}px)` : "translateY(100%)";
+    return (
+      <div style={{ position:"absolute",inset:0,background:"#000",overflow:"hidden" }}>
+
+        {/* Full-screen portrait video as background */}
+        <VideoPlayer {...videoProps} fillContainer />
+
+        {/* Header gradient overlay */}
+        <div style={{ position:"absolute",top:0,left:0,right:0,zIndex:20,padding:"50px 18px 24px",background:"linear-gradient(180deg,rgba(0,0,0,0.8) 0%,transparent 100%)",pointerEvents:"none" }}>
+          <div style={{ display:"flex",alignItems:"center",pointerEvents:"all" }}>
+            <button onClick={onBack} style={{ width:36,height:36,borderRadius:"50%",background:"rgba(0,0,0,0.5)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",border:"1px solid rgba(255,255,255,0.15)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"#fff",fontSize:20,flexShrink:0 }}>‹</button>
+            <div style={{ flex:1,textAlign:"center",padding:"0 12px" }}>
+              <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:"#fff",textShadow:"0 1px 6px rgba(0,0,0,0.7)" }}>{ex.name}</div>
+              {exSubtitle && <div style={{ fontFamily:FONT,fontSize:12,color:"rgba(255,255,255,0.75)",marginTop:3 }}>{exSubtitle}</div>}
+            </div>
+            <div style={{ width:36 }}/>
+          </div>
+        </div>
+
+        {/* Show Details pill when panel is dismissed */}
+        {!panelOpen && (
+          <div style={{ position:"absolute",bottom:36,left:0,right:0,zIndex:20,display:"flex",justifyContent:"center" }}>
+            <button
+              onTouchStart={()=>setPanelOpen(true)}
+              onClick={()=>setPanelOpen(true)}
+              style={{ background:"rgba(255,255,255,0.13)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",border:"1px solid rgba(255,255,255,0.22)",borderRadius:40,padding:"10px 24px",display:"flex",alignItems:"center",gap:8,cursor:"pointer" }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><polyline points="18 15 12 9 6 15"/></svg>
+              <span style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#fff" }}>Show Details</span>
+            </button>
+          </div>
+        )}
+
+        {/* Sliding panel — drag handle collapses it, revealing full video */}
+        <div
+          style={{
+            position:"absolute",bottom:0,left:0,right:0,zIndex:15,
+            height:"68%",
+            background:"linear-gradient(180deg,rgba(10,14,30,0.94) 0%,rgba(10,15,30,0.98) 40%)",
+            backdropFilter:"blur(18px)",
+            WebkitBackdropFilter:"blur(18px)",
+            borderRadius:"22px 22px 0 0",
+            transform:panelTransform,
+            transition:dragRef.current.active ? "none" : "transform 0.38s cubic-bezier(0.32,0.72,0,1)",
+            display:"flex",flexDirection:"column",
+            boxShadow:"0 -16px 60px rgba(0,0,0,0.65)",
+          }}
+        >
+          {/* Drag handle — touch here to swipe panel away */}
+          <div
+            style={{ paddingTop:12,paddingBottom:6,display:"flex",justifyContent:"center",alignItems:"center",flexShrink:0,userSelect:"none",touchAction:"none",cursor:"grab" }}
+            onTouchStart={onHandleTouchStart}
+            onTouchMove={onHandleTouchMove}
+            onTouchEnd={onHandleTouchEnd}
+          >
+            <div style={{ width:36,height:4,borderRadius:2,background:"rgba(255,255,255,0.22)" }}/>
+          </div>
+
+          {/* Scrollable content */}
+          <div ref={exScrollRef} style={{ flex:1,overflowY:"auto",paddingBottom:110 }}>
+            <div style={{ padding:"8px 16px 0" }}>{innerContent}</div>
+          </div>
+
+          {cta}
+        </div>
+      </div>
+    );
+  }
+
+  // ── LANDSCAPE LAYOUT (default) ────────────────────────────────────────────
   return (
     <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column" }}>
 
@@ -1690,194 +1952,18 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
         <button onClick={onBack} style={{ width:36,height:36,borderRadius:"50%",background:CARD,border:`1px solid ${BORDER}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"#fff",fontSize:20,marginTop:2 }}>‹</button>
         <div style={{ flex:1,textAlign:"center",padding:"0 12px" }}>
           <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:"#fff" }}>{ex.name}</div>
-          {(ex.muscles || ex.equipment) && (
-            <div style={{ fontFamily:FONT,fontSize:12,color:"#888888",marginTop:3 }}>
-              {[ex.muscles, ex.equipment].filter(Boolean).join(' · ')}
-            </div>
-          )}
+          {exSubtitle && <div style={{ fontFamily:FONT,fontSize:12,color:"#888888",marginTop:3 }}>{exSubtitle}</div>}
         </div>
         <div style={{ width:36 }}/>
       </div>
 
       {/* ── SCROLL BODY ── */}
-      <div style={{ flex:1,overflowY:"auto",paddingBottom:100 }}>
-
-        {/* ── VIDEO PLAYER ── */}
-        <VideoPlayer
-          videoUrl={resolvedVideoUrl}
-          thumbnailUrl={ex.thumbnailUrl || ex.img || null}
-          exerciseName={ex.name}
-          initialPositionSecs={resumePos}
-          onProgress={(pos, dur) => {
-            if (ex.ymoveId || ex.id) {
-              const KEY = 'vtrx_vidprog_' + (ex.ymoveId || ex.id);
-              try { localStorage.setItem(KEY, JSON.stringify({ pos: Math.floor(pos), dur: Math.floor(dur) })); } catch(_e){}
-            }
-          }}
-          onVideoComplete={() => {
-            if (onAutoStartWorkout) onAutoStartWorkout();
-          }}
-        />
-
-        <div style={{ padding:"16px 16px 0" }}>
-
-          {/* ── REST TIMER ── */}
-          {restTimer && (
-            <div style={{ background:"linear-gradient(135deg,#00A3FF,#0068CC)",borderRadius:16,padding:"14px 18px",marginBottom:14,display:"flex",alignItems:"center",gap:14,animation:"fadeUp 0.3s ease both" }}>
-              <div style={{ width:50,height:50,borderRadius:"50%",background:"rgba(255,255,255,0.2)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
-                <span style={{ fontFamily:FONT,fontWeight:900,fontSize:18,color:"#fff" }}>{restCount}</span>
-              </div>
-              <div>
-                <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",marginBottom:2 }}>Rest Time</div>
-                <div style={{ fontFamily:FONT,fontSize:12,color:"rgba(255,255,255,0.8)" }}>Take adequate rest between sets for optimal performance</div>
-              </div>
-            </div>
-          )}
-
-          {/* ── AI SMART TIPS ── */}
-          <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,marginBottom:14,overflow:"hidden" }}>
-            <button onClick={()=>setTipsOpen(o=>!o)} style={{ width:"100%",padding:"14px 18px",background:"none",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between" }}>
-              <div style={{ display:"flex",alignItems:"center",gap:10 }}>
-                <div style={{ width:34,height:34,borderRadius:10,background:"linear-gradient(135deg,#6D28D9,#4C1D95)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16 }}><svg width="12" height="12" viewBox="0 0 24 24" fill="#00A3FF" stroke="none"><polygon points="12 2 13.5 10.5 22 12 13.5 13.5 12 22 10.5 13.5 2 12 10.5 10.5 12 2"/></svg></div>
-                <div style={{ textAlign:"left" }}>
-                  <div style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:"#8B5CF6",letterSpacing:1.5 }}>VTRXAI</div>
-                  <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#fff" }}>Smart Tips</div>
-                </div>
-              </div>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" style={{ transform:tipsOpen?"rotate(180deg)":"rotate(0deg)",transition:"transform 0.25s" }}><polyline points="6 9 12 15 18 9"/></svg>
-            </button>
-            {tipsOpen && (
-              <div style={{ padding:"0 16px 16px",display:"flex",flexDirection:"column",gap:10,animation:"fadeUp 0.25s ease both" }}>
-                {aiTips.map((t,i)=>(
-                  <div key={i} style={{ display:"flex",alignItems:"center",gap:12,background:"#1a1a1a",borderRadius:12,padding:"12px 14px",border:`1px solid ${BORDER}` }}>
-                    <div style={{ width:36,height:36,borderRadius:10,background:`${t.color}18`,border:`1px solid ${t.color}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:t.color }}><AiTipIcon type={t.icon}/></div>
-                    <div>
-                      <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:t.color,letterSpacing:1,marginBottom:2 }}>{t.label.toUpperCase()}</div>
-                      <div style={{ fontFamily:FONT,fontSize:13,color:"rgba(255,255,255,0.8)" }}>{t.value}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* ── PROGRESS BAR ── */}
-          <div style={{ background:CARD,borderRadius:16,border:`1px solid ${BORDER}`,padding:"14px 18px",marginBottom:14 }}>
-            <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10 }}>
-              <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#fff" }}>Sets Progress</div>
-              <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:PRIMARY }}>{completedSets}/{sets.length} sets</div>
-            </div>
-            <div style={{ height:8,background:"#222",borderRadius:8,overflow:"hidden" }}>
-              <div style={{ height:"100%",width:`${progressPct}%`,background:`linear-gradient(90deg,${PRIMARY},#22C55E)`,borderRadius:8,transition:"width 0.6s ease" }}/>
-            </div>
-            <div style={{ display:"flex",justifyContent:"space-between",marginTop:8 }}>
-              {sets.map((_,i)=>(
-                <div key={i} style={{ flex:1,textAlign:"center" }}>
-                  <div style={{ width:10,height:10,borderRadius:"50%",background:sets[i].done?"#22C55E":i===activeSet?PRIMARY:"#2a2a2a",margin:"0 auto",border:`1.5px solid ${sets[i].done?"#22C55E":i===activeSet?PRIMARY:"#333"}`,transition:"all 0.3s" }}/>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* ── LOGGING SECTION ── */}
-          <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"16px",marginBottom:14 }}>
-            <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16 }}>
-              <div style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff" }}>Log Your Sets</div>
-              <div style={{ fontFamily:FONT,fontSize:11,color:"#888888" }}>Target: 8–12 reps</div>
-            </div>
-
-            {sets.map((s,i)=>(
-              <SwipeableSet key={i}
-                set={s} index={i} activeSet={activeSet}
-                onUpdate={(field,val)=>updateSet(i,field,val)}
-                onComplete={()=>!s.done&&markSetDone(i)}
-                onDelete={i>=MIN_SETS&&!s.done ? ()=>setSets(p=>p.filter((_,j)=>j!==i)) : null}
-              />
-            ))}
-
-            {/* Add set */}
-            <button onClick={addSet} style={{ width:"100%",padding:"12px 0",borderRadius:12,background:"transparent",border:`1.5px dashed ${BORDER}`,fontFamily:FONT,fontWeight:600,fontSize:13,color:"#888888",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:4,transition:"all 0.2s" }}>
-              <span style={{ fontSize:18,lineHeight:1 }}>+</span> Add Set
-            </button>
-          </div>
-
-          {/* ── INSTRUCTIONS ── */}
-          <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,marginBottom:16,overflow:"hidden" }}>
-            <button onClick={()=>setInstructOpen(o=>!o)} style={{ width:"100%",padding:"16px 18px",background:"none",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between" }}>
-              <div style={{ display:"flex",alignItems:"center",gap:10 }}>
-                <div style={{ display:"flex",alignItems:"center",justifyContent:"center",width:24,height:24 }}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></div>
-                <div style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:"#fff" }}>How to do this exercise</div>
-              </div>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" style={{ transform:instructOpen?"rotate(180deg)":"rotate(0deg)",transition:"transform 0.25s" }}><polyline points="6 9 12 15 18 9"/></svg>
-            </button>
-            {instructOpen && (
-              <div style={{ padding:"0 18px 18px",animation:"fadeUp 0.25s ease both" }}>
-                {instructions.map((step,i)=>(
-                  <div key={i} style={{ display:"flex",gap:14,marginBottom:i<instructions.length-1?14:0 }}>
-                    <div style={{ width:26,height:26,borderRadius:"50%",background:`${PRIMARY}22`,border:`1.5px solid ${PRIMARY}55`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:FONT,fontWeight:800,fontSize:12,color:PRIMARY }}>{i+1}</div>
-                    <div style={{ fontFamily:FONT,fontSize:14,color:"rgba(255,255,255,0.78)",lineHeight:1.55,paddingTop:3 }}>{step}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* ── WEIGHT RECOMMENDATION (LOCKED) ── */}
-          <div style={{ background:"linear-gradient(135deg,#0f172a,#1e1b4b)",borderRadius:16,border:`1px solid ${PRIMARY}22`,padding:"14px 18px",marginBottom:4,display:"flex",alignItems:"center",justifyContent:"space-between" }}>
-            <div style={{ display:"flex",alignItems:"center",gap:12 }}>
-              <div style={{ display:"flex",alignItems:"center",justifyContent:"center" }}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#aaa" strokeWidth="1.8"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div>
-              <div>
-                <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#fff" }}>Recommended Weight</div>
-                <div style={{ fontFamily:FONT,fontSize:12,color:"#888888",marginTop:2 }}>Based on your last session</div>
-              </div>
-            </div>
-            <div style={{ background:`${PRIMARY}18`,border:`1px solid ${PRIMARY}33`,borderRadius:20,padding:"6px 14px" }}>
-              <span style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:PRIMARY }}>Unlock soon</span>
-            </div>
-          </div>
-
-        </div>
+      <div ref={exScrollRef} style={{ flex:1,overflowY:"auto",paddingBottom:100 }}>
+        <VideoPlayer {...videoProps} />
+        <div style={{ padding:"16px 16px 0" }}>{innerContent}</div>
       </div>
 
-      {/* ── STICKY BOTTOM CTA ── */}
-      <div style={{ position:"absolute",bottom:0,left:0,right:0,padding:"12px 16px 28px",background:`linear-gradient(180deg,transparent 0%,${BG} 30%)`,paddingTop:20 }}>
-        {!allDone ? (
-          <div style={{ display:"flex",flexDirection:"column",gap:10 }}>
-            {(()=>{
-              const ready = started && canComplete(activeSet) && activeSet < sets.length && !sets[activeSet].done;
-              const btnBg = !started ? `linear-gradient(135deg,${PRIMARY},#0068CC)`
-                : ready ? `linear-gradient(135deg,${PRIMARY},#0068CC)`
-                : "linear-gradient(135deg,#1a1a1a,#222)";
-              return (
-                <button
-                  onClick={()=>{ if(!started) setStarted(true); else if(ready) markSetDone(activeSet); }}
-                  style={{ width:"100%",padding:"14px 0",borderRadius:50,border:ready||!started?`none`:`1px solid ${BORDER}`,background:btnBg,fontFamily:FONT,fontWeight:800,fontSize:14,color:ready||!started?"#fff":"#444",letterSpacing:1,cursor:ready||!started?"pointer":"not-allowed",display:"flex",alignItems:"center",justifyContent:"center",gap:10,boxShadow:ready||!started?`0 4px 28px ${PRIMARY}55`:"none",transition:"all 0.2s" }}>
-                  {!started
-                    ? <><svg width="13" height="13" viewBox="0 0 13 13" fill="white"><polygon points="0,0 13,6.5 0,13"/></svg> START EXERCISE</>
-                    : <>
-                        {/* Timer display on the button */}
-                        <span style={{ fontFamily:"monospace",fontSize:14,fontWeight:900,color:ready?"#fff":"#555",letterSpacing:2,minWidth:52 }}>
-                          {workoutFmt ? workoutFmt(workoutElapsed) : "00:00"}
-                        </span>
-                        <span style={{ color:ready?"#fff":"#555" }}>·</span>
-                        <span>{ready ? `COMPLETE SET ${activeSet+1}` : `LOG WEIGHT & REPS FIRST`}</span>
-                      </>
-                  }
-                </button>
-              );
-            })()}
-            <button onClick={onBack} style={{ width:"100%",padding:"11px 0",borderRadius:50,background:"transparent",border:`1px solid ${BORDER}`,fontFamily:FONT,fontWeight:600,fontSize:13,color:"#888888",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8 }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="5 12 19 12"/><polyline points="13 6 19 12 13 18"/></svg>
-              Skip this exercise
-            </button>
-          </div>
-        ) : (
-          <button onClick={()=>{ if(onComplete) onComplete(); onBack(); }} style={{ width:"100%",padding:"16px 0",borderRadius:50,border:"none",background:"linear-gradient(135deg,#22C55E,#16A34A)",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1,cursor:"pointer",boxShadow:"0 4px 24px rgba(34,197,94,0.5)" }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" style={{display:"inline",marginRight:6,verticalAlign:"middle"}}><polyline points="20 6 9 17 4 12"/></svg>
-            EXERCISE COMPLETE — NEXT
-          </button>
-        )}
-      </div>
+      {cta}
     </div>
   );
 }
