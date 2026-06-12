@@ -146,6 +146,14 @@ const createSubscriptionIntent = async (req, res) => {
       ? process.env.STRIPE_ANNUAL_PRICE_ID
       : process.env.STRIPE_MONTHLY_PRICE_ID;
 
+    if (!priceId || priceId.startsWith('paste_your') || priceId.startsWith('price_REPLACE')) {
+      logger.error(`Stripe price ID not configured for plan: ${plan}`);
+      return res.status(503).json({
+        success: false,
+        message: 'Payment is not yet configured. Please contact support.',
+      });
+    }
+
     const subscription = await stripeClient.subscriptions.create({
       customer:         customerId,
       items:            [{ price: priceId }],

@@ -66,6 +66,10 @@ const createCheckoutSession = async ({ user, plan, successUrl, cancelUrl }) => {
     ? process.env.STRIPE_ANNUAL_PRICE_ID
     : process.env.STRIPE_MONTHLY_PRICE_ID;
 
+  if (!priceId || priceId.startsWith('paste_your') || priceId.startsWith('price_REPLACE')) {
+    throw new Error('Payment is not yet configured. Please contact support.');
+  }
+
   const session = await stripe.checkout.sessions.create({
     customer:    customerId,
     mode:        'subscription',

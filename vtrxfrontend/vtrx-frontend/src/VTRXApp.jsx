@@ -5698,7 +5698,12 @@ function PaymentSheet({ initialPlan = "monthly", onClose }) {
       setClientSecret(res.data.clientSecret);
       setIsTrial(res.data.isTrial || false);
     } catch(e) {
-      setErr(e.message || "Couldn't load payment form. Try again.");
+      const raw = e.message || "";
+      const isStripeConfig = raw.includes("No such price") || raw.includes("not yet configured") || raw.includes("paste_your");
+      setErr(isStripeConfig
+        ? "Payments are not yet active. Please contact support."
+        : (raw || "Couldn't load payment form. Try again.")
+      );
     } finally {
       setFetching(false);
     }
