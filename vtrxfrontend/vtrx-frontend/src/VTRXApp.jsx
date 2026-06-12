@@ -3401,30 +3401,32 @@ function CalendarPage({ onBack, loggedWorkouts=[] }) {
   for (let i = 0; i < firstDOW; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
 
-  const dayData = selectedDay ? DAY_STATS[selectedDay] : null;
-
-  // Merge API history into calendar for displayed month
+  // Build per-day arrays of workouts for the displayed month
+  const inMonth = h => { const d=new Date(h.completedAt||h.date); return d.getMonth()===displayDate.getMonth()&&d.getFullYear()===displayDate.getFullYear(); };
   const liveCalData = {};
-  calHistory.forEach(h => {
-    const d = new Date(h.completedAt || h.date);
-    if (d.getMonth() === displayDate.getMonth() && d.getFullYear() === displayDate.getFullYear()) {
-      liveCalData[d.getDate()] = (h.type || 'strength').toLowerCase();
-    }
+  calHistory.filter(inMonth).forEach(h => {
+    const day = new Date(h.completedAt || h.date).getDate();
+    if (!liveCalData[day]) liveCalData[day] = [];
+    liveCalData[day].push({ name:h.name||"Workout", type:(h.type||"strength").toLowerCase(), duration:h.duration||0, cal:h.caloriesBurned||0 });
   });
-  // Merge in-session logged workouts too
   loggedWorkouts.forEach(lw => {
     const d = new Date(lw.date);
-    if (d.getMonth() === displayDate.getMonth() && d.getFullYear() === displayDate.getFullYear()) {
-      liveCalData[d.getDate()] = lw.type || "strength";
+    if (d.getMonth()===displayDate.getMonth()&&d.getFullYear()===displayDate.getFullYear()) {
+      const day = d.getDate();
+      if (!liveCalData[day]) liveCalData[day] = [];
+      liveCalData[day].push({ name:lw.name||"Workout", type:lw.type||"strength", duration:lw.duration||0, cal:lw.cal||0 });
     }
   });
 
+  const monthCal        = calHistory.filter(inMonth);
   const monthlyWorkouts = Object.keys(liveCalData).length;
-  const totalCal = calHistory
-    .filter(h => { const d=new Date(h.completedAt||h.date); return d.getMonth()===displayDate.getMonth()&&d.getFullYear()===displayDate.getFullYear(); })
-    .reduce((s,h) => s + (h.caloriesBurned || 0), 0);
-  const avgCal = monthlyWorkouts > 0 ? Math.round(totalCal / monthlyWorkouts) : 0;
-  const restDays = daysInMonth - monthlyWorkouts;
+  const avgCal  = monthCal.length > 0 ? Math.round(monthCal.reduce((s,h)=>s+(h.caloriesBurned||0),0) / monthCal.length) : 0;
+  const avgMins = monthCal.length > 0 ? Math.round(monthCal.reduce((s,h)=>s+(h.duration||0),0)      / monthCal.length) : 0;
+  // Rest days = past days in the month that had no workout
+  const today2 = new Date();
+  const isCurrentMonth = displayDate.getMonth()===today2.getMonth()&&displayDate.getFullYear()===today2.getFullYear();
+  const daysElapsed = isCurrentMonth ? today2.getDate() : daysInMonth;
+  const restDays = Math.max(0, daysElapsed - monthlyWorkouts);
 
   return (
     <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column" }}>
@@ -3474,7 +3476,8 @@ function CalendarPage({ onBack, loggedWorkouts=[] }) {
           <div style={{ display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:"6px 2px" }}>
             {cells.map((day,i)=>{
               if(!day) return <div key={i}/>;
-              const type = liveCalData[day];
+              const dayWorkouts = liveCalData[day] || [];
+              const type  = dayWorkouts[0]?.type;
               const color = type ? TYPE_COLOR[type] : null;
               const isSelected = selectedDay === day;
               return (
@@ -3501,32 +3504,39 @@ function CalendarPage({ onBack, loggedWorkouts=[] }) {
         </div>
 
         {/* Day detail panel OR monthly stats */}
-        {dayData ? (
+        {selectedDay ? (
           <div style={{ animation:"fadeUp 0.3s ease both" }}>
             <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#fff",marginBottom:14 }}>
-              December {selectedDay}
+              {displayDate.toLocaleString("default",{month:"long"})} {selectedDay}
             </div>
-            <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"18px",marginBottom:12 }}>
-              <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16 }}>
-                <div>
-                  <div style={{ fontFamily:FONT,fontWeight:800,fontSize:17,color:"#fff",marginBottom:4 }}>{dayData.name}</div>
-                  <TypeBadge type={dayData.type}/>
-                </div>
-              </div>
-              <div style={{ display:"flex",gap:0,borderRadius:14,overflow:"hidden",border:`1px solid ${BORDER}` }}>
-                {[
-                  {lbl:"Duration",   val:`${dayData.duration}m`, c:"#22C55E"},
-                  {lbl:"Volume",     val:dayData.vol,             c:PRIMARY  },
-                  {lbl:"Calories",   val:`${dayData.cal}`,        c:"#EF4444"},
-                  {lbl:"Exercises",  val:dayData.exercises,       c:"#F97316"},
-                ].map((s,i,arr)=>(
-                  <div key={i} style={{ flex:1,textAlign:"center",padding:"12px 6px",borderRight:i<arr.length-1?`1px solid ${BORDER}`:0 }}>
-                    <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:s.c,lineHeight:1,marginBottom:4 }}>{s.val}</div>
-                    <div style={{ fontFamily:FONT,fontSize:10,color:"#888888",letterSpacing:0.5 }}>{s.lbl}</div>
+            {(liveCalData[selectedDay]||[]).length > 0 ? (
+              (liveCalData[selectedDay]||[]).map((w,wi)=>(
+                <div key={wi} style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"18px",marginBottom:12 }}>
+                  <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16 }}>
+                    <div>
+                      <div style={{ fontFamily:FONT,fontWeight:800,fontSize:17,color:"#fff",marginBottom:6 }}>{w.name}</div>
+                      <TypeBadge type={w.type}/>
+                    </div>
                   </div>
-                ))}
+                  <div style={{ display:"flex",gap:0,borderRadius:14,overflow:"hidden",border:`1px solid ${BORDER}` }}>
+                    {[
+                      {lbl:"Duration", val:`${w.duration}m`, c:"#22C55E"},
+                      {lbl:"Calories", val:w.cal,             c:"#EF4444"},
+                    ].map((s,i,arr)=>(
+                      <div key={i} style={{ flex:1,textAlign:"center",padding:"12px 6px",borderRight:i<arr.length-1?`1px solid ${BORDER}`:0 }}>
+                        <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:s.c,lineHeight:1,marginBottom:4 }}>{s.val}</div>
+                        <div style={{ fontFamily:FONT,fontSize:10,color:"#888888",letterSpacing:0.5 }}>{s.lbl}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"32px 18px",textAlign:"center",marginBottom:12 }}>
+                <div style={{ fontFamily:FONT,fontSize:16,color:"#555",marginBottom:6 }}>Rest Day</div>
+                <div style={{ fontFamily:FONT,fontSize:13,color:"#444" }}>No workout logged on this day</div>
               </div>
-            </div>
+            )}
             <button onClick={()=>setSelectedDay(null)} style={{ width:"100%",padding:"13px 0",borderRadius:50,background:"transparent",border:`1px solid ${BORDER}`,fontFamily:FONT,fontWeight:600,fontSize:13,color:"#888888",cursor:"pointer" }}>
               ← Back to monthly view
             </button>
@@ -3536,10 +3546,10 @@ function CalendarPage({ onBack, loggedWorkouts=[] }) {
             <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#fff",marginBottom:14 }}>Monthly Stats</div>
             <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12 }}>
               {[
-                {svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>, val:avgCal, lbl:"Average Calories", bg:"#DC2626"},
-                {svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>, val:"60", lbl:"Avg Minutes", bg:"#16A34A"},
-                {svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>, val:restDays, lbl:"Rest Days", bg:"#D97706"},
-                {svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>, val:monthlyWorkouts, lbl:"Active Days", bg:"#16A34A"},
+                {svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>,                                                                                                                             val:avgCal,          lbl:"Avg Calories",  bg:"#DC2626"},
+                {svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,                                                                       val:avgMins,         lbl:"Avg Minutes",   bg:"#16A34A"},
+                {svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>,                                        val:restDays,        lbl:"Rest Days",     bg:"#D97706"},
+                {svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>,                                     val:monthlyWorkouts, lbl:"Active Days",   bg:"#16A34A"},
               ].map((s,i)=>(
                 <div key={i} style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"22px 16px",textAlign:"center" }}>
                   <div style={{ width:50,height:50,borderRadius:"50%",background:s.bg,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 12px" }}>{s.svg}</div>
