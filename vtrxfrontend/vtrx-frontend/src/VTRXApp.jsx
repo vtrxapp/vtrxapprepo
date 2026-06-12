@@ -894,7 +894,9 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onStop, onExercise, co
 
   const fmt     = (s) => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
   const toggleEx = (i) => setCompletedEx(p => p.includes(i) ? p.filter(x=>x!==i) : [...p,i]);
-  const doneCt  = completedEx.filter(x => !String(x).startsWith('skip_')).length;
+  const doneCt  = exercises.filter((ex, i) =>
+    (completedEx.includes(i) && !completedEx.includes(`skip_${i}`)) || completedExercises.includes(ex.name)
+  ).length;
   const allDone = doneCt === exercises.length && exercises.length > 0;
 
   const handleStop = () => {
@@ -7556,6 +7558,7 @@ function VTRXAppInner({ setPaymentPlan }) {
   const [workoutElapsed,   setWorkoutElapsed]   = useState(0);
   const [workoutStarted,   setWorkoutStarted]   = useState(false);
   const [workoutPaused,    setWorkoutPaused]    = useState(false);
+  const [completedExNames, setCompletedExNames] = useState([]);
   const workoutTimerRef = useRef(null);
 
   useEffect(()=>{
@@ -7862,6 +7865,7 @@ function VTRXAppInner({ setPaymentPlan }) {
       workout={activeW}
       elapsed={workoutElapsed} started={workoutStarted}
       paused={workoutPaused}
+      completedExercises={completedExNames}
       onTogglePause={()=>setWorkoutPaused(p=>!p)}
       onBack={goBack}
       onStart={()=>{ setWorkoutStarted(true); setWorkoutPaused(false); }}
@@ -7871,6 +7875,7 @@ function VTRXAppInner({ setPaymentPlan }) {
         setWorkoutStarted(false);
         setWorkoutPaused(false);
         setWorkoutElapsed(0);
+        setCompletedExNames([]);
         const mins = Math.max(1, Math.round(elapsedSeconds / 60));
         try {
           const exPayload = (activeW.exercises || []).map(e => ({
@@ -7956,13 +7961,20 @@ function VTRXAppInner({ setPaymentPlan }) {
         });
         setWorkoutStarted(false);
         setWorkoutElapsed(0);
+        setCompletedExNames([]);
         setShowComplete(true);
         setInnerPage(null);
         setActiveTab(0);
       }}
       onExercise={(ex)=>{ setSelectedExercise(ex); setInnerPage("exerciseDetail"); }}/>;
   };
-  if (innerPage==="exerciseDetail"&&selectedExercise) return <ExercisePage exercise={selectedExercise} onBack={()=>setInnerPage("workoutDetail")} onComplete={()=>setInnerPage("workoutDetail")}/>;
+  if (innerPage==="exerciseDetail"&&selectedExercise) return <ExercisePage
+    exercise={selectedExercise}
+    onBack={()=>setInnerPage("workoutDetail")}
+    onComplete={()=>{
+      if (selectedExercise?.name) setCompletedExNames(prev=>[...new Set([...prev, selectedExercise.name])]);
+      setInnerPage("workoutDetail");
+    }}/>;
 
   return (
     <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column",overflow:"hidden" }}>
