@@ -807,30 +807,108 @@ const getExerciseVideoUrl = async (req, res) => {
 const DAY_NAMES_FULL = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 const DAY_NAMES_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-const formatScheduleEntry = (s) => ({
-  id:            s.id,
-  scheduledDate: s.scheduledDate,
-  status:        s.status,
-  originalDate:  s.originalDate || null,
-  dayName:       DAY_NAMES_FULL[new Date(s.scheduledDate).getDay()],
-  dayShort:      DAY_NAMES_SHORT[new Date(s.scheduledDate).getDay()],
-  workout: {
-    id:         s.workout.id,
-    name:       s.workout.name,
-    type:       s.workout.type,
-    duration:   s.workout.duration,
-    calories:   s.workout.calories || 0,
-    difficulty: s.workout.difficulty,
-    exercises:  (s.workout.exercises || []).slice(0, 6).map(we => ({
+// Returns an array of lowercase keyword fragments that exercises must contain
+// in their muscleGroup to "belong" to this workout. Empty array = no filtering.
+const inferWorkoutGroups = (workoutName) => {
+  const n = (workoutName || '').toLowerCase();
+  if (n.includes('full body') || n.includes('full-body')) return [];
+  const groups = [];
+  if (n.includes('upper body') || n.includes('upper-body'))
+    return ['chest','pec','back','lat','shoulder','delt','bicep','tricep'];
+  if (n.includes('lower body') || n.includes('lower-body'))
+    return ['leg','quad','hamstring','glute','hip','calf','calve'];
+  if (n.includes('push'))  groups.push('chest','pec','shoulder','delt','tricep');
+  if (n.includes('pull'))  groups.push('back','lat','trap','rhomboid','bicep');
+  if (n.includes('chest')  || n.includes('pec'))               groups.push('chest','pec');
+  if (n.includes('back')   || n.includes('lat'))                groups.push('back','lat','trap','rhomboid');
+  if (n.includes('shoulder')|| n.includes('delt'))              groups.push('shoulder','delt');
+  if (n.includes('bicep'))                                       groups.push('bicep');
+  if (n.includes('tricep'))                                      groups.push('tricep');
+  if (n.includes('leg') || n.includes('quad') || n.includes('hamstring'))
+    groups.push('leg','quad','hamstring','glute','hip','calf','calve');
+  if (n.includes('glute') || n.includes('hip'))                 groups.push('glute','hip');
+  if (n.includes('calf')  || n.includes('calve'))               groups.push('calf','calve');
+  if (n.includes('core')  || n.includes('ab') || n.includes('oblique'))
+    groups.push('core','ab','oblique');
+  if (n.includes('forearm'))                                     groups.push('forearm');
+  return [...new Set(groups)];
+};
+
+const exerciseMatchesTargets = (muscleGroup, targets) => {
+  const mg = (muscleGroup || '').toLowerCase();
+  return targets.some(t => mg.includes(t));
+};
+
+const formatScheduleEntry = async (s) => {
+  const rawExercises = (s.workout.exercises || []).slice(0, 6);
+  const targets = inferWorkoutGroups(s.workout.name);
+
+  let mappedExercises;
+
+  if (targets.length > 0) {
+    const matched = rawExercises.filter(we =>
+      exerciseMatchesTargets(we.exercise.muscleGroup, targets)
+    );
+
+    if (matched.length < 3) {
+      // Fewer than 3 exercises match the workout's intended muscle focus —
+      // the DB junction table has stale/mismatched data. Fetch correct exercises.
+      const corrected = await prisma.exercise.findMany({
+        where: {
+          OR: targets.map(t => ({
+            muscleGroup: { contains: t, mode: 'insensitive' },
+          })),
+        },
+        take: 6,
+        orderBy: { name: 'asc' },
+      });
+      mappedExercises = corrected.map(ex => ({
+        id:           ex.id,
+        name:         ex.name,
+        muscleGroup:  ex.muscleGroup,
+        sets:         3,
+        reps:         '8-12',
+        thumbnailUrl: ex.thumbnailUrl || null,
+      }));
+    } else {
+      mappedExercises = matched.map(we => ({
+        id:           we.exercise.id,
+        name:         we.exercise.name,
+        muscleGroup:  we.exercise.muscleGroup,
+        sets:         we.sets,
+        reps:         we.reps,
+        thumbnailUrl: we.exercise.thumbnailUrl || null,
+      }));
+    }
+  } else {
+    mappedExercises = rawExercises.map(we => ({
       id:           we.exercise.id,
       name:         we.exercise.name,
       muscleGroup:  we.exercise.muscleGroup,
       sets:         we.sets,
       reps:         we.reps,
       thumbnailUrl: we.exercise.thumbnailUrl || null,
-    })),
-  },
-});
+    }));
+  }
+
+  return {
+    id:            s.id,
+    scheduledDate: s.scheduledDate,
+    status:        s.status,
+    originalDate:  s.originalDate || null,
+    dayName:       DAY_NAMES_FULL[new Date(s.scheduledDate).getDay()],
+    dayShort:      DAY_NAMES_SHORT[new Date(s.scheduledDate).getDay()],
+    workout: {
+      id:         s.workout.id,
+      name:       s.workout.name,
+      type:       s.workout.type,
+      duration:   s.workout.duration,
+      calories:   s.workout.calories || 0,
+      difficulty: s.workout.difficulty,
+      exercises:  mappedExercises,
+    },
+  };
+};
 
 // ── Helper: auto-generate one week's schedule and persist it ──────────────────
 const autoGenerateWeekSchedule = async (userId, weekStart) => {
@@ -904,7 +982,8 @@ const getSchedule = async (req, res) => {
       schedules = await autoGenerateWeekSchedule(req.user.id, weekStart);
     }
 
-    res.json({ success: true, data: { schedule: schedules.map(formatScheduleEntry) } });
+    const formattedSchedule = await Promise.all(schedules.map(s => formatScheduleEntry(s)));
+    res.json({ success: true, data: { schedule: formattedSchedule } });
   } catch (error) {
     logger.error('getSchedule error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch schedule' });
