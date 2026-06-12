@@ -8168,7 +8168,7 @@ function SplashScreen() {
     }}>
       <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:12,
         opacity: visible ? 1 : 0, transform: visible ? "scale(1)" : "scale(0.88)",
-        transition:"opacity 0.5s ease, transform 0.5s ease" }}>
+        transition:"opacity 0.6s ease, transform 0.6s ease" }}>
         <VTRXLogo size={64}/>
         <div style={{ fontFamily:FONT, fontWeight:900, fontSize:36, color:PRIMARY, letterSpacing:8, lineHeight:1 }}>
           VTRX
@@ -8177,17 +8177,6 @@ function SplashScreen() {
           UNLOCK YOUR FULL POTENTIAL
         </div>
       </div>
-      {/* Subtle pulsing dot loader */}
-      <div style={{ display:"flex", gap:6, marginTop:52,
-        opacity: visible ? 0.6 : 0, transition:"opacity 0.6s ease 0.3s" }}>
-        {[0,1,2].map(i=>(
-          <div key={i} style={{
-            width:6, height:6, borderRadius:"50%", background:PRIMARY,
-            animation:`splashDot 1.2s ease-in-out ${i*0.2}s infinite`,
-          }}/>
-        ))}
-      </div>
-      <style>{`@keyframes splashDot{0%,80%,100%{transform:scale(0.6);opacity:0.3}40%{transform:scale(1);opacity:1}}`}</style>
     </div>
   );
 }
@@ -8283,7 +8272,7 @@ function VTRXAppInner({ setPaymentPlan }) {
 
   // Load real data on mount — also drives splash → onboarding/dashboard transition
   useEffect(()=>{
-    const MIN_SPLASH_MS = 1200;
+    const MIN_SPLASH_MS = 2500;
     const splashStart   = Date.now();
     const afterSplash   = (nextPhase) => {
       const elapsed = Date.now() - splashStart;
