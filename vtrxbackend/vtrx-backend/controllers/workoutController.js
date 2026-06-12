@@ -103,6 +103,19 @@ const logWorkout = async (req, res) => {
     return res.status(400).json({ success: false, message: 'No exercises completed' });
   }
 
+  // Enforce minimum duration by workout type
+  if (duration !== undefined) {
+    const durationMins = parseInt(duration);
+    const workoutType  = (type || '').toLowerCase();
+    const minMins      = workoutType === 'cardio' ? 5 : 10;
+    if (!isNaN(durationMins) && durationMins < minMins) {
+      return res.status(400).json({
+        success: false,
+        message: `${workoutType === 'cardio' ? 'Cardio' : 'Strength/HIIT'} workouts under ${minMins} minutes are not logged`,
+      });
+    }
+  }
+
   try {
     // 1. Create the workout log
     const workoutLog = await prisma.workoutLog.create({

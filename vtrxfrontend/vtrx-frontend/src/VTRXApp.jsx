@@ -1980,7 +1980,7 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
           </button>
         </div>
       ) : (
-        <button onClick={()=>{ if(onComplete) onComplete(); onBack(); }} style={{ width:"100%",padding:"16px 0",borderRadius:50,border:"none",background:"linear-gradient(135deg,#22C55E,#16A34A)",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1,cursor:"pointer",boxShadow:"0 4px 24px rgba(34,197,94,0.5)" }}>
+        <button onClick={()=>{ if(onComplete) onComplete(sets.filter(s=>s.done)); onBack(); }} style={{ width:"100%",padding:"16px 0",borderRadius:50,border:"none",background:"linear-gradient(135deg,#22C55E,#16A34A)",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1,cursor:"pointer",boxShadow:"0 4px 24px rgba(34,197,94,0.5)" }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" style={{display:"inline",marginRight:6,verticalAlign:"middle"}}><polyline points="20 6 9 17 4 12"/></svg>
           EXERCISE COMPLETE — NEXT
         </button>
@@ -8144,6 +8144,7 @@ function VTRXAppInner({ setPaymentPlan }) {
   const [workoutStarted,   setWorkoutStarted]   = useState(false);
   const [workoutPaused,    setWorkoutPaused]    = useState(false);
   const [completedExNames, setCompletedExNames] = useState([]);
+  const [loggedExSets,    setLoggedExSets]    = useState({}); // { exerciseName: [{reps,weight},...] }
   const workoutTimerRef = useRef(null);
 
   useEffect(()=>{
@@ -8490,28 +8491,46 @@ function VTRXAppInner({ setPaymentPlan }) {
       onBack={goBack}
       onStart={()=>{ setWorkoutStarted(true); setWorkoutPaused(false); }}
       onStop={async (elapsedSeconds=0, completedExList=[], pct=0)=>{
-        setWorkoutDone(false);
+        const mins      = Math.max(1, Math.round(elapsedSeconds / 60));
+        const wType     = (activeW.type || "strength").toLowerCase();
+        const minMins   = wType === "cardio" ? 5 : 10;
+        const needsSets = wType === "strength" || wType === "hiit";
+        // Capture before clearing state
+        const snapExNames  = completedExNames;
+        const snapExSets   = loggedExSets;
+
         clearInterval(workoutTimerRef.current);
+        setWorkoutDone(false);
         setWorkoutStarted(false);
         setWorkoutPaused(false);
         setWorkoutElapsed(0);
         setCompletedExNames([]);
-        // Only log if at least one exercise was completed — don't create phantom logs
-        if (pct > 0) {
-          const mins = Math.max(1, Math.round(elapsedSeconds / 60));
+        setLoggedExSets({});
+
+        if (pct > 0 && mins >= minMins && (!needsSets || snapExNames.length > 0)) {
           try {
-            const exPayload = (activeW.exercises || []).map(e => ({
-              exerciseId: e.id || undefined,
-              name:       e.name,
-              sets:       [{ setNumber:1, reps: parseReps(e.reps || e.detail || '10') }],
+            let exPayload = Object.entries(snapExSets).map(([name, doneSets]) => ({
+              name,
+              sets: doneSets.map((s, idx) => ({
+                setNumber: idx + 1,
+                reps:   s.reps   ? parseInt(s.reps)    : undefined,
+                weight: s.weight ? parseFloat(s.weight) : undefined,
+              })),
             }));
+            if (!exPayload.length) {
+              exPayload = (activeW.exercises || []).map(e => ({
+                exerciseId: e.id || undefined,
+                name:       e.name,
+                sets:       [{ setNumber:1, reps: parseReps(e.reps || e.detail || '10') }],
+              }));
+            }
             const logRes = await apiCall("/workouts/log", {
               method: "POST",
               body: JSON.stringify({
                 workoutId:            activeW.workoutId || undefined,
                 name:                 activeW.name,
                 type:                 activeW.type,
-                duration:             activeW.duration || activeW.mins || mins,
+                duration:             mins,
                 caloriesBurned:       Math.round((activeW.calories || activeW.cal || 300) * (pct / 100)),
                 energyLevel:          energyKey || "okay",
                 completionPercentage: pct,
@@ -8521,63 +8540,86 @@ function VTRXAppInner({ setPaymentPlan }) {
             if (logRes?.data?.workoutLog?.id) setLastWorkoutLogId(logRes.data.workoutLog.id);
             const today     = new Date();
             const calBurned = Math.round((activeW.calories||activeW.cal||300)*(pct/100));
-            setLoggedWorkouts(prev => [...prev, { date:today, type:(activeW.type||"strength").toLowerCase(), cal:calBurned, duration:mins, name:activeW.name }]);
+            setLoggedWorkouts(prev => [...prev, { date:today, type:wType, cal:calBurned, duration:mins, name:activeW.name }]);
           } catch(_e){}
         }
         setInnerPage(null);
         setActiveTab(0);
       }}
       onComplete={async (elapsedSeconds=0)=>{
-        setWorkoutDone(true);
-        setStreakDay(s=>s+1);
-        setWorkoutsTotal(t=>t+1);
-        const mins = Math.max(1, Math.round(elapsedSeconds / 60));
-        setWeeklyWorkoutDays(d=>d+1);
-        const actCal = activeW.calories || activeW.cal || 300;
-        setWeeklyAvgCal(prev=>{
-          const prevTotal = prev !== null ? prev * weeklyWorkoutDays : 0;
-          return Math.round((prevTotal + actCal) / (weeklyWorkoutDays + 1));
-        });
-        setWeeklyAvgMin(prev=>{
-          const prevTotal = prev !== null ? prev * weeklyWorkoutDays : 0;
-          return Math.round((prevTotal + mins) / (weeklyWorkoutDays + 1));
-        });
-        try {
-          const exPayload = (activeW.exercises || []).map(e => ({
-            exerciseId: e.id || undefined,
-            name:       e.name,
-            sets:       [{ setNumber:1, reps: e.reps || e.detail || '8' }],
-          }));
-          const completeRes = await apiCall("/workouts/log", {
-            method: "POST",
-            body: JSON.stringify({
-              workoutId:      activeW.workoutId || undefined,
-              name:           activeW.name,
-              type:           activeW.type,
-              duration:       activeW.duration || activeW.mins || 45,
-              caloriesBurned: activeW.calories || activeW.cal || 300,
-              energyLevel:    energyKey || "okay",
-              exercises:      exPayload,
-            }),
+        const mins      = Math.max(1, Math.round(elapsedSeconds / 60));
+        const wType     = (activeW.type || "strength").toLowerCase();
+        const minMins   = wType === "cardio" ? 5 : 10;
+        const needsSets = wType === "strength" || wType === "hiit";
+        const actCal    = activeW.calories || activeW.cal || 300;
+        // Capture before clearing state
+        const snapExNames = completedExNames;
+        const snapExSets  = loggedExSets;
+
+        const shouldLog = mins >= minMins && (!needsSets || snapExNames.length > 0);
+
+        if (shouldLog) {
+          setWorkoutDone(true);
+          setStreakDay(s=>s+1);
+          setWorkoutsTotal(t=>t+1);
+          setWeeklyWorkoutDays(d=>d+1);
+          setWeeklyAvgCal(prev=>{
+            const prevTotal = prev !== null ? prev * weeklyWorkoutDays : 0;
+            return Math.round((prevTotal + actCal) / (weeklyWorkoutDays + 1));
           });
-          if (completeRes?.data?.workoutLog?.id) setLastWorkoutLogId(completeRes.data.workoutLog.id);
-          const me = await apiCall("/users/profile");
-          if (me?.data?.user?.streakDays) setStreakDay(me.data.user.streakDays);
-          if (me?.data?.user?._count?.workoutLogs) setWorkoutsTotal(me.data.user._count.workoutLogs);
-          const sr = await apiCall("/workouts/stats");
-          if (sr?.data?.stats) {
-            const s = sr.data.stats;
-            if (s.workoutsCompleted !== undefined) setWeeklyWorkoutDays(s.workoutsCompleted);
-            if (s.avgCalories) setWeeklyAvgCal(s.avgCalories);
-            if (s.avgMinutes)  setWeeklyAvgMin(s.avgMinutes);
-          }
-        } catch(_e){}
+          setWeeklyAvgMin(prev=>{
+            const prevTotal = prev !== null ? prev * weeklyWorkoutDays : 0;
+            return Math.round((prevTotal + mins) / (weeklyWorkoutDays + 1));
+          });
+          try {
+            let exPayload = Object.entries(snapExSets).map(([name, doneSets]) => ({
+              name,
+              sets: doneSets.map((s, idx) => ({
+                setNumber: idx + 1,
+                reps:   s.reps   ? parseInt(s.reps)    : undefined,
+                weight: s.weight ? parseFloat(s.weight) : undefined,
+              })),
+            }));
+            if (!exPayload.length) {
+              exPayload = (activeW.exercises || []).map(e => ({
+                exerciseId: e.id || undefined,
+                name:       e.name,
+                sets:       [{ setNumber:1, reps: e.reps || e.detail || '8' }],
+              }));
+            }
+            const completeRes = await apiCall("/workouts/log", {
+              method: "POST",
+              body: JSON.stringify({
+                workoutId:      activeW.workoutId || undefined,
+                name:           activeW.name,
+                type:           activeW.type,
+                duration:       mins,
+                caloriesBurned: actCal,
+                energyLevel:    energyKey || "okay",
+                exercises:      exPayload,
+              }),
+            });
+            if (completeRes?.data?.workoutLog?.id) setLastWorkoutLogId(completeRes.data.workoutLog.id);
+            const me = await apiCall("/users/profile");
+            if (me?.data?.user?.streakDays) setStreakDay(me.data.user.streakDays);
+            if (me?.data?.user?._count?.workoutLogs) setWorkoutsTotal(me.data.user._count.workoutLogs);
+            const sr = await apiCall("/workouts/stats");
+            if (sr?.data?.stats) {
+              const s = sr.data.stats;
+              if (s.workoutsCompleted !== undefined) setWeeklyWorkoutDays(s.workoutsCompleted);
+              if (s.avgCalories) setWeeklyAvgCal(s.avgCalories);
+              if (s.avgMinutes)  setWeeklyAvgMin(s.avgMinutes);
+            }
+          } catch(_e){}
+          const today = new Date();
+          setLoggedWorkouts(prev => [...prev, { date:today, type:wType, cal:actCal, duration:mins, name:activeW.name }]);
+        }
+
         const today   = new Date();
         const dateStr = today.toLocaleDateString("en-GB", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
         const timeStr = today.toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit" });
-        setLoggedWorkouts(prev => [...prev, { date:today, type:(activeW.type||"strength").toLowerCase(), cal:actCal, duration:mins, name:activeW.name }]);
         setLastWorkoutStats({
-          calories:  activeW.calories || activeW.cal || 300,
+          calories:  actCal,
           duration:  mins,
           exercises: Array.isArray(activeW.exercises) ? activeW.exercises.length : (activeW.exercises || 3),
           name:      activeW.name || "Workout",
@@ -8587,6 +8629,7 @@ function VTRXAppInner({ setPaymentPlan }) {
         setWorkoutStarted(false);
         setWorkoutElapsed(0);
         setCompletedExNames([]);
+        setLoggedExSets({});
         setShowComplete(true);
         setInnerPage(null);
         setActiveTab(0);
@@ -8596,8 +8639,11 @@ function VTRXAppInner({ setPaymentPlan }) {
   if (innerPage==="exerciseDetail"&&selectedExercise) return <ExercisePage
     exercise={selectedExercise}
     onBack={()=>setInnerPage("workoutDetail")}
-    onComplete={()=>{
-      if (selectedExercise?.name) setCompletedExNames(prev=>[...new Set([...prev, selectedExercise.name])]);
+    onComplete={(doneSets=[])=>{
+      if (selectedExercise?.name) {
+        setCompletedExNames(prev=>[...new Set([...prev, selectedExercise.name])]);
+        if (doneSets.length) setLoggedExSets(prev=>({...prev, [selectedExercise.name]: doneSets}));
+      }
       setInnerPage("workoutDetail");
     }}/>;
 
