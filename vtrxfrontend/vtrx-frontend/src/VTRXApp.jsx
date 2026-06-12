@@ -498,8 +498,26 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
     const fmt = x => x.toLocaleDateString('en-US',{month:'short',day:'numeric'});
     return `${fmt(start)} – ${fmt(end)}`;
   };
-  const liveWeek = apiStats?.dailyBreakdown
-    ? { label: getWeekLabel(), days: apiStats.dailyBreakdown, bestDays: [], improvement: "Live" }
+  // Merge loggedWorkouts into current week
+  const buildLiveDays = () => {
+    const DAY_NAMES = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+    const base = apiStats?.dailyBreakdown || DAY_NAMES.map(day=>({ day, cal:0, type:"rest" }));
+    const merged = base.map(d=>({...d}));
+    const now2 = new Date();
+    const dow2 = now2.getDay()===0 ? 6 : now2.getDay()-1;
+    const wStart = new Date(now2); wStart.setDate(now2.getDate()-dow2); wStart.setHours(0,0,0,0);
+    const wEnd   = new Date(wStart); wEnd.setDate(wStart.getDate()+6); wEnd.setHours(23,59,59,999);
+    loggedWorkouts.forEach(lw=>{
+      const d = new Date(lw.date||lw.completedAt);
+      if (d >= wStart && d <= wEnd) {
+        const idx = d.getDay()===0 ? 6 : d.getDay()-1;
+        merged[idx] = { day: DAY_NAMES[idx], cal: lw.cal||lw.caloriesBurned||0, type: (lw.type||"strength").toLowerCase() };
+      }
+    });
+    return merged;
+  };
+  const liveWeek = (apiStats?.dailyBreakdown || loggedWorkouts.length > 0)
+    ? { label: getWeekLabel(), days: buildLiveDays(), bestDays: [], improvement: "Live" }
     : WEEKS_DATA[0];
   const allWeeks  = [liveWeek, ...WEEKS_DATA.slice(1)];
   const MAX_WEEK  = allWeeks.length - 1;
@@ -581,33 +599,55 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
         onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
 
         {/* Bar chart */}
-        <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"18px 16px",marginBottom:14 }}>
-          <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18 }}>
-            <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#fff" }}>Weekly Progress</div>
-            <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:PRIMARY }}>{calDays.length}/7 days</div>
-          </div>
-          <div style={{ display:"flex",gap:4,alignItems:"flex-end",marginBottom:6 }}>
-            {w.days.map((d,i)=>{
-              const hpx = d.cal>0 ? Math.max(10, Math.round((d.cal/(maxCal||1))*100)) : 4;
-              const col = d.cal>0 ? (TYPE_COLOR[d.type]||"#374151") : "#2a2a2a";
-              return (
-                <div key={i} style={{ flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3 }}>
-                  <div style={{ fontFamily:FONT,fontSize:8,color:d.cal>0?"#aaa":"transparent",fontWeight:600 }}>{d.cal||""}</div>
-                  <div style={{ width:"100%",height:hpx+"px",background:col,borderRadius:"4px 4px 0 0" }}/>
-                  <div style={{ fontFamily:FONT,fontSize:10,color:"#666" }}>{d.day}</div>
-                </div>
-              );
-            })}
-          </div>
-          <div style={{ display:"flex",gap:14,marginTop:16,flexWrap:"wrap" }}>
-            {[["#00A3FF","Strength"],["#F59E0B","Cardio"],["#6366F1","HIIT"],["#6B7280","Rest Day"]].map(([c,l])=>(
-              <div key={l} style={{ display:"flex",alignItems:"center",gap:6 }}>
-                <div style={{ width:10,height:10,borderRadius:"50%",background:c }}/>
-                <span style={{ fontFamily:FONT,fontSize:11,color:"#aaa" }}>{l}</span>
+        {(()=>{
+          const MAX_BAR = 110;
+          const todayIdx = new Date().getDay()===0 ? 6 : new Date().getDay()-1;
+          return (
+            <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"18px 16px",marginBottom:14 }}>
+              <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18 }}>
+                <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#fff" }}>Weekly Progress</div>
+                <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:PRIMARY }}>{calDays.length}/7 days</div>
               </div>
-            ))}
-          </div>
-        </div>
+              <div style={{ display:"flex",gap:4,alignItems:"flex-end",height:MAX_BAR+34+"px" }}>
+                {w.days.map((d,i)=>{
+                  const hpx   = d.cal>0 ? Math.max(14, Math.round((d.cal/maxCal)*MAX_BAR)) : 0;
+                  const color = d.cal>0 ? (TYPE_COLOR[d.type]||PRIMARY) : null;
+                  const isToday = week===0 && i===todayIdx;
+                  return (
+                    <div key={i} style={{ flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-end",height:"100%",gap:4 }}>
+                      <div style={{ fontFamily:FONT,fontSize:9,fontWeight:700,color:color||"transparent",minHeight:14,textAlign:"center",lineHeight:1 }}>
+                        {d.cal>0 ? d.cal : ""}
+                      </div>
+                      {d.cal>0 ? (
+                        <div style={{
+                          width:"100%",
+                          height:hpx+"px",
+                          background:`linear-gradient(180deg,${color},${color}bb)`,
+                          borderRadius:"5px 5px 0 0",
+                          boxShadow:`0 0 8px ${color}55`,
+                          transition:"height 0.5s ease",
+                        }}/>
+                      ) : (
+                        <div style={{ width:"100%",height:4,background:"#1e1e1e",borderRadius:2 }}/>
+                      )}
+                      <div style={{ fontFamily:FONT,fontSize:10,fontWeight:isToday?800:500,color:isToday?"#fff":"#555",letterSpacing:0.3 }}>
+                        {d.day}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ display:"flex",gap:14,marginTop:14,flexWrap:"wrap" }}>
+                {[["#00A3FF","Strength"],["#F59E0B","Cardio"],["#6366F1","HIIT"],["#22C55E","Mobility"]].map(([c,l])=>(
+                  <div key={l} style={{ display:"flex",alignItems:"center",gap:5 }}>
+                    <div style={{ width:8,height:8,borderRadius:"50%",background:c }}/>
+                    <span style={{ fontFamily:FONT,fontSize:10,color:"#666" }}>{l}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Stat grid */}
         <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12 }}>
@@ -4617,6 +4657,88 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
           </div>
           <div style={{ fontFamily:FONT,fontSize:10,color:"#444",marginTop:6,textAlign:"right" }}>Swipe to change month</div>
         </div>
+
+        {/* ── THIS WEEK BAR CHART ── */}
+        {(()=>{
+          const DAY_NAMES = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+          // Build base from API dailyBreakdown
+          const apiDays = hubStats?.dailyBreakdown || DAY_NAMES.map(day=>({ day, cal:0, type:"rest" }));
+          // Merge in-session loggedWorkouts (same-week days override API)
+          const now = new Date();
+          const dow = now.getDay()===0 ? 6 : now.getDay()-1; // Mon=0
+          const weekStart = new Date(now); weekStart.setDate(now.getDate()-dow); weekStart.setHours(0,0,0,0);
+          const weekEnd   = new Date(weekStart); weekEnd.setDate(weekStart.getDate()+6); weekEnd.setHours(23,59,59,999);
+          const merged = apiDays.map(d=>({...d}));
+          loggedWorkouts.forEach(lw=>{
+            const d = new Date(lw.date||lw.completedAt);
+            if (d >= weekStart && d <= weekEnd) {
+              const idx = d.getDay()===0 ? 6 : d.getDay()-1;
+              merged[idx] = { day: DAY_NAMES[idx], cal: lw.cal||lw.caloriesBurned||0, type: (lw.type||"strength").toLowerCase() };
+            }
+          });
+          const maxCal  = Math.max(...merged.map(d=>d.cal), 1);
+          const hasSome = merged.some(d=>d.cal>0);
+          const MAX_BAR = 90; // px
+          return (
+            <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"18px 16px",marginBottom:14 }}>
+              <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16 }}>
+                <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#fff" }}>This Week</div>
+                <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:PRIMARY }}>
+                  {merged.filter(d=>d.cal>0).length}/7 days
+                </div>
+              </div>
+              {!hasSome ? (
+                <div style={{ textAlign:"center",padding:"18px 0",fontFamily:FONT,fontSize:13,color:"#444" }}>
+                  Complete a workout to see your weekly progress
+                </div>
+              ) : (
+                <>
+                  <div style={{ display:"flex",gap:4,alignItems:"flex-end",height:MAX_BAR+28+"px" }}>
+                    {merged.map((d,i)=>{
+                      const hpx   = d.cal>0 ? Math.max(14, Math.round((d.cal/maxCal)*MAX_BAR)) : 0;
+                      const color = d.cal>0 ? (TYPE_COLOR[d.type]||PRIMARY) : null;
+                      const isToday = i === dow;
+                      return (
+                        <div key={i} style={{ flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-end",height:"100%",gap:4 }}>
+                          {/* Cal label */}
+                          <div style={{ fontFamily:FONT,fontSize:9,fontWeight:700,color:color||"transparent",minHeight:14,textAlign:"center",lineHeight:1 }}>
+                            {d.cal>0 ? d.cal : ""}
+                          </div>
+                          {/* Bar */}
+                          {d.cal>0 ? (
+                            <div style={{
+                              width:"100%",
+                              height:hpx+"px",
+                              background:`linear-gradient(180deg,${color},${color}bb)`,
+                              borderRadius:"5px 5px 0 0",
+                              boxShadow:`0 0 8px ${color}55`,
+                              transition:"height 0.5s ease",
+                            }}/>
+                          ) : (
+                            <div style={{ width:"100%",height:4,background:"#1e1e1e",borderRadius:2 }}/>
+                          )}
+                          {/* Day label */}
+                          <div style={{ fontFamily:FONT,fontSize:10,fontWeight:isToday?800:500,color:isToday?"#fff":"#555",letterSpacing:0.3 }}>
+                            {d.day}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Legend */}
+                  <div style={{ display:"flex",gap:14,marginTop:14,flexWrap:"wrap" }}>
+                    {[["#00A3FF","Strength"],["#F59E0B","Cardio"],["#6366F1","HIIT"],["#22C55E","Mobility"]].map(([c,l])=>(
+                      <div key={l} style={{ display:"flex",alignItems:"center",gap:5 }}>
+                        <div style={{ width:8,height:8,borderRadius:"50%",background:c }}/>
+                        <span style={{ fontFamily:FONT,fontSize:10,color:"#666" }}>{l}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })()}
 
         {/* ── WEEKLY PLAN ── */}
         {(()=>{
