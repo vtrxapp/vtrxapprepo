@@ -7404,12 +7404,14 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
                   </div>
                   {bannerOpen && (
                     <div style={{ padding:"0 14px 14px" }}>
-                      {/* Nutrition fact — visible to everyone */}
-                      <div style={{ background:"rgba(255,255,255,0.04)",borderRadius:12,padding:"12px 12px",marginBottom:12,borderLeft:`3px solid ${PRIMARY}` }}>
-                        <div style={{ fontFamily:FONT,fontWeight:800,fontSize:12,color:PRIMARY,marginBottom:6,letterSpacing:0.3 }}>{nFact.focus}</div>
-                        <div style={{ fontFamily:FONT,fontSize:12,color:"#ccc",lineHeight:1.65,marginBottom:8 }}>{nFact.fact}</div>
-                        <div style={{ fontFamily:FONT,fontSize:11,color:"#888",lineHeight:1.55 }}>{nFact.examples}</div>
-                      </div>
+                      {isPremium ? (
+                        /* Nutrition fact — premium only */
+                        <div style={{ background:"rgba(255,255,255,0.04)",borderRadius:12,padding:"12px 12px",marginBottom:12,borderLeft:`3px solid ${PRIMARY}` }}>
+                          <div style={{ fontFamily:FONT,fontWeight:800,fontSize:12,color:PRIMARY,marginBottom:6,letterSpacing:0.3 }}>{nFact.focus}</div>
+                          <div style={{ fontFamily:FONT,fontSize:12,color:"#ccc",lineHeight:1.65,marginBottom:8 }}>{nFact.fact}</div>
+                          <div style={{ fontFamily:FONT,fontSize:11,color:"#888",lineHeight:1.55 }}>{nFact.examples}</div>
+                        </div>
+                      ) : null}
                       {isPremium ? (
                         <>
                           {/* Macro tiles */}
@@ -7442,6 +7444,18 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
                         </>
                       ) : (
                         <>
+                          {/* Blurred nutrition fact teaser */}
+                          <div style={{ position:"relative",marginBottom:12 }}>
+                            <div style={{ filter:"blur(5px)",pointerEvents:"none",userSelect:"none",background:"rgba(255,255,255,0.04)",borderRadius:12,padding:"12px 12px",borderLeft:`3px solid ${PRIMARY}` }}>
+                              <div style={{ fontFamily:FONT,fontWeight:800,fontSize:12,color:PRIMARY,marginBottom:6,letterSpacing:0.3 }}>{nFact.focus}</div>
+                              <div style={{ fontFamily:FONT,fontSize:12,color:"#ccc",lineHeight:1.65,marginBottom:8 }}>{nFact.fact}</div>
+                              <div style={{ fontFamily:FONT,fontSize:11,color:"#888",lineHeight:1.55 }}>{nFact.examples}</div>
+                            </div>
+                            <div style={{ position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",gap:8 }}>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                              <span style={{ fontFamily:FONT,fontWeight:700,fontSize:12,color:"#fff" }}>Premium only</span>
+                            </div>
+                          </div>
                           {/* Blurred recipe teaser */}
                           <div style={{ position:"relative",marginBottom:14 }}>
                             <div style={{ filter:"blur(5px)",pointerEvents:"none",userSelect:"none",display:"flex",alignItems:"center",gap:12,borderRadius:14,overflow:"hidden",background:"rgba(255,255,255,0.06)",padding:"8px" }}>
