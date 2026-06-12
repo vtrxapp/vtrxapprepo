@@ -1940,17 +1940,44 @@ function AISummaryPage({ energyKey, logId, onBack }) {
                 </div>
               </div>
               <div style={{ height:1,background:"rgba(255,255,255,0.06)",marginBottom:16 }}/>
-              <div style={{ fontFamily:FONT,fontSize:14,color:"rgba(255,255,255,0.88)",lineHeight:1.78,marginBottom:aiCoachText?14:0,whiteSpace:"pre-line" }}>
-                {twText}
-                {!twDone&&<span style={{ display:"inline-block",width:2,height:16,background:PRIMARY,marginLeft:2,animation:"blink 0.9s infinite",verticalAlign:"text-bottom",borderRadius:1 }}/>}
-              </div>
-              {twDone && aiCoachText ? (
-                <div style={{ fontFamily:FONT,fontSize:13,color:"rgba(255,255,255,0.65)",lineHeight:1.7,borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:14,marginTop:4 }}>{aiCoachText}</div>
-              ) : null}
+              {isPremium ? (
+                <>
+                  <div style={{ fontFamily:FONT,fontSize:14,color:"rgba(255,255,255,0.88)",lineHeight:1.78,marginBottom:aiCoachText?14:0,whiteSpace:"pre-line" }}>
+                    {twText}
+                    {!twDone&&<span style={{ display:"inline-block",width:2,height:16,background:PRIMARY,marginLeft:2,animation:"blink 0.9s infinite",verticalAlign:"text-bottom",borderRadius:1 }}/>}
+                  </div>
+                  {twDone && aiCoachText ? (
+                    <div style={{ fontFamily:FONT,fontSize:13,color:"rgba(255,255,255,0.65)",lineHeight:1.7,borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:14,marginTop:4 }}>{aiCoachText}</div>
+                  ) : null}
+                </>
+              ) : (
+                <div style={{ position:"relative" }}>
+                  <div style={{ maxHeight:72,overflow:"hidden",fontFamily:FONT,fontSize:14,color:"rgba(255,255,255,0.88)",lineHeight:1.78,whiteSpace:"pre-line" }}>
+                    {twText}
+                    {!twDone&&<span style={{ display:"inline-block",width:2,height:16,background:PRIMARY,marginLeft:2,animation:"blink 0.9s infinite",verticalAlign:"text-bottom",borderRadius:1 }}/>}
+                  </div>
+                  <div style={{ position:"absolute",bottom:0,left:0,right:0,height:52,background:"linear-gradient(transparent,#0a0f1e)" }}/>
+                </div>
+              )}
             </div>
 
-            {/* Achievements */}
-            {achievements.length > 0 && (
+            {/* Free-user upgrade gate */}
+            {!isPremium && (
+              <div style={{ background:"linear-gradient(145deg,#1a0533,#0d0d1a)",borderRadius:22,border:"1.5px solid #7C3AED55",padding:"28px 22px",marginBottom:14,textAlign:"center" }}>
+                <div style={{ width:56,height:56,borderRadius:"50%",background:"rgba(124,58,237,0.18)",border:"1.5px solid rgba(124,58,237,0.4)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px" }}>
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                </div>
+                <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:"#fff",marginBottom:8 }}>Unlock Full Analysis</div>
+                <div style={{ fontFamily:FONT,fontSize:13,color:"#888",lineHeight:1.65,marginBottom:6 }}>You're on the <span style={{ color:"#8B5CF6",fontWeight:700 }}>Free Plan</span> — 1 AI summary per week.</div>
+                <div style={{ fontFamily:FONT,fontSize:13,color:"#888",lineHeight:1.65,marginBottom:22 }}>Upgrade to <span style={{ color:"#F59E0B",fontWeight:700 }}>Premium</span> for a full AI breakdown after every single workout.</div>
+                <button onClick={()=>openPaymentSheet("monthly")} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:"linear-gradient(135deg,#7C3AED,#4C1D95)",border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",letterSpacing:1,boxShadow:"0 4px 24px rgba(124,58,237,0.45)" }}>
+                  UPGRADE TO PREMIUM
+                </button>
+              </div>
+            )}
+
+            {/* Achievements — premium only */}
+            {isPremium && achievements.length > 0 && (
               <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"18px",marginBottom:14,animation:"fadeUp 0.35s ease both" }}>
                 <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888888",letterSpacing:1,marginBottom:14 }}>ACHIEVEMENTS</div>
                 <div style={{ display:"flex",flexWrap:"wrap",gap:8 }}>
@@ -1964,8 +1991,8 @@ function AISummaryPage({ energyKey, logId, onBack }) {
               </div>
             )}
 
-            {/* Key Insights */}
-            {keyInsights.length > 0 && (
+            {/* Key Insights — premium only */}
+            {isPremium && keyInsights.length > 0 && (
               <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"18px",marginBottom:14,animation:"fadeUp 0.35s ease both" }}>
                 <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888888",letterSpacing:1,marginBottom:14 }}>KEY INSIGHTS</div>
                 {keyInsights.map((ins,i)=>(
@@ -1977,8 +2004,8 @@ function AISummaryPage({ energyKey, logId, onBack }) {
               </div>
             )}
 
-            {/* Mood Analysis */}
-            {moodAnalysis && (
+            {/* Mood Analysis — premium only */}
+            {isPremium && moodAnalysis && (
               <div style={{ background:cardBg,borderRadius:18,border:cardBorder,padding:"18px",marginBottom:14,animation:"fadeUp 0.35s ease both" }}>
                 <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10 }}>
                   <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888888",letterSpacing:1 }}>MOOD ANALYSIS</div>
@@ -1992,8 +2019,8 @@ function AISummaryPage({ energyKey, logId, onBack }) {
               </div>
             )}
 
-            {/* Recommendations */}
-            {recommendations.length > 0 && (
+            {/* Recommendations — premium only */}
+            {isPremium && recommendations.length > 0 && (
               <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"18px",marginBottom:14,animation:"fadeUp 0.35s ease both" }}>
                 <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888888",letterSpacing:1,marginBottom:14 }}>RECOMMENDATIONS</div>
                 {recommendations.map((rec,i)=>(
@@ -4107,6 +4134,7 @@ function CustomizePage({ onBack }) {
 function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
   const { dark } = useTheme();
   const T = dark ? DARK : LIGHT;
+  const { user: wUser } = useUser();
   const [subPage, setSubPage] = useState(null);
   const [wIdx, setWIdx] = useState(TODAY_IDX);
   const [weekSchedule,    setWeekSchedule]    = useState([]);
@@ -4173,6 +4201,16 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
       label:  pct >= 100 ? "Completed!" : "In progress",
     };
   })() : MONTH_STATS_FALLBACK[String(monthOffset)] || { days:"0/16", streak:"0 day", rate:"0%", pct:0, label:"No data" };
+
+  // Day-label helper: "Day 1", "Day 2" … based on sorted schedule order
+  const sortedForDayLabels = React.useMemo(
+    () => [...weekSchedule].sort((a,b) => new Date(a.scheduledDate) - new Date(b.scheduledDate)),
+    [weekSchedule]
+  );
+  const getDayLabel = (entry) => {
+    const idx = sortedForDayLabels.findIndex(s => s.id === entry.id);
+    return idx >= 0 ? `Day ${idx + 1}` : "";
+  };
 
   // Swipe handlers for monthly card
   const onMonthSwipeStart = (e) => { swipeStartX.current = e.touches[0].clientX; };
@@ -4314,14 +4352,14 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
                     <div style={{ background:`linear-gradient(135deg,${nc}22,${nc}08)`,padding:"16px 16px 12px" }}>
                       <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6 }}>
                         <div>
-                          <div style={{ fontFamily:FONT,fontWeight:600,fontSize:10,color:nc,letterSpacing:1.5,marginBottom:3 }}>UP NEXT · {(nextEntry.dayShort||"").toUpperCase()}</div>
+                          <div style={{ fontFamily:FONT,fontWeight:600,fontSize:10,color:nc,letterSpacing:1.5,marginBottom:3 }}>UP NEXT · {getDayLabel(nextEntry).toUpperCase()}</div>
                           <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff" }}>{nextEntry.workout.name}</div>
                         </div>
                         <div style={{ background:nc,borderRadius:20,padding:"5px 12px",flexShrink:0 }}>
                           <span style={{ fontFamily:FONT,fontWeight:800,fontSize:10,color:"#fff",letterSpacing:1 }}>{nextEntry.workout.type}</span>
                         </div>
                       </div>
-                      <div style={{ fontFamily:FONT,fontSize:12,color:"#888" }}>{nextEntry.dayName} · {nextEntry.workout.duration} min · {nextEntry.workout.calories} cal</div>
+                      <div style={{ fontFamily:FONT,fontSize:12,color:"#888" }}>{getDayLabel(nextEntry)} · {nextEntry.workout.duration} min · {nextEntry.workout.calories} cal</div>
                     </div>
                     {exs.length>0 && (
                       <div style={{ display:"flex",gap:4,padding:"12px 16px 0" }}>
@@ -4379,7 +4417,7 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
                         <div onClick={()=>setExpandedId(isExpanded?null:entry.id)} style={{ padding:"14px 16px",cursor:"pointer" }}>
                           <div style={{ display:"flex",alignItems:"center",gap:12 }}>
                             <div style={{ width:44,flexShrink:0,textAlign:"center" }}>
-                              <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:isPast?"#444":"#fff" }}>{entry.dayShort}</div>
+                              <div style={{ fontFamily:FONT,fontWeight:800,fontSize:13,color:isPast?"#444":"#fff" }}>{getDayLabel(entry)}</div>
                               <div style={{ fontFamily:FONT,fontSize:10,color:"#444",marginTop:1 }}>{entryDate.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>
                             </div>
                             <div style={{ display:"flex",gap:3,flexShrink:0 }}>
@@ -4455,7 +4493,7 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
                       return (
                         <div key={s.id} onClick={()=>setMoveTargetDate(s.scheduledDate.split('T')[0])} style={{ display:"flex",alignItems:"center",gap:12,padding:"14px 16px",borderRadius:14,marginBottom:8,background:isMoveTarget?`${sc}22`:"#1a1a1a",border:isMoveTarget?`1px solid ${sc}`:"1px solid #222",cursor:"pointer" }}>
                           <div style={{ width:44,textAlign:"center",flexShrink:0 }}>
-                            <div style={{ fontFamily:FONT,fontWeight:800,fontSize:13,color:isMoveTarget?"#fff":"#888" }}>{s.dayShort}</div>
+                            <div style={{ fontFamily:FONT,fontWeight:800,fontSize:13,color:isMoveTarget?"#fff":"#888" }}>{getDayLabel(s)}</div>
                             <div style={{ fontFamily:FONT,fontSize:10,color:"#444" }}>{sd.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>
                           </div>
                           <div style={{ flex:1,minWidth:0 }}>
@@ -4788,6 +4826,34 @@ function NotificationsPage({ onBack, onMarkAllRead }) {
       .catch(() => setNotifications([]));
   }, []);
 
+  const [swipeOffsets, setSwipeOffsets] = useState({});
+  const swipeStartRef = useRef({});
+
+  const handleNotifTouchStart = (id, e) => {
+    swipeStartRef.current[id] = e.touches[0].clientX;
+  };
+  const handleNotifTouchMove = (id, e) => {
+    const startX = swipeStartRef.current[id];
+    if (startX === undefined) return;
+    const dx = Math.min(0, e.touches[0].clientX - startX);
+    setSwipeOffsets(prev => ({ ...prev, [id]: Math.max(-80, dx) }));
+  };
+  const handleNotifTouchEnd = (id) => {
+    const offset = swipeOffsets[id] || 0;
+    if (offset < -60) {
+      deleteNotif(id);
+    } else {
+      setSwipeOffsets(prev => ({ ...prev, [id]: 0 }));
+    }
+    delete swipeStartRef.current[id];
+  };
+
+  const deleteNotif = (id) => {
+    setSwipeOffsets(prev => { const n = {...prev}; delete n[id]; return n; });
+    setNotifications(p => p.filter(n => n.id !== id));
+    if (getAuthToken()) apiCall(`/notifications/${id}`, { method:'DELETE' }).catch(()=>{});
+  };
+
   const markOne = (id) => {
     setNotifications(p => p.map(n => n.id === id ? { ...n, read: true } : n));
     setHasUnread(p => notifications.some(n => n.id !== id && !n.read));
@@ -4854,36 +4920,50 @@ function NotificationsPage({ onBack, onMarkAllRead }) {
         )}
         {(displayList || NOTIF_DATA).map((n, i) => {
           const isUnread = displayList ? !n.read : n.unread;
-          const cardBg   = isUnread ? '#00a3ff'        : '#fff';
-          const titleCol = isUnread ? '#fff'   : '#111';
-          const bodyCol  = isUnread ? '#e0f3ff': '#666';
-          const timeCol  = isUnread ? '#b3e0ff': '#aaa';
+          const cardBg   = isUnread ? '#00a3ff' : '#fff';
+          const titleCol = isUnread ? '#fff'    : '#111';
+          const bodyCol  = isUnread ? '#e0f3ff' : '#666';
+          const timeCol  = isUnread ? '#b3e0ff' : '#aaa';
+          const offset   = swipeOffsets[n.id] || 0;
+          const isDragging = swipeStartRef.current[n.id] !== undefined;
           return (
-            <div key={n.id} onClick={() => displayList ? markOne(n.id) : null}
-              style={{ background: cardBg, borderRadius:18, padding:"16px 18px", marginBottom:12, display:"flex", gap:14, alignItems:"flex-start", cursor:"pointer", animation:`fadeUp 0.3s ease ${i*0.05}s both`, transition:"background 0.3s" }}>
-              {/* Icon circle — always white background */}
-              <div style={{ width:44, height:44, borderRadius:"50%", background:"#fff", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, overflow:"hidden" }}>
-                {n.iconKey==="logo"      && <VTRXLogo size={18}/>}
-                {n.iconKey==="workout"   && <svg width="20" height="20" viewBox="0 0 24 24" fill="#60A5FA" stroke="none"><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>}
-                {n.iconKey==="goal"      && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#34D399" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>}
-                {n.iconKey==="meal"      && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FBBF24" strokeWidth="2"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>}
-                {n.iconKey==="streak"    && <svg width="20" height="20" viewBox="0 0 24 24" fill="#F87171"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>}
-                {n.iconKey==="challenge" && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>}
-                {n.iconKey==="premium"   && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FCD34D" strokeWidth="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.77 5.82 21 7 14.14l-5-4.87 6.91-1.01z"/></svg>}
-                {n.iconKey==="nutrition" && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4ADE80" strokeWidth="2"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>}
-                {n.iconKey==="steps"     && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22D3EE" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>}
-                {n.iconKey==="sleep"     && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#818CF8" strokeWidth="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>}
-                {n.iconKey==="water"     && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38BDF8" strokeWidth="2"><path d="M12 2.69l5.66 5.66a8 8 0 11-11.31 0z"/></svg>}
-                {n.iconKey==="rest"      && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F472B6" strokeWidth="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>}
-                {(!n.iconKey || (n.iconKey !== 'logo' && !['workout','goal','meal','streak','challenge','premium','nutrition','steps','sleep','water','rest'].includes(n.iconKey))) && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>}
+            <div key={n.id} style={{ position:"relative", marginBottom:12, borderRadius:18, overflow:"hidden", animation:`fadeUp 0.3s ease ${i*0.05}s both` }}>
+              {/* Delete button revealed on swipe */}
+              <div style={{ position:"absolute", right:0, top:0, bottom:0, width:76, background:"#EF4444", display:"flex", alignItems:"center", justifyContent:"center", borderRadius:"0 18px 18px 0" }}
+                onClick={() => deleteNotif(n.id)}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
               </div>
-              {/* Body */}
-              <div style={{ flex:1 }}>
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:4 }}>
-                  <div style={{ fontFamily:FONT, fontWeight:800, fontSize:15, color: titleCol }}>{n.title}</div>
-                  <div style={{ fontFamily:FONT, fontSize:12, color: timeCol, marginLeft:8, whiteSpace:"nowrap", flexShrink:0 }}>{n.time}</div>
+              {/* Main card — slides left on swipe */}
+              <div
+                onTouchStart={(e) => handleNotifTouchStart(n.id, e)}
+                onTouchMove={(e) => handleNotifTouchMove(n.id, e)}
+                onTouchEnd={() => handleNotifTouchEnd(n.id)}
+                onClick={() => { if (offset === 0 && displayList) markOne(n.id); }}
+                style={{ background: cardBg, borderRadius:18, padding:"16px 18px", display:"flex", gap:14, alignItems:"flex-start", cursor:"pointer", transition: isDragging ? "none" : "transform 0.3s ease, background 0.3s", transform:`translateX(${offset}px)` }}>
+                {/* Icon */}
+                <div style={{ width:44, height:44, borderRadius:"50%", background:"#fff", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, overflow:"hidden" }}>
+                  {n.iconKey==="logo"      && <VTRXLogo size={18}/>}
+                  {n.iconKey==="workout"   && <svg width="20" height="20" viewBox="0 0 24 24" fill="#60A5FA" stroke="none"><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>}
+                  {n.iconKey==="goal"      && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#34D399" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>}
+                  {n.iconKey==="meal"      && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FBBF24" strokeWidth="2"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>}
+                  {n.iconKey==="streak"    && <svg width="20" height="20" viewBox="0 0 24 24" fill="#F87171"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>}
+                  {n.iconKey==="challenge" && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>}
+                  {n.iconKey==="premium"   && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FCD34D" strokeWidth="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.77 5.82 21 7 14.14l-5-4.87 6.91-1.01z"/></svg>}
+                  {n.iconKey==="nutrition" && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4ADE80" strokeWidth="2"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>}
+                  {n.iconKey==="steps"     && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22D3EE" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>}
+                  {n.iconKey==="sleep"     && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#818CF8" strokeWidth="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>}
+                  {n.iconKey==="water"     && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38BDF8" strokeWidth="2"><path d="M12 2.69l5.66 5.66a8 8 0 11-11.31 0z"/></svg>}
+                  {n.iconKey==="rest"      && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F472B6" strokeWidth="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>}
+                  {(!n.iconKey || (n.iconKey !== 'logo' && !['workout','goal','meal','streak','challenge','premium','nutrition','steps','sleep','water','rest'].includes(n.iconKey))) && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>}
                 </div>
-                <div style={{ fontFamily:FONT, fontSize:13, color: bodyCol, lineHeight:1.55 }}>{n.body}</div>
+                {/* Body */}
+                <div style={{ flex:1 }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:4 }}>
+                    <div style={{ fontFamily:FONT, fontWeight:800, fontSize:15, color:titleCol }}>{n.title}</div>
+                    <div style={{ fontFamily:FONT, fontSize:12, color:timeCol, marginLeft:8, whiteSpace:"nowrap", flexShrink:0 }}>{n.time}</div>
+                  </div>
+                  <div style={{ fontFamily:FONT, fontSize:13, color:bodyCol, lineHeight:1.55 }}>{n.body}</div>
+                </div>
               </div>
             </div>
           );
