@@ -3967,7 +3967,7 @@ function CalendarPage({ onBack, loggedWorkouts=[] }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // PAGE 2: WORKOUT HISTORY
 // ─────────────────────────────────────────────────────────────────────────────
-function WorkoutHistoryPage({ onBack }) {
+function WorkoutHistoryPage({ onBack, onUpgrade }) {
   const [history,  setHistory]  = React.useState([]);
   const [loading,  setLoading]  = React.useState(true);
   React.useEffect(()=>{
@@ -4024,7 +4024,7 @@ function WorkoutHistoryPage({ onBack }) {
               <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#fff" }}>Showing last 14 days</div>
               <div style={{ fontFamily:FONT,fontSize:12,color:"#888",marginTop:2 }}>Upgrade to see your full workout history</div>
             </div>
-            <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:PRIMARY,letterSpacing:0.5 }}>PREMIUM →</div>
+            <button onClick={onUpgrade} style={{ background:"none",border:"none",cursor:"pointer",fontFamily:FONT,fontWeight:700,fontSize:11,color:PRIMARY,letterSpacing:0.5,padding:0 }}>PREMIUM →</button>
           </div>
         )}
         {loading ? <div style={{textAlign:"center",padding:"40px 0",fontFamily:FONT,color:"#555"}}>Loading...</div> : filtered.length===0 ? <div style={{textAlign:"center",padding:"40px 0",fontFamily:FONT,color:"#555"}}>No workouts yet. Complete your first workout!</div> : filtered.map((h,i)=>(
@@ -4878,7 +4878,7 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
       </div>
       {/* Sub-page overlays — WeightsHub stays mounted preserving scroll + state */}
       {subPage === "calendar"  && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><CalendarPage        onBack={goBack} loggedWorkouts={loggedWorkouts}/></div>}
-      {subPage === "history"   && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><WorkoutHistoryPage  onBack={goBack}/></div>}
+      {subPage === "history"   && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><WorkoutHistoryPage  onBack={goBack} onUpgrade={()=>{ setSubPage(null); setShowUpgrade(true); }}/></div>}
       {subPage === "records"   && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><PersonalRecordsPage onBack={goBack}/></div>}
       {subPage === "customize" && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><CustomizePage       onBack={goBack}/></div>}
       {subPage === "profile"   && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><ProfilePage         onBack={goBack} onLogout={()=>{ setSubPage(null); onLogout&&onLogout(); }}/></div>}
@@ -7719,7 +7719,9 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
   const { dark } = useTheme();
   const { user, profileImg, isPremium } = useUser();
   const [trialEndedDismissed, setTrialEndedDismissed] = useState(false);
-  const showTrialBanner = !isPremium && !trialEndedDismissed;
+  const subStatus = user?.subscription?.status;
+  const showTrialBanner = !isPremium && !trialEndedDismissed &&
+    (subStatus === 'expired' || subStatus === 'cancelled');
   const [showSwap, setShowSwap]   = useState(false);
   const [showMood, setShowMood]   = useState(false);
   const [showNotifs, setShowNotifs]   = useState(false);
@@ -7834,7 +7836,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
 
       {/* SCROLL BODY */}
       <div ref={scrollRef} style={{ flex:1,overflowY:"auto",padding:"0 14px 90px",background:BG }}>
-        {showTrialBanner && <TrialEndedBanner onUpgrade={()=>setTrialEndedDismissed(true)}/>}
+        {showTrialBanner && <TrialEndedBanner onUpgrade={()=>{ setTrialEndedDismissed(true); onNavigate("upgrade"); }}/>}
 
         {lvl&&<button onClick={()=>setShowMood(true)} style={{ width:"100%",padding:"9px 16px",borderRadius:50,background:lvl.bg,border:`1px solid ${lvl.color}44`,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",marginBottom:13 }}>
           <div style={{ display:"flex",alignItems:"center",gap:9 }}>
@@ -8148,7 +8150,8 @@ function VTRXAppInner({ setPaymentPlan }) {
         }));
         if (u.streakDays)             setStreakDay(u.streakDays);
         if (u._count?.workoutLogs)   setWorkoutsTotal(u._count.workoutLogs);
-        if (u.isPremium)      setIsPremium(true);
+        if (u.isPremium)              setIsPremium(true);
+        if (u.subscription)           setUser(prev=>({...prev, subscription: u.subscription}));
         // Valid token + profile loaded → restore dashboard without re-running onboarding
         setPhase("dashboard");
       }
@@ -8397,6 +8400,7 @@ function VTRXAppInner({ setPaymentPlan }) {
   if (phase !== "dashboard") return null;
 
   // Inner pages
+  if (innerPage==="upgrade")       return <UpgradePlanPage onBack={goBack}/>;
   if (innerPage==="aiSummary")     return <AISummaryPage energyKey={energyKey} workoutDone={workoutDone} logId={lastWorkoutLogId} onBack={goBack}/>;
   if (innerPage==="nutrition")     return <NutritionPage meal={MEALS[mealIdx % MEALS.length]} onBack={goBack}/>;
   if (innerPage==="fitnessStats")  return <FitnessStatsPage onBack={goBack} loggedWorkouts={loggedWorkouts}/>;
