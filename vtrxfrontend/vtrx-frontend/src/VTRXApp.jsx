@@ -7326,13 +7326,19 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
       </div>
       {/* Sub tabs */}
       <div style={{ display:"flex",padding:"0 16px 12px",gap:8 }}>
-        {TABS.map((t,i)=>(
-          <button key={i} onClick={()=>setSubTab(i)}
-            style={{ flex:1,padding:"8px 4px",borderRadius:12,border:`1.5px solid ${subTab===i?PRIMARY:BORDER}`,background:subTab===i?`${PRIMARY}18`:"transparent",display:"flex",flexDirection:"column",alignItems:"center",gap:3,cursor:"pointer",transition:"all 0.2s" }}>
-            <span style={{ color:subTab===i?PRIMARY:"#555",display:"flex" }}>{t.icon}</span>
-            <span style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:subTab===i?PRIMARY:"#555",letterSpacing:0.3 }}>{t.label}</span>
-          </button>
-        ))}
+        {TABS.map((t,i)=>{
+          const locked = (i===1||i===2) && !isPremium;
+          return (
+            <button key={i} onClick={()=>{ if(locked){ setShowUpgrade(true); return; } setSubTab(i); }}
+              style={{ flex:1,padding:"8px 4px",borderRadius:12,border:`1.5px solid ${subTab===i?PRIMARY:BORDER}`,background:subTab===i?`${PRIMARY}18`:"transparent",display:"flex",flexDirection:"column",alignItems:"center",gap:3,cursor:"pointer",transition:"all 0.2s" }}>
+              <span style={{ color:subTab===i?PRIMARY:locked?"#555":"#555",display:"flex",position:"relative" }}>
+                {t.icon}
+                {locked&&<span style={{ position:"absolute",top:-5,right:-7,width:13,height:13,borderRadius:"50%",background:"#F59E0B",display:"flex",alignItems:"center",justifyContent:"center" }}><svg width="7" height="7" viewBox="0 0 8 9" fill="none"><rect x="1" y="4" width="6" height="5" rx="1" fill="#000"/><path d="M2.5 4V3a1.5 1.5 0 013 0v1" stroke="#000" strokeWidth="1.2"/></svg></span>}
+              </span>
+              <span style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:subTab===i?PRIMARY:locked?"#555":"#555",letterSpacing:0.3 }}>{t.label}</span>
+            </button>
+          );
+        })}
       </div>
 
       <div ref={scrollRef} style={{ flex:1,overflowY:"auto",padding:"0 16px 80px" }}>
