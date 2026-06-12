@@ -864,6 +864,38 @@ function parseReps(repsStr) {
   return s;
 }
 
+// Generate a descriptive workout title from the exercises' muscle groups
+function generateWorkoutTitle(exercises) {
+  if (!exercises || exercises.length === 0) return null;
+  const norm = (mg) => {
+    const m = (mg || '').toLowerCase();
+    if (m.includes('bicep'))                                        return 'Biceps';
+    if (m.includes('tricep'))                                       return 'Triceps';
+    if (m.includes('chest') || m.includes('pec'))                  return 'Chest';
+    if (m.includes('back') || m.includes('lat') || m.includes('trap') || m.includes('rhomboid')) return 'Back';
+    if (m.includes('shoulder') || m.includes('delt'))              return 'Shoulders';
+    if (m.includes('quad') || m.includes('hamstring') || (m.includes('leg') && !m.includes('bicep'))) return 'Legs';
+    if (m.includes('glute') || m.includes('hip'))                  return 'Glutes';
+    if (m.includes('calf') || m.includes('calve'))                 return 'Calves';
+    if (m.includes('core') || m.includes('ab'))                    return 'Core';
+    if (m.includes('forearm'))                                     return 'Forearms';
+    return null;
+  };
+  const upper = new Set(['Biceps','Triceps','Chest','Back','Shoulders','Forearms']);
+  const lower = new Set(['Legs','Glutes','Calves']);
+  const groups = [...new Set(exercises.map(e => norm(e.muscleGroup || e.muscles)).filter(Boolean))];
+  if (groups.length === 0) return null;
+  const hasUpper = groups.some(g => upper.has(g));
+  const hasLower = groups.some(g => lower.has(g));
+  if (groups.length === 1) return groups[0];
+  if (groups.length === 2) return `${groups[0]} & ${groups[1]}`;
+  if (groups.length === 3) return `${groups[0]}, ${groups[1]} & ${groups[2]}`;
+  if (hasUpper && hasLower) return 'Full Body';
+  if (hasUpper) return 'Upper Body';
+  if (hasLower) return 'Lower Body';
+  return groups.slice(0, 3).join(', ');
+}
+
 // Normalise an exercise from either the API shape or the hardcoded EXERCISES shape
 function normaliseExercise(ex) {
   return {
@@ -970,7 +1002,7 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onStop, onExercise, co
         {/* Summary card */}
         <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,margin:"0 16px 16px",padding:"20px" }}>
           <div style={{ fontFamily:FONT,fontWeight:800,fontSize:17,color:"#fff",textAlign:"center",marginBottom:6 }}>Today's Workout</div>
-          <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#aaa",textAlign:"center",marginBottom:18 }}>{workout.name}</div>
+          <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#aaa",textAlign:"center",marginBottom:18 }}>{generateWorkoutTitle(workout.exercises) || workout.name}</div>
           <div style={{ display:"flex",justifyContent:"space-around" }}>
             {[
               {val:exercises.length,                            lbl:"Exercises",col:"#FF6B35",svg:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FF6B35" strokeWidth="2"><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>},
@@ -4610,7 +4642,7 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
                       <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6 }}>
                         <div>
                           <div style={{ fontFamily:FONT,fontWeight:600,fontSize:10,color:nc,letterSpacing:1.5,marginBottom:3 }}>UP NEXT · {getDayLabel(nextEntry).toUpperCase()}</div>
-                          <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff" }}>{nextEntry.workout.name}</div>
+                          <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff" }}>{generateWorkoutTitle(exs) || nextEntry.workout.name}</div>
                         </div>
                         <div style={{ background:nc,borderRadius:20,padding:"5px 12px",flexShrink:0 }}>
                           <span style={{ fontFamily:FONT,fontWeight:800,fontSize:10,color:"#fff",letterSpacing:1 }}>{nextEntry.workout.type}</span>
@@ -4688,7 +4720,7 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
                               ))}
                             </div>
                             <div style={{ flex:1,minWidth:0 }}>
-                              <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:isPast?"#555":"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{entry.workout.name}</div>
+                              <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:isPast?"#555":"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{generateWorkoutTitle(exs) || entry.workout.name}</div>
                               <div style={{ fontFamily:FONT,fontSize:11,color:"#444",marginTop:1 }}>{entry.workout.duration} min · {entry.workout.calories} cal</div>
                             </div>
                             <div style={{ display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4,flexShrink:0 }}>
@@ -4741,7 +4773,7 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
                   <div onClick={e=>e.stopPropagation()} style={{ width:"100%",background:"#111",borderRadius:"24px 24px 0 0",padding:"24px 20px 40px",maxHeight:"80vh",overflowY:"auto" }}>
                     <div style={{ width:40,height:4,borderRadius:2,background:"#333",margin:"0 auto 20px" }}/>
                     <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:"#fff",marginBottom:4 }}>Move Workout</div>
-                    <div style={{ fontFamily:FONT,fontSize:13,color:"#555",marginBottom:20 }}>{moveEntry.workout.name}</div>
+                    <div style={{ fontFamily:FONT,fontSize:13,color:"#555",marginBottom:20 }}>{generateWorkoutTitle(moveEntry.workout.exercises) || moveEntry.workout.name}</div>
                     <div style={{ fontFamily:FONT,fontWeight:700,fontSize:12,color:"#666",letterSpacing:1,marginBottom:12 }}>SELECT TARGET DAY</div>
                     {weekSchedule.filter(s=>s.id!==moveEntry.id).map(s=>{
                       const sd = new Date(s.scheduledDate);
@@ -4754,7 +4786,7 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
                             <div style={{ fontFamily:FONT,fontSize:10,color:"#444" }}>{sd.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>
                           </div>
                           <div style={{ flex:1,minWidth:0 }}>
-                            <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:isMoveTarget?"#fff":"#666",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{s.workout.name}</div>
+                            <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:isMoveTarget?"#fff":"#666",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{generateWorkoutTitle(s.workout.exercises) || s.workout.name}</div>
                             <div style={{ fontFamily:FONT,fontSize:11,color:"#555" }}>Will swap ↔</div>
                           </div>
                           {isMoveTarget && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={sc} strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
@@ -4779,7 +4811,7 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
                   <div onClick={e=>e.stopPropagation()} style={{ width:"100%",background:"#111",borderRadius:"24px 24px 0 0",padding:"24px 20px 40px",maxHeight:"80vh",overflowY:"auto" }}>
                     <div style={{ width:40,height:4,borderRadius:2,background:"#333",margin:"0 auto 20px" }}/>
                     <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:"#fff",marginBottom:4 }}>Replace Workout</div>
-                    <div style={{ fontFamily:FONT,fontSize:13,color:"#555",marginBottom:20 }}>{replaceEntry.workout.name}</div>
+                    <div style={{ fontFamily:FONT,fontSize:13,color:"#555",marginBottom:20 }}>{generateWorkoutTitle(replaceEntry.workout.exercises) || replaceEntry.workout.name}</div>
                     <div style={{ fontFamily:FONT,fontWeight:700,fontSize:12,color:"#666",letterSpacing:1,marginBottom:12 }}>SELECT NEW WORKOUT</div>
                     {allWorkouts.map(w=>{
                       const wc = TYPE_C[w.type]||PRIMARY;
@@ -7890,7 +7922,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
               <img src={workoutBanner} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
             </div>
             <div style={{ flex:1 }}>
-              <div style={{ fontFamily:FONT,fontWeight:800,fontSize:17,color:"#fff",marginBottom:3 }}>{workout.name}</div>
+              <div style={{ fontFamily:FONT,fontWeight:800,fontSize:17,color:"#fff",marginBottom:3 }}>{generateWorkoutTitle(apiWorkout?.exercises || workout.exercises) || workout.name}</div>
               <div style={{ fontFamily:FONT,fontSize:11.5,color:"#89CFF0",marginBottom:9,lineHeight:1.45 }}>Target: {workout.target || (apiWorkout?.exercises?.slice(0,3).map(e=>e.muscleGroup).filter(Boolean).join(', ')) || 'Full Body'}</div>
               <div style={{ display:"flex",gap:14,alignItems:"center" }}>
                 {[{val:workout.duration||workout.mins||0,icon:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,col:"#EF4444"},{val:workout.calories||workout.cal||0,icon:<svg width="13" height="13" viewBox="0 0 24 24" fill="#FF6B35"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>,col:"#FF6B35"},{val:Array.isArray(workout.exercises)?workout.exercises.length:(workout.exercises||0),icon:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2"><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>,col:PRIMARY}].map((s,i)=>(
