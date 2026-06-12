@@ -5248,18 +5248,20 @@ function NotificationsPage({ onBack, onMarkAllRead }) {
     onMarkAllRead?.();
   };
 
-  // Fall back to static demo data until the API returns real notifications
-  const displayList = notifications && notifications.length > 0
-    ? notifications.map(n => ({
-        id:      n.id,
-        title:   n.title,
-        body:    n.body,
-        time:    new Date(n.createdAt).toLocaleDateString('en-GB', { day:'numeric', month:'short' }),
-        iconKey: NOTIF_ICON_MAP[n.type] || 'workout',
-        type:    n.type,
-        read:    n.read,
-      }))
-    : (notifications !== null ? [] : null);
+  // null = loading, [] = loaded-empty, [...] = real data
+  const displayList = notifications === null
+    ? null
+    : notifications.length > 0
+      ? notifications.map(n => ({
+          id:      n.id,
+          title:   n.title,
+          body:    n.body,
+          time:    new Date(n.createdAt).toLocaleDateString('en-GB', { day:'numeric', month:'short' }),
+          iconKey: NOTIF_ICON_MAP[n.type] || 'workout',
+          type:    n.type,
+          read:    n.read,
+        }))
+      : [];
 
   if (showSettings) return <NotifSettingsPage onBack={() => setShowSettings(false)}/>;
 
@@ -5299,8 +5301,8 @@ function NotificationsPage({ onBack, onMarkAllRead }) {
             No notifications yet
           </div>
         )}
-        {(displayList || NOTIF_DATA).map((n, i) => {
-          const isUnread = displayList ? !n.read : n.unread;
+        {displayList !== null && displayList.map((n, i) => {
+          const isUnread = !n.read;
           const cardBg   = isUnread ? '#00a3ff' : '#fff';
           const titleCol = isUnread ? '#fff'    : '#111';
           const bodyCol  = isUnread ? '#e0f3ff' : '#666';
@@ -8154,12 +8156,48 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
 }
 
 
+// ── SPLASH SCREEN ─────────────────────────────────────────────────────────────
+function SplashScreen() {
+  const [visible, setVisible] = useState(false);
+  useEffect(()=>{ const t = setTimeout(()=>setVisible(true), 60); return ()=>clearTimeout(t); }, []);
+  return (
+    <div style={{
+      position:"absolute", inset:0, background:"#000",
+      display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+      gap:0,
+    }}>
+      <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:12,
+        opacity: visible ? 1 : 0, transform: visible ? "scale(1)" : "scale(0.88)",
+        transition:"opacity 0.5s ease, transform 0.5s ease" }}>
+        <VTRXLogo size={64}/>
+        <div style={{ fontFamily:FONT, fontWeight:900, fontSize:36, color:PRIMARY, letterSpacing:8, lineHeight:1 }}>
+          VTRX
+        </div>
+        <div style={{ fontFamily:FONT, fontWeight:600, fontSize:11, color:"rgba(255,255,255,0.45)", letterSpacing:3.5, marginTop:2 }}>
+          UNLOCK YOUR FULL POTENTIAL
+        </div>
+      </div>
+      {/* Subtle pulsing dot loader */}
+      <div style={{ display:"flex", gap:6, marginTop:52,
+        opacity: visible ? 0.6 : 0, transition:"opacity 0.6s ease 0.3s" }}>
+        {[0,1,2].map(i=>(
+          <div key={i} style={{
+            width:6, height:6, borderRadius:"50%", background:PRIMARY,
+            animation:`splashDot 1.2s ease-in-out ${i*0.2}s infinite`,
+          }}/>
+        ))}
+      </div>
+      <style>{`@keyframes splashDot{0%,80%,100%{transform:scale(0.6);opacity:0.3}40%{transform:scale(1);opacity:1}}`}</style>
+    </div>
+  );
+}
+
 function VTRXAppInner({ setPaymentPlan }) {
 
   const { user, setUser, profileImg, isPremium, setIsPremium } = useUser();
 
   // ── Phase / onboarding state ──────────────────────────────────────────────
-  const [phase, setPhase]           = useState("onboarding");
+  const [phase, setPhase]           = useState("splash");
   const [pendingEmail, setPendingEmail] = useState(""); // onboarding | login | preferences | dashboard
   const [screen, setScreen]         = useState(0);
   const [dir, setDir]               = useState(1);
@@ -8243,12 +8281,20 @@ function VTRXAppInner({ setPaymentPlan }) {
       .catch(()=>{});
   }, [energyKey]);
 
-  // Load real data on mount
-    // ── Load user profile from backend on mount ─────────────────────────────
+  // Load real data on mount — also drives splash → onboarding/dashboard transition
   useEffect(()=>{
-    if (DEMO_MODE) return;
+    const MIN_SPLASH_MS = 1200;
+    const splashStart   = Date.now();
+    const afterSplash   = (nextPhase) => {
+      const elapsed = Date.now() - splashStart;
+      const delay   = Math.max(0, MIN_SPLASH_MS - elapsed);
+      setTimeout(() => setPhase(nextPhase), delay);
+    };
+
+    if (DEMO_MODE) { afterSplash("onboarding"); return; }
     const token = getAuthToken();
-    if (!token) return;
+    if (!token) { afterSplash("onboarding"); return; }
+
     apiCall("/users/profile").then(res=>{
       if (res?.data?.user) {
         const u = res.data.user;
@@ -8267,25 +8313,25 @@ function VTRXAppInner({ setPaymentPlan }) {
           equipment:    u.equipment    || prev.equipment,
           location:     u.location     || prev.location,
         }));
-        if (u.streakDays)             setStreakDay(u.streakDays);
-        if (u._count?.workoutLogs)   setWorkoutsTotal(u._count.workoutLogs);
-        if (u.isPremium)              setIsPremium(true);
-        if (u.subscription)           setUser(prev=>({...prev, subscription: u.subscription}));
-        // Valid token + profile loaded → restore dashboard without re-running onboarding
-        setPhase("dashboard");
+        if (u.streakDays)           setStreakDay(u.streakDays);
+        if (u._count?.workoutLogs)  setWorkoutsTotal(u._count.workoutLogs);
+        if (u.isPremium)            setIsPremium(true);
+        if (u.subscription)         setUser(prev=>({...prev, subscription: u.subscription}));
+        afterSplash("dashboard");
+      } else {
+        afterSplash("onboarding");
       }
-      // Also load weekly stats
       apiCall("/workouts/stats").then(sr=>{
         if (sr?.data?.stats) {
           const s = sr.data.stats;
-          if (s.currentStreak)               setStreakDay(s.currentStreak);
+          if (s.currentStreak)                  setStreakDay(s.currentStreak);
           if (s.workoutsCompleted !== undefined) setWeeklyWorkoutDays(s.workoutsCompleted);
-          if (s.avgCalories)                 setWeeklyAvgCal(s.avgCalories);
-          if (s.avgMinutes)                  setWeeklyAvgMin(s.avgMinutes);
-          if (s.totalWorkouts)               setWorkoutsTotal(s.totalWorkouts);
+          if (s.avgCalories)                    setWeeklyAvgCal(s.avgCalories);
+          if (s.avgMinutes)                     setWeeklyAvgMin(s.avgMinutes);
+          if (s.totalWorkouts)                  setWorkoutsTotal(s.totalWorkouts);
         }
       }).catch(()=>{});
-    }).catch(()=>{});
+    }).catch(()=>{ afterSplash("onboarding"); });
   }, []);
 
   // ── Handle Stripe redirect on app load ─────────────────────────────────────
@@ -8381,6 +8427,11 @@ function VTRXAppInner({ setPaymentPlan }) {
     };
     if (phase === "dashboard") loadData();
   }, [phase]);
+
+  // ── Splash screen ─────────────────────────────────────────────────────────
+  if (phase==="splash") {
+    return <SplashScreen/>;
+  }
 
   // ── Onboarding screens ────────────────────────────────────────────────────
   if (phase==="onboarding") {
