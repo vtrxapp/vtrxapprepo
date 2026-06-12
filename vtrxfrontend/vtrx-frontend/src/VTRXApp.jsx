@@ -7173,8 +7173,9 @@ function GroceryTab({ checkedGrocery, setCheckedGrocery, groceryList }) {
 
 function NutritionHub({ onBack, energyKey, onLogout }) {
   const { isPremium, setIsPremium } = useUser();
-  const [showProfile, setShowProfile] = useState(false);
-  const [subTab, setSubTab]           = useState(0); // 0=Discover 1=Plan 2=Grocery 3=Saved
+  const [showProfile, setShowProfile]   = useState(false);
+  const [showUpgrade, setShowUpgrade]   = useState(false);
+  const [subTab, setSubTab]             = useState(0); // 0=Discover 1=Plan 2=Grocery 3=Saved
   const [filter, setFilter]           = useState("All");
   const scrollRef = useScrollPos("nutrition-" + subTab);
   const [search, setSearch]           = useState("");
@@ -7233,6 +7234,7 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
   const aiSug = AI_SUGGESTIONS[energyKey] || AI_SUGGESTIONS.okay;
 
   if (showProfile) return <ProfilePage onBack={()=>setShowProfile(false)} onLogout={()=>{ setShowProfile(false); onLogout&&onLogout(); }}/>;
+  if (showUpgrade) return <UpgradePlanPage onBack={()=>setShowUpgrade(false)}/>;
 
   const displayRecipes = apiRecipes.length > 0 ? apiRecipes : RECIPES.map(normalizeRecipe);
   const filtered = displayRecipes.filter(r=>{
@@ -7326,57 +7328,111 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
       <div ref={scrollRef} style={{ flex:1,overflowY:"auto",padding:"0 16px 80px" }}>
         {subTab===0 && (
           <div>
-            {/* AI suggestion banner - collapsible */}
-            <div style={{ background:`${PRIMARY}12`,border:`1px solid ${PRIMARY}30`,borderRadius:16,marginBottom:12,overflow:"hidden",transition:"all 0.3s ease" }}>
-              {/* Banner header - always visible, tap to toggle */}
-              <div onClick={()=>setBannerOpen(b=>!b)}
-                style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 14px",cursor:"pointer" }}>
-                <div style={{ display:"flex",alignItems:"center",gap:8 }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                  <span style={{ fontFamily:FONT,fontWeight:800,fontSize:13,color:"#fff" }}>{isPremium ? aiSug.title : "Max Effort Nutrition"}</span>
-                </div>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2"
-                  style={{ transform:bannerOpen?"rotate(180deg)":"rotate(0deg)",transition:"transform 0.3s ease" }}>
-                  <polyline points="6 9 12 15 18 9"/>
-                </svg>
-              </div>
-              {/* Collapsible content */}
-              {bannerOpen && (
-                <div style={{ padding:"0 14px 14px" }}>
-                  <div style={{ fontFamily:FONT,fontSize:12,color:"#aaa",lineHeight:1.55,marginBottom:10 }}>
-                    {isPremium
-                      ? aiSug.tip
-                      : "You get 1 basic AI summary per week on the free plan. Start your free trial for full AI coaching."}
+            {/* VTRX Smart Nutrition */}
+            {(() => {
+              const todayMacros = MEAL_SLOTS.reduce((acc, slot) => {
+                const meal = getMealForDay(selectedDay, slot);
+                if (meal) { acc.cal += meal.cal||0; acc.protein += meal.protein||0; acc.carbs += meal.carbs||0; acc.fat += meal.fats||0; }
+                return acc;
+              }, { cal:0, protein:0, carbs:0, fat:0 });
+              const todayRecs = [0,1].map(i => {
+                const ri = (aiSug.rec||[0,1])[i] ?? i;
+                return displayRecipes[ri] || normalizeRecipe(RECIPES[ri] || RECIPES[0]);
+              }).filter(Boolean);
+              return (
+                <div style={{ background:`${PRIMARY}12`,border:`1px solid ${PRIMARY}30`,borderRadius:16,marginBottom:12,overflow:"hidden" }}>
+                  {/* Header */}
+                  <div onClick={()=>setBannerOpen(b=>!b)}
+                    style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 14px",cursor:"pointer" }}>
+                    <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill={PRIMARY} stroke="none"><path d="M5 16l-3-9 5.5 4L12 3l4.5 8L22 7l-3 9H5zm0 2h14v2H5v-2z"/></svg>
+                      <span style={{ fontFamily:FONT,fontWeight:800,fontSize:13,color:"#fff" }}>VTRX Smart Nutrition</span>
+                      {!isPremium && <span style={{ background:"linear-gradient(90deg,#F59E0B,#EF4444)",borderRadius:6,padding:"2px 7px",fontFamily:FONT,fontWeight:800,fontSize:9,color:"#fff",letterSpacing:0.5 }}>PREMIUM</span>}
+                    </div>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2"
+                      style={{ transform:bannerOpen?"rotate(180deg)":"rotate(0deg)",transition:"transform 0.3s ease" }}>
+                      <polyline points="6 9 12 15 18 9"/>
+                    </svg>
                   </div>
-                  {!isPremium && (
-                    <button onClick={()=>{}} style={{ background:"none",border:`1px solid ${PRIMARY}`,borderRadius:20,padding:"6px 14px",fontFamily:FONT,fontWeight:700,fontSize:11,color:PRIMARY,cursor:"pointer",letterSpacing:0.5 }}>
-                      START FREE TRIAL →
-                    </button>
+                  {bannerOpen && (
+                    <div style={{ padding:"0 14px 14px" }}>
+                      {isPremium ? (
+                        <>
+                          <div style={{ fontFamily:FONT,fontSize:11,color:"#888",marginBottom:10 }}>Today's nutrition — {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][selectedDay]}</div>
+                          {/* Macro tiles */}
+                          <div style={{ display:"flex",gap:6,marginBottom:14 }}>
+                            {[{l:"Calories",v:todayMacros.cal||"—",u:"kcal",c:"#FF6B35"},{l:"Protein",v:todayMacros.protein||"—",u:"g",c:PRIMARY},{l:"Carbs",v:todayMacros.carbs||"—",u:"g",c:"#F59E0B"},{l:"Fat",v:todayMacros.fat||"—",u:"g",c:"#A855F7"}].map(m=>(
+                              <div key={m.l} style={{ flex:1,background:"rgba(255,255,255,0.06)",borderRadius:10,padding:"8px 4px",textAlign:"center" }}>
+                                <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:m.c }}>{m.v}</div>
+                                <div style={{ fontFamily:FONT,fontSize:9,color:"#888",marginTop:1 }}>{m.u}</div>
+                                <div style={{ fontFamily:FONT,fontSize:9,color:"#555",marginTop:1 }}>{m.l}</div>
+                              </div>
+                            ))}
+                          </div>
+                          {/* 2 recommended recipes */}
+                          <div style={{ fontFamily:FONT,fontSize:11,color:"#888",marginBottom:8 }}>Recommended for today</div>
+                          <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
+                            {todayRecs.map((sr,i)=>(
+                              <div key={i} onClick={()=>setSelectedRecipe(sr)}
+                                style={{ display:"flex",alignItems:"center",gap:12,borderRadius:14,overflow:"hidden",cursor:"pointer",background:"rgba(255,255,255,0.06)",padding:"8px" }}>
+                                <div style={{ width:56,height:56,borderRadius:10,overflow:"hidden",flexShrink:0 }}>
+                                  <img src={sr.img} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+                                </div>
+                                <div style={{ flex:1 }}>
+                                  <div style={{ fontFamily:FONT,fontSize:13,fontWeight:700,color:"#fff",lineHeight:1.3,marginBottom:3 }}>{sr.name}</div>
+                                  <div style={{ display:"flex",gap:8,alignItems:"center" }}>
+                                    <span style={{ fontFamily:FONT,fontSize:11,color:"#888" }}>{sr.cal} cal</span>
+                                    <span style={{ fontFamily:FONT,fontSize:11,color:PRIMARY }}>{sr.protein}g protein</span>
+                                  </div>
+                                </div>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#bbb" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div style={{ fontFamily:FONT,fontSize:12,color:"#aaa",lineHeight:1.55,marginBottom:12 }}>
+                            Daily nutrition facts, macro tracking &amp; AI-curated recipe recommendations tailored to your goals.
+                          </div>
+                          {/* Blurred macros teaser */}
+                          <div style={{ display:"flex",gap:6,marginBottom:12,filter:"blur(4px)",pointerEvents:"none",userSelect:"none" }}>
+                            {[{l:"Calories",v:"1,840",u:"kcal",c:"#FF6B35"},{l:"Protein",v:"142",u:"g",c:PRIMARY},{l:"Carbs",v:"210",u:"g",c:"#F59E0B"},{l:"Fat",v:"58",u:"g",c:"#A855F7"}].map(m=>(
+                              <div key={m.l} style={{ flex:1,background:"rgba(255,255,255,0.06)",borderRadius:10,padding:"8px 4px",textAlign:"center" }}>
+                                <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:m.c }}>{m.v}</div>
+                                <div style={{ fontFamily:FONT,fontSize:9,color:"#888",marginTop:1 }}>{m.u}</div>
+                                <div style={{ fontFamily:FONT,fontSize:9,color:"#555",marginTop:1 }}>{m.l}</div>
+                              </div>
+                            ))}
+                          </div>
+                          {/* Blurred recipe teasers */}
+                          <div style={{ display:"flex",gap:8,marginBottom:14,filter:"blur(5px)",pointerEvents:"none",userSelect:"none" }}>
+                            {[0,1].map(i => {
+                              const sr = displayRecipes[i] || normalizeRecipe(RECIPES[i]||RECIPES[0]);
+                              return (
+                                <div key={i} style={{ flex:1,background:"rgba(255,255,255,0.06)",borderRadius:12,overflow:"hidden" }}>
+                                  <div style={{ height:60,overflow:"hidden" }}><img src={sr.img} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/></div>
+                                  <div style={{ padding:"6px 8px" }}>
+                                    <div style={{ fontFamily:FONT,fontSize:11,fontWeight:700,color:"#fff",lineHeight:1.3 }}>{sr.name}</div>
+                                    <div style={{ fontFamily:FONT,fontSize:10,color:"#888" }}>{sr.cal} cal</div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {/* CTA */}
+                          <button onClick={()=>setShowUpgrade(true)}
+                            style={{ width:"100%",padding:"12px 0",borderRadius:50,background:`linear-gradient(90deg,${PRIMARY},#7C3AED)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:13,color:"#fff",cursor:"pointer",letterSpacing:0.5 }}>
+                            START FREE TRIAL →
+                          </button>
+                          <div style={{ fontFamily:FONT,fontSize:10,color:"#666",textAlign:"center",marginTop:6 }}>1 month free · No charge until trial ends · Cancel anytime</div>
+                        </>
+                      )}
+                    </div>
                   )}
-                  <div style={{ display:"flex",flexDirection:"column",gap:8,marginTop:isPremium?0:10 }}>
-                    {isPremium && aiSug.rec.map(ri=>{
-                      const sr = displayRecipes[ri] || normalizeRecipe(RECIPES[ri] || RECIPES[0]);
-                      return (
-                        <div key={ri} onClick={()=>setSelectedRecipe(sr)}
-                          style={{ display:"flex",alignItems:"center",gap:12,borderRadius:14,overflow:"hidden",cursor:"pointer",background:"rgba(255,255,255,0.06)",padding:"8px" }}>
-                          <div style={{ width:56,height:56,borderRadius:10,overflow:"hidden",flexShrink:0 }}>
-                            <img src={sr.img} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
-                          </div>
-                          <div style={{ flex:1 }}>
-                            <div style={{ fontFamily:FONT,fontSize:13,fontWeight:700,color:"#fff",lineHeight:1.3,marginBottom:3 }}>{sr.name}</div>
-                            <div style={{ display:"flex",gap:8,alignItems:"center" }}>
-                              <span style={{ fontFamily:FONT,fontSize:11,color:"#888" }}>{sr.cal} cal</span>
-                              <span style={{ fontFamily:FONT,fontSize:11,color:"#888" }}>{sr.time}</span>
-                            </div>
-                          </div>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#bbb" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
-                        </div>
-                      );
-                    })}
-                  </div>
                 </div>
-              )}
-            </div>
+              );
+            })()}
             {/* Search */}
             <div style={{ position:"relative",marginBottom:12 }}>
               <svg style={{ position:"absolute",left:12,top:"50%",transform:"translateY(-50%)" }} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
