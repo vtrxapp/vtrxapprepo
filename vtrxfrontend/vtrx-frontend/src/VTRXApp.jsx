@@ -893,7 +893,9 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onStop, onExercise, co
 
   const fmt     = (s) => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
   const toggleEx = (i) => setCompletedEx(p => p.includes(i) ? p.filter(x=>x!==i) : [...p,i]);
-  const doneCt  = completedEx.filter(x => !String(x).startsWith('skip_')).length;
+  const doneCt  = exercises.filter((ex, i) =>
+    (completedEx.includes(i) && !completedEx.includes(`skip_${i}`)) || completedExercises.includes(ex.name)
+  ).length;
   const allDone = doneCt === exercises.length && exercises.length > 0;
 
   const handleStop = () => {
@@ -2432,9 +2434,10 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
     try {
       const data = await apiCall("/auth/login", {
         method: "POST",
-        body: JSON.stringify({ 
-          email: email.trim().toLowerCase(), 
-          password: pass 
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          password: pass,
+          clientHour: new Date().getHours(),
         }),
       });
 
@@ -2595,13 +2598,10 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
         }),
       });
 
-      // ✅ ADD THESE LINES RIGHT HERE (after successful signup)
-      if (data.success) {
-        if (typeof localStorage !== "undefined") {
-          localStorage.setItem("vtrx_pending_email", f.email.trim().toLowerCase());
-          if (data.data?.verificationId)  localStorage.setItem("vtrx_verification_id",  data.data.verificationId);
-          if (data.data?.emailAddressId)  localStorage.setItem("vtrx_email_address_id", data.data.emailAddressId);
-        }
+      if (data.success && typeof localStorage !== "undefined") {
+        localStorage.setItem("vtrx_pending_email", f.email.trim().toLowerCase());
+        if (data.data?.verificationId)  localStorage.setItem("vtrx_verification_id", data.data.verificationId);
+        if (data.data?.emailAddressId)  localStorage.setItem("vtrx_email_address_id", data.data.emailAddressId);
       }
 
       onContinue(f.email.trim().toLowerCase());
@@ -2707,6 +2707,10 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
   const verify = async () => {
     if (code.length !== 6) {
       setError("Please enter the full 6-digit code");
+      return;
+    }
+    if (!verificationId) {
+      setError("Session expired. Please sign up again.");
       return;
     }
 
@@ -2857,7 +2861,15 @@ function BodyScreen({ onContinue, onBack }) {
   };
 
   const handleContinue = () => {
-    setUser(u=>({...u, weight, height, dob, gender}));
+    const weightKg = toKg(weight, weightUnit);
+    const heightCm = toCm(height, heightUnit);
+    const ageVal   = calcAgeFromDob(dob);
+    try {
+      localStorage.setItem("vtrx_weight_unit", weightUnit);
+      localStorage.setItem("vtrx_height_unit", heightUnit);
+      if (dob) localStorage.setItem("vtrx_user_dob", dob);
+    } catch {}
+    setUser(u=>({...u, weight: weightKg, height: heightCm, dob, age: ageVal, gender}));
     onContinue();
   };
 
@@ -3308,13 +3320,29 @@ function RecordIcon({ name }) {
   if (name==="Shoulder Press") return <svg width={W} height={H} viewBox={V} fill={F} stroke="white" strokeWidth={SW}><polyline points="12 19 12 5"/><polyline points="5 12 12 5 19 12"/></svg>;
   return <svg width={W} height={H} viewBox={V} fill={F} stroke="white" strokeWidth={SW}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
 }
+// Consistent per-exercise colour — same exercise always gets the same colour everywhere
+const PR_PALETTE = ["#EF4444","#22C55E","#00A3FF","#F97316","#8B5CF6","#EAB308","#06B6D4","#F59E0B"];
+const PR_EXERCISE_COLORS = {
+  "Bench Press":    "#EF4444",
+  "Deadlift":       "#22C55E",
+  "5K Run":         "#00A3FF",
+  "Squat":          "#F97316",
+  "Pull-ups":       "#8B5CF6",
+  "Shoulder Press": "#EAB308",
+};
+function getPRColor(name, fallbackIdx=0) {
+  return PR_EXERCISE_COLORS[name] || PR_PALETTE[fallbackIdx % PR_PALETTE.length];
+}
+
+// Placeholder shells — shown for new users with no real PRs yet.
+// Values and dates are intentionally blank; they fill in once real records exist.
 const RECORDS = [
-  { name:"Bench Press",   color:"#EF4444", bg:"#EF444422", val:"225 lbs", when:"3 days ago",  history:[185,195,205,210,220,225], dates:["Apr 1","Apr 5","Apr 10","Apr 15","Apr 20","Apr 24"] },
-  { name:"Deadlift",      color:"#22C55E", bg:"#22C55E22", val:"315 lbs", when:"1 week ago",  history:[250,265,280,295,305,315], dates:["Mar 28","Apr 3","Apr 8","Apr 13","Apr 18","Apr 22"] },
-  { name:"5K Run",        color:PRIMARY,   bg:`${PRIMARY}22`, val:"18:42",when:"2 weeks ago", history:[24,22,21,20,19,18.7],     dates:["Mar 25","Apr 2","Apr 7","Apr 12","Apr 17","Apr 19"] },
-  { name:"Squat",         color:"#F97316", bg:"#F9731622", val:"275 lbs", when:"5 days ago",  history:[200,220,240,255,265,275], dates:["Mar 30","Apr 4","Apr 9","Apr 14","Apr 19","Apr 24"] },
-  { name:"Pull-ups",      color:"#8B5CF6", bg:"#8B5CF622", val:"18 reps", when:"2 days ago",  history:[10,12,13,14,16,18],       dates:["Apr 2","Apr 7","Apr 11","Apr 16","Apr 21","Dec 27"] },
-  { name:"Shoulder Press",color:"#EAB308", bg:"#EAB30822", val:"135 lbs", when:"1 week ago",  history:[95,105,110,115,125,135],  dates:["Apr 1","Apr 6","Apr 11","Apr 16","Apr 20","Apr 22"] },
+  { name:"Bench Press",    history:[], dates:[] },
+  { name:"Deadlift",       history:[], dates:[] },
+  { name:"5K Run",         history:[], dates:[] },
+  { name:"Squat",          history:[], dates:[] },
+  { name:"Pull-ups",       history:[], dates:[] },
+  { name:"Shoulder Press", history:[], dates:[] },
 ];
 
 // ── HISTORY ──────────────────────────────────────────────────────────────────
@@ -3410,30 +3438,32 @@ function CalendarPage({ onBack, loggedWorkouts=[] }) {
   for (let i = 0; i < firstDOW; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
 
-  const dayData = selectedDay ? DAY_STATS[selectedDay] : null;
-
-  // Merge API history into calendar for displayed month
+  // Build per-day arrays of workouts for the displayed month
+  const inMonth = h => { const d=new Date(h.completedAt||h.date); return d.getMonth()===displayDate.getMonth()&&d.getFullYear()===displayDate.getFullYear(); };
   const liveCalData = {};
-  calHistory.forEach(h => {
-    const d = new Date(h.completedAt || h.date);
-    if (d.getMonth() === displayDate.getMonth() && d.getFullYear() === displayDate.getFullYear()) {
-      liveCalData[d.getDate()] = (h.type || 'strength').toLowerCase();
-    }
+  calHistory.filter(inMonth).forEach(h => {
+    const day = new Date(h.completedAt || h.date).getDate();
+    if (!liveCalData[day]) liveCalData[day] = [];
+    liveCalData[day].push({ name:h.name||"Workout", type:(h.type||"strength").toLowerCase(), duration:h.duration||0, cal:h.caloriesBurned||0 });
   });
-  // Merge in-session logged workouts too
   loggedWorkouts.forEach(lw => {
     const d = new Date(lw.date);
-    if (d.getMonth() === displayDate.getMonth() && d.getFullYear() === displayDate.getFullYear()) {
-      liveCalData[d.getDate()] = lw.type || "strength";
+    if (d.getMonth()===displayDate.getMonth()&&d.getFullYear()===displayDate.getFullYear()) {
+      const day = d.getDate();
+      if (!liveCalData[day]) liveCalData[day] = [];
+      liveCalData[day].push({ name:lw.name||"Workout", type:lw.type||"strength", duration:lw.duration||0, cal:lw.cal||0 });
     }
   });
 
+  const monthCal        = calHistory.filter(inMonth);
   const monthlyWorkouts = Object.keys(liveCalData).length;
-  const totalCal = calHistory
-    .filter(h => { const d=new Date(h.completedAt||h.date); return d.getMonth()===displayDate.getMonth()&&d.getFullYear()===displayDate.getFullYear(); })
-    .reduce((s,h) => s + (h.caloriesBurned || 0), 0);
-  const avgCal = monthlyWorkouts > 0 ? Math.round(totalCal / monthlyWorkouts) : 0;
-  const restDays = daysInMonth - monthlyWorkouts;
+  const avgCal  = monthCal.length > 0 ? Math.round(monthCal.reduce((s,h)=>s+(h.caloriesBurned||0),0) / monthCal.length) : 0;
+  const avgMins = monthCal.length > 0 ? Math.round(monthCal.reduce((s,h)=>s+(h.duration||0),0)      / monthCal.length) : 0;
+  // Rest days = past days in the month that had no workout
+  const today2 = new Date();
+  const isCurrentMonth = displayDate.getMonth()===today2.getMonth()&&displayDate.getFullYear()===today2.getFullYear();
+  const daysElapsed = isCurrentMonth ? today2.getDate() : daysInMonth;
+  const restDays = Math.max(0, daysElapsed - monthlyWorkouts);
 
   return (
     <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column" }}>
@@ -3483,7 +3513,8 @@ function CalendarPage({ onBack, loggedWorkouts=[] }) {
           <div style={{ display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:"6px 2px" }}>
             {cells.map((day,i)=>{
               if(!day) return <div key={i}/>;
-              const type = liveCalData[day];
+              const dayWorkouts = liveCalData[day] || [];
+              const type  = dayWorkouts[0]?.type;
               const color = type ? TYPE_COLOR[type] : null;
               const isSelected = selectedDay === day;
               return (
@@ -3510,32 +3541,39 @@ function CalendarPage({ onBack, loggedWorkouts=[] }) {
         </div>
 
         {/* Day detail panel OR monthly stats */}
-        {dayData ? (
+        {selectedDay ? (
           <div style={{ animation:"fadeUp 0.3s ease both" }}>
             <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#fff",marginBottom:14 }}>
-              December {selectedDay}
+              {displayDate.toLocaleString("default",{month:"long"})} {selectedDay}
             </div>
-            <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"18px",marginBottom:12 }}>
-              <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16 }}>
-                <div>
-                  <div style={{ fontFamily:FONT,fontWeight:800,fontSize:17,color:"#fff",marginBottom:4 }}>{dayData.name}</div>
-                  <TypeBadge type={dayData.type}/>
-                </div>
-              </div>
-              <div style={{ display:"flex",gap:0,borderRadius:14,overflow:"hidden",border:`1px solid ${BORDER}` }}>
-                {[
-                  {lbl:"Duration",   val:`${dayData.duration}m`, c:"#22C55E"},
-                  {lbl:"Volume",     val:dayData.vol,             c:PRIMARY  },
-                  {lbl:"Calories",   val:`${dayData.cal}`,        c:"#EF4444"},
-                  {lbl:"Exercises",  val:dayData.exercises,       c:"#F97316"},
-                ].map((s,i,arr)=>(
-                  <div key={i} style={{ flex:1,textAlign:"center",padding:"12px 6px",borderRight:i<arr.length-1?`1px solid ${BORDER}`:0 }}>
-                    <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:s.c,lineHeight:1,marginBottom:4 }}>{s.val}</div>
-                    <div style={{ fontFamily:FONT,fontSize:10,color:"#888888",letterSpacing:0.5 }}>{s.lbl}</div>
+            {(liveCalData[selectedDay]||[]).length > 0 ? (
+              (liveCalData[selectedDay]||[]).map((w,wi)=>(
+                <div key={wi} style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"18px",marginBottom:12 }}>
+                  <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16 }}>
+                    <div>
+                      <div style={{ fontFamily:FONT,fontWeight:800,fontSize:17,color:"#fff",marginBottom:6 }}>{w.name}</div>
+                      <TypeBadge type={w.type}/>
+                    </div>
                   </div>
-                ))}
+                  <div style={{ display:"flex",gap:0,borderRadius:14,overflow:"hidden",border:`1px solid ${BORDER}` }}>
+                    {[
+                      {lbl:"Duration", val:`${w.duration}m`, c:"#22C55E"},
+                      {lbl:"Calories", val:w.cal,             c:"#EF4444"},
+                    ].map((s,i,arr)=>(
+                      <div key={i} style={{ flex:1,textAlign:"center",padding:"12px 6px",borderRight:i<arr.length-1?`1px solid ${BORDER}`:0 }}>
+                        <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:s.c,lineHeight:1,marginBottom:4 }}>{s.val}</div>
+                        <div style={{ fontFamily:FONT,fontSize:10,color:"#888888",letterSpacing:0.5 }}>{s.lbl}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"32px 18px",textAlign:"center",marginBottom:12 }}>
+                <div style={{ fontFamily:FONT,fontSize:16,color:"#555",marginBottom:6 }}>Rest Day</div>
+                <div style={{ fontFamily:FONT,fontSize:13,color:"#444" }}>No workout logged on this day</div>
               </div>
-            </div>
+            )}
             <button onClick={()=>setSelectedDay(null)} style={{ width:"100%",padding:"13px 0",borderRadius:50,background:"transparent",border:`1px solid ${BORDER}`,fontFamily:FONT,fontWeight:600,fontSize:13,color:"#888888",cursor:"pointer" }}>
               ← Back to monthly view
             </button>
@@ -3545,10 +3583,10 @@ function CalendarPage({ onBack, loggedWorkouts=[] }) {
             <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#fff",marginBottom:14 }}>Monthly Stats</div>
             <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12 }}>
               {[
-                {svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>, val:avgCal, lbl:"Average Calories", bg:"#DC2626"},
-                {svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>, val:"60", lbl:"Avg Minutes", bg:"#16A34A"},
+                {svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>, val:avgCal, lbl:"Avg Calories", bg:"#DC2626"},
+                {svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>, val:avgMins, lbl:"Avg Minutes", bg:"#16A34A"},
                 {svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>, val:restDays, lbl:"Rest Days", bg:"#D97706"},
-                {svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>, val:monthlyWorkouts, lbl:"Active Days", bg:"#16A34A"},
+                {svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M6 2v6"/><path d="M18 2v6"/><path d="M6 22v-6"/><path d="M18 22v-6"/><path d="M3 9h18v6H3z"/></svg>, val:monthlyWorkouts, lbl:"Active Days", bg:"#16A34A"},
               ].map((s,i)=>(
                 <div key={i} style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"22px 16px",textAlign:"center" }}>
                   <div style={{ width:50,height:50,borderRadius:"50%",background:s.bg,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 12px" }}>{s.svg}</div>
@@ -3786,7 +3824,6 @@ function PersonalRecordsPage({ onBack }) {
 
   const fmtWeight = (w) => w ? `${w} lbs` : '—';
   const fmtDate   = (d) => d ? new Date(d).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : '—';
-  const RECORD_COLORS = ['#00A3FF','#22C55E','#F59E0B','#EF4444','#8B5CF6','#F97316','#06B6D4'];
 
   return (
     <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column" }}>
@@ -3826,7 +3863,7 @@ function PersonalRecordsPage({ onBack }) {
           )}
 
           {!loading && filtered.map((r,i)=>{
-            const color = RECORD_COLORS[i % RECORD_COLORS.length];
+            const color = getPRColor(r.exerciseName, i);
             return (
               <div key={r.id} onClick={()=>setSelected(r.exerciseName)}
                 style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"16px 18px",marginBottom:12,display:"flex",alignItems:"center",gap:14,cursor:"pointer",animation:`fadeUp 0.3s ease ${i*0.06}s both` }}>
@@ -3849,7 +3886,7 @@ function PersonalRecordsPage({ onBack }) {
         <div style={{ flex:1,overflowY:"auto",padding:"0 16px 32px",animation:"fadeUp 0.3s ease both" }}>
           {(() => {
             const idx   = records.findIndex(r=>r.exerciseName===selected);
-            const color = RECORD_COLORS[idx % RECORD_COLORS.length] || PRIMARY;
+            const color = getPRColor(selected, idx);
             return (
               <>
                 <div style={{ background:`linear-gradient(135deg,${color}22,${color}11)`,border:`1.5px solid ${color}44`,borderRadius:22,padding:"28px 24px",textAlign:"center",marginBottom:16 }}>
@@ -4508,31 +4545,36 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
             <button onClick={()=>setSubPage("records")} style={{ background:"none",border:"none",cursor:"pointer",fontFamily:FONT,fontWeight:700,fontSize:13,color:PRIMARY }}>View All</button>
           </div>
           {(()=>{
-            const PR_COLORS=["#EF4444","#22C55E","#00A3FF","#F97316","#8B5CF6","#EAB308"];
-            const displayPRs = previewPRs.length > 0
-              ? previewPRs.slice(0,3).map((r,i)=>({
-                  name:  r.exerciseName || r.name || "Exercise",
-                  color: PR_COLORS[i%PR_COLORS.length],
-                  bg:    `${PR_COLORS[i%PR_COLORS.length]}22`,
-                  val:   r.weight ? `${r.weight} lbs` : (r.reps ? `${r.reps} reps` : "—"),
-                  when:  r.achievedAt ? new Date(r.achievedAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : "—",
-                }))
-              : RECORDS.slice(0,3);
-            return displayPRs.length === 0
-              ? <div style={{fontFamily:FONT,fontSize:13,color:"#555",textAlign:"center",padding:"16px 0"}}>Complete workouts to earn personal records</div>
-              : displayPRs.map((r,i)=>(
-                <div key={i} onClick={()=>setSubPage("records")} style={{ background:CARD2,borderRadius:14,padding:"14px 16px",marginBottom:i<displayPRs.length-1?10:0,display:"flex",alignItems:"center",gap:14,cursor:"pointer" }}>
-                  <div style={{ width:44,height:44,borderRadius:"50%",background:r.bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}><RecordIcon name={r.name}/></div>
-                  <div style={{ flex:1 }}>
-                    <div style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:"#fff",marginBottom:2 }}>{r.name}</div>
-                    <div style={{ fontFamily:FONT,fontSize:12,color:"#888888" }}>Personal Best</div>
-                  </div>
-                  <div style={{ textAlign:"right" }}>
-                    <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:r.color }}>{r.val}</div>
-                    <div style={{ fontFamily:FONT,fontSize:11,color:"#444",marginTop:2 }}>{r.when}</div>
-                  </div>
+            const hasPRs = previewPRs.length > 0;
+            const displayPRs = hasPRs
+              ? previewPRs.slice(0,3).map((r,i)=>{
+                  const name  = r.exerciseName || r.name || "Exercise";
+                  const color = getPRColor(name, i);
+                  return {
+                    name,
+                    color,
+                    bg:    `${color}22`,
+                    val:   r.weight ? `${r.weight} lbs` : (r.reps ? `${r.reps} reps` : "—"),
+                    when:  r.achievedAt ? new Date(r.achievedAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : null,
+                  };
+                })
+              : RECORDS.slice(0,3).map((r,i)=>{
+                  const color = getPRColor(r.name, i);
+                  return { name:r.name, color, bg:`${color}22`, val:"—", when:null };
+                });
+            return displayPRs.map((r,i)=>(
+              <div key={i} onClick={()=>setSubPage("records")} style={{ background:CARD2,borderRadius:14,padding:"14px 16px",marginBottom:i<displayPRs.length-1?10:0,display:"flex",alignItems:"center",gap:14,cursor:"pointer" }}>
+                <div style={{ width:44,height:44,borderRadius:"50%",background:r.bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}><RecordIcon name={r.name}/></div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:"#fff",marginBottom:2 }}>{r.name}</div>
+                  <div style={{ fontFamily:FONT,fontSize:12,color:"#888888" }}>{hasPRs ? "Personal Best" : "No record yet"}</div>
                 </div>
-              ));
+                <div style={{ textAlign:"right" }}>
+                  <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:r.val==="—"?"#555":r.color }}>{r.val}</div>
+                  {r.when && <div style={{ fontFamily:FONT,fontSize:11,color:"#444",marginTop:2 }}>{r.when}</div>}
+                </div>
+              </div>
+            ));
           })()}
         </div>
 
@@ -4928,15 +4970,71 @@ function DetailFieldIcon({ type }) {
   if (type==="ruler") return <svg {...s}><path d="M21 6H3a2 2 0 00-2 2v8a2 2 0 002 2h18a2 2 0 002-2V8a2 2 0 00-2-2z"/><line x1="7" y1="6" x2="7" y2="10"/><line x1="12" y1="6" x2="12" y2="12"/><line x1="17" y1="6" x2="17" y2="10"/></svg>;
   return <svg {...s}><circle cx="12" cy="12" r="10"/></svg>;
 }
+
+// ─── Measurement helpers ──────────────────────────────────────────────────────
+function calcAgeFromDob(dob) {
+  if (!dob || typeof dob !== "string") return null;
+  const parts = dob.split("/");
+  let d;
+  if (parts.length === 3 && parts[2]?.length === 4) {
+    d = new Date(`${parts[2]}-${parts[1].padStart(2,"0")}-${parts[0].padStart(2,"0")}`);
+  } else { d = new Date(dob); }
+  if (isNaN(d.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - d.getFullYear();
+  const m = today.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < d.getDate())) age--;
+  return age >= 1 ? age : null;
+}
+function kgToDisplay(kg, unit) {
+  const v = parseFloat(kg); if (!v) return "";
+  return unit === "lbs" ? (v * 2.20462).toFixed(1) : String(v);
+}
+function cmToDisplay(cm, unit) {
+  const v = parseFloat(cm); if (!v) return "";
+  if (unit === "ft") {
+    const totalIn = v / 2.54;
+    const ft = Math.floor(totalIn / 12);
+    const ins = Math.round(totalIn % 12);
+    return `${ft}'${ins}`;
+  }
+  return String(Math.round(v));
+}
+function toKg(val, unit) {
+  const v = parseFloat(val);
+  if (isNaN(v) || v <= 0) return null;
+  return unit === "lbs" ? parseFloat((v * 0.453592).toFixed(1)) : v;
+}
+function toCm(val, unit) {
+  if (unit === "ft") {
+    const m = String(val).match(/(\d+)[^\d]*(\d*)/);
+    if (!m) return null;
+    const cm = Math.round((parseInt(m[1]) || 0) * 30.48 + (parseInt(m[2] || 0) || 0) * 2.54);
+    return cm > 0 ? cm : null;
+  }
+  const v = parseFloat(val);
+  return isNaN(v) || v <= 0 ? null : Math.round(v);
+}
+function getUnitPref(key, fallback) {
+  try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
+}
 function PersonalDetailsPage({ onBack }) {
   const { user, setUser } = useUser();
+  const initWU = getUnitPref("vtrx_weight_unit", "kg");
+  // If stored height is already a ft display string (e.g. "5'7"), keep ft mode
+  const storedHtIsFt = typeof user.height === "string" && user.height.includes("'");
+  const initHU = storedHtIsFt ? "ft" : getUnitPref("vtrx_height_unit", "cm");
   const [name,       setName]       = useState(user.name || "");
-  const [dob,        setDob]        = useState(user.dob || user.age || "");
+  const [dob,        setDob]        = useState(() => { try { return localStorage.getItem("vtrx_user_dob") || ""; } catch { return ""; } });
   const [gender,     setGender]     = useState(user.gender || "");
-  const [weight,     setWeight]     = useState(user.weight || "");
-  const [height,     setHeight]     = useState(user.height || "");
-  const [weightUnit, setWeightUnit] = useState("lbs");
-  const [heightUnit, setHeightUnit] = useState("ft");
+  const [weightUnit, setWeightUnit] = useState(initWU);
+  const [heightUnit, setHeightUnit] = useState(initHU);
+  const [weight,     setWeight]     = useState(() => kgToDisplay(user.weight, initWU));
+  const [height,     setHeight]     = useState(() => {
+    if (storedHtIsFt) return String(user.height);
+    const n = parseFloat(user.height);
+    return (isNaN(n) || n < 50) ? "" : cmToDisplay(n, initHU);
+  });
   const [saved,      setSaved]      = useState(false);
 
   // Weight unit conversion
@@ -4981,11 +5079,19 @@ function PersonalDetailsPage({ onBack }) {
   };
 
   const save = async () => {
-    setUser(u=>({...u, name, dob, age: dob, gender, weight, height}));
+    const ageVal   = calcAgeFromDob(dob);
+    const weightKg = toKg(weight, weightUnit);
+    const heightCm = toCm(height, heightUnit);
+    try {
+      localStorage.setItem("vtrx_weight_unit", weightUnit);
+      localStorage.setItem("vtrx_height_unit", heightUnit);
+      if (dob) localStorage.setItem("vtrx_user_dob", dob);
+    } catch {}
+    setUser(u=>({...u, name, dob, age: ageVal, gender, weight: weightKg, height: heightCm}));
     setSaved(true);
     setTimeout(()=>setSaved(false), 2200);
     if (!DEMO_MODE && getAuthToken()) {
-      apiCall("/users/profile", { method:"PUT", body:JSON.stringify({ name, age: dob, gender, weight, height }) }).catch(_e=>{});
+      apiCall("/users/profile", { method:"PUT", body:JSON.stringify({ name, age: ageVal, gender, weight: weightKg, height: heightCm }) }).catch(_e=>{});
     }
   };
 
@@ -5006,7 +5112,23 @@ function PersonalDetailsPage({ onBack }) {
       {/* Name, DOB, Gender */}
       <div style={{ background:"#ffffff",borderRadius:20,border:"1px solid #e8e8e8",padding:"20px",marginBottom:14 }}>
         <DarkInput label="FULL NAME" value={name} onChange={setName}/>
-        <DarkInput label="DATE OF BIRTH" value={dob} onChange={setDob} placeholder="DD/MM/YYYY"/>
+        <div style={{ marginBottom:16 }}>
+          <div style={{ fontFamily:FONT,fontWeight:600,fontSize:12,color:"#888888",letterSpacing:0.5,marginBottom:7 }}>DATE OF BIRTH</div>
+          <input value={dob} placeholder="DD/MM/YYYY" inputMode="numeric"
+            onChange={e=>{
+              let v = e.target.value.replace(/[^0-9]/g,"");
+              if (v.length > 2) v = v.slice(0,2)+"/"+v.slice(2);
+              if (v.length > 5) v = v.slice(0,5)+"/"+v.slice(5);
+              if (v.length > 10) v = v.slice(0,10);
+              setDob(v);
+            }}
+            style={{ width:"100%",background:CARD2,border:`1.5px solid ${BORDER}`,borderRadius:14,padding:"14px 16px",fontFamily:FONT,fontSize:14,fontWeight:500,color:"#ffffff",outline:"none",boxSizing:"border-box",transition:"border-color 0.2s" }}/>
+          {dob && calcAgeFromDob(dob) != null && (
+            <div style={{ fontFamily:FONT,fontSize:12,color:"#888",marginTop:6 }}>
+              Age: {calcAgeFromDob(dob)} years
+            </div>
+          )}
+        </div>
         <div style={{ marginBottom:16 }}>
           <div style={{ fontFamily:FONT,fontWeight:600,fontSize:12,color:"#888888",letterSpacing:0.5,marginBottom:8 }}>GENDER</div>
           <div style={{ display:"flex",gap:8 }}>
@@ -5780,7 +5902,17 @@ function AccountSettingsPage({ onBack, onLogout }) {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#bbb" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
           </button>
           <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",padding:"14px 0",borderBottom:"1px solid #f0f0f0" }}>
-            {[{lbl:"Age",val:`${user.age} years`},{lbl:"Gender",val:user.gender},{lbl:"Weight",val:`${user.weight} kg`},{lbl:"Height",val:`${user.height} cm`}].map((s,i)=>(
+            {(()=>{
+              const wu = getUnitPref("vtrx_weight_unit","kg");
+              const hu = getUnitPref("vtrx_height_unit","cm");
+              const wDisp = kgToDisplay(user.weight, wu);
+              // Handle legacy ft-format strings (e.g. "5'7") and corrupt small values
+              const hIsLegacyFt = typeof user.height === "string" && user.height.includes("'");
+              const hNum = parseFloat(user.height);
+              const hDisp = hIsLegacyFt ? user.height : ((!isNaN(hNum) && hNum >= 50) ? cmToDisplay(hNum, hu) : "");
+              const hUnit = hIsLegacyFt ? "ft" : hu;
+              return [{lbl:"Age",val:user.age ? `${user.age} yrs` : "—"},{lbl:"Gender",val:user.gender||"—"},{lbl:"Weight",val:wDisp ? `${wDisp} ${wu}` : "—"},{lbl:"Height",val:hDisp ? `${hDisp} ${hUnit}` : "—"}];
+            })().map((s,i)=>(
               <div key={i} style={{ padding:"6px 0" }}>
                 <div style={{ fontFamily:FONT,fontSize:12,color:"#aaa",marginBottom:3 }}>{s.lbl}</div>
                 <div style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:"#111" }}>{s.val}</div>
@@ -7190,7 +7322,8 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
   const pct         = (workoutDays / daysPerWeek) * 100;
   const hr          = new Date().getHours();
   const greeting    = hr < 12 ? "Good Morning" : hr < 17 ? "Good Afternoon" : "Good Evening";
-  const displayName = (user?.name || "").split(" ")[0] || "Athlete";
+  const _rawDisplay = (user?.name || user?.username || "").split(" ")[0];
+  const displayName = _rawDisplay ? _rawDisplay.charAt(0).toUpperCase() + _rawDisplay.slice(1) : "Athlete";
 
   // Workout-type banner images for the card header
   const WORKOUT_BANNERS = {
@@ -7503,6 +7636,7 @@ function VTRXAppInner({ setPaymentPlan }) {
   const [workoutElapsed,   setWorkoutElapsed]   = useState(0);
   const [workoutStarted,   setWorkoutStarted]   = useState(false);
   const [workoutPaused,    setWorkoutPaused]    = useState(false);
+  const [completedExNames, setCompletedExNames] = useState([]);
   const workoutTimerRef = useRef(null);
 
   useEffect(()=>{
@@ -7827,6 +7961,7 @@ function VTRXAppInner({ setPaymentPlan }) {
       workout={activeW}
       elapsed={workoutElapsed} started={workoutStarted}
       paused={workoutPaused}
+      completedExercises={completedExNames}
       onTogglePause={()=>setWorkoutPaused(p=>!p)}
       onBack={goBack}
       onStart={()=>{ setWorkoutStarted(true); setWorkoutPaused(false); }}
@@ -7836,6 +7971,7 @@ function VTRXAppInner({ setPaymentPlan }) {
         setWorkoutStarted(false);
         setWorkoutPaused(false);
         setWorkoutElapsed(0);
+        setCompletedExNames([]);
         const mins = Math.max(1, Math.round(elapsedSeconds / 60));
         try {
           const exPayload = (activeW.exercises || []).map(e => ({
@@ -7923,13 +8059,20 @@ function VTRXAppInner({ setPaymentPlan }) {
         });
         setWorkoutStarted(false);
         setWorkoutElapsed(0);
+        setCompletedExNames([]);
         setShowComplete(true);
         setInnerPage(null);
         setActiveTab(0);
       }}
       onExercise={(ex)=>{ setSelectedExercise(ex); setInnerPage("exerciseDetail"); }}/>;
   };
-  if (innerPage==="exerciseDetail"&&selectedExercise) return <ExercisePage exercise={selectedExercise} onBack={()=>setInnerPage("workoutDetail")} onComplete={()=>setInnerPage("workoutDetail")}/>;
+  if (innerPage==="exerciseDetail"&&selectedExercise) return <ExercisePage
+    exercise={selectedExercise}
+    onBack={()=>setInnerPage("workoutDetail")}
+    onComplete={()=>{
+      if (selectedExercise?.name) setCompletedExNames(prev=>[...new Set([...prev, selectedExercise.name])]);
+      setInnerPage("workoutDetail");
+    }}/>;
 
   return (
     <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column",overflow:"hidden" }}>

@@ -99,7 +99,7 @@ const login = async (req, res) => {
     return res.status(400).json({ success: false, errors: errors.array() });
   }
 
-  const { email, password } = req.body;
+  const { email, password, clientHour } = req.body;
 
   try {
     await clerk.login({ email, password });
@@ -120,7 +120,9 @@ const login = async (req, res) => {
     logger.info(`User logged in: ${email}`);
 
     // Fire-and-forget welcome notification
-    const hour = new Date().getHours();
+    const hour = (clientHour !== undefined && Number.isInteger(+clientHour) && +clientHour >= 0 && +clientHour <= 23)
+      ? +clientHour
+      : new Date().getHours();
     const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
     const rawName   = (user.name || user.username || '').split(' ')[0];
     const firstName = rawName ? rawName.charAt(0).toUpperCase() + rawName.slice(1) : '';
