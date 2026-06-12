@@ -98,6 +98,11 @@ const logWorkout = async (req, res) => {
     completionPercentage, // 0-100
   } = req.body;
 
+  // Reject zero-completion logs — these are accidental (user started then immediately stopped)
+  if (completionPercentage !== undefined && parseInt(completionPercentage) === 0) {
+    return res.status(400).json({ success: false, message: 'No exercises completed' });
+  }
+
   try {
     // 1. Create the workout log
     const workoutLog = await prisma.workoutLog.create({

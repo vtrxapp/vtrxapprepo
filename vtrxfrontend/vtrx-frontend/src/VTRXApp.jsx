@@ -8496,31 +8496,34 @@ function VTRXAppInner({ setPaymentPlan }) {
         setWorkoutPaused(false);
         setWorkoutElapsed(0);
         setCompletedExNames([]);
-        const mins = Math.max(1, Math.round(elapsedSeconds / 60));
-        try {
-          const exPayload = (activeW.exercises || []).map(e => ({
-            exerciseId: e.id || undefined,
-            name:       e.name,
-            sets:       [{ setNumber:1, reps: parseReps(e.reps || e.detail || '10') }],
-          }));
-          const logRes = await apiCall("/workouts/log", {
-            method: "POST",
-            body: JSON.stringify({
-              workoutId:            activeW.workoutId || undefined,
-              name:                 activeW.name,
-              type:                 activeW.type,
-              duration:             activeW.duration || activeW.mins || mins,
-              caloriesBurned:       Math.round((activeW.calories || activeW.cal || 300) * (pct / 100)),
-              energyLevel:          energyKey || "okay",
-              completionPercentage: pct,
-              exercises:            exPayload,
-            }),
-          });
-          if (logRes?.data?.workoutLog?.id) setLastWorkoutLogId(logRes.data.workoutLog.id);
-          const today   = new Date();
-          const calBurned = Math.round((activeW.calories||activeW.cal||300)*(pct/100));
-          setLoggedWorkouts(prev => [...prev, { date:today, type:(activeW.type||"strength").toLowerCase(), cal:calBurned, duration:mins, name:activeW.name }]);
-        } catch(_e){}
+        // Only log if at least one exercise was completed — don't create phantom logs
+        if (pct > 0) {
+          const mins = Math.max(1, Math.round(elapsedSeconds / 60));
+          try {
+            const exPayload = (activeW.exercises || []).map(e => ({
+              exerciseId: e.id || undefined,
+              name:       e.name,
+              sets:       [{ setNumber:1, reps: parseReps(e.reps || e.detail || '10') }],
+            }));
+            const logRes = await apiCall("/workouts/log", {
+              method: "POST",
+              body: JSON.stringify({
+                workoutId:            activeW.workoutId || undefined,
+                name:                 activeW.name,
+                type:                 activeW.type,
+                duration:             activeW.duration || activeW.mins || mins,
+                caloriesBurned:       Math.round((activeW.calories || activeW.cal || 300) * (pct / 100)),
+                energyLevel:          energyKey || "okay",
+                completionPercentage: pct,
+                exercises:            exPayload,
+              }),
+            });
+            if (logRes?.data?.workoutLog?.id) setLastWorkoutLogId(logRes.data.workoutLog.id);
+            const today     = new Date();
+            const calBurned = Math.round((activeW.calories||activeW.cal||300)*(pct/100));
+            setLoggedWorkouts(prev => [...prev, { date:today, type:(activeW.type||"strength").toLowerCase(), cal:calBurned, duration:mins, name:activeW.name }]);
+          } catch(_e){}
+        }
         setInnerPage(null);
         setActiveTab(0);
       }}
