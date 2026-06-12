@@ -84,6 +84,19 @@ const markOneRead = async (req, res) => {
   }
 };
 
+// ── DELETE /api/notifications/:id ────────────────────────────────────────────
+const deleteNotification = async (req, res) => {
+  try {
+    await prisma.notification.deleteMany({
+      where: { id: req.params.id, userId: req.user.id },
+    });
+    res.json({ success: true });
+  } catch (err) {
+    logger.error('Delete notification error:', err);
+    res.status(500).json({ success: false, message: 'Failed to delete notification' });
+  }
+};
+
 // ── POST /api/notifications/test ─────────────────────────────────────────────
 // Test endpoint — send yourself a push notification
 const sendTest = async (req, res) => {
@@ -101,4 +114,4 @@ const sendTest = async (req, res) => {
   }
 };
 
-module.exports = { registerToken, removeToken, getNotifications, markAllRead, markOneRead, sendTest };
+module.exports = { registerToken, removeToken, getNotifications, markAllRead, markOneRead, deleteNotification, sendTest };

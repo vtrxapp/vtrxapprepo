@@ -11,6 +11,7 @@ router.delete('/register',  notif.removeToken);
 router.get('/',             notif.getNotifications);
 router.patch('/read',       notif.markAllRead);
 router.patch('/:id/read',   notif.markOneRead);
+router.delete('/:id',       notif.deleteNotification);
 router.post('/test',        notif.sendTest);
 
 module.exports = router;
