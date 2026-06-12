@@ -4721,7 +4721,7 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
                       ))}
                     </div>
                     <div style={{ padding:"0 16px 16px" }}>
-                      <button onClick={()=>onNavigate&&onNavigate("workoutDetail")} style={{ width:"100%",padding:"14px 0",borderRadius:50,background:nc,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",letterSpacing:1,marginBottom:8 }}>
+                      <button onClick={()=>onNavigate&&onNavigate("workoutDetail", nextEntry.workout)} style={{ width:"100%",padding:"14px 0",borderRadius:50,background:nc,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",letterSpacing:1,marginBottom:8 }}>
                         START WORKOUT
                       </button>
                       <div style={{ display:"flex",gap:8 }}>
@@ -4794,7 +4794,7 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
                             </div>
                             {!isPast && (
                               <div style={{ display:"flex",gap:8,padding:"0 16px" }}>
-                                <button onClick={()=>onNavigate&&onNavigate("workoutDetail")} style={{ flex:1,padding:"10px 0",borderRadius:50,background:ec,border:"none",fontFamily:FONT,fontWeight:800,fontSize:11,color:"#fff",cursor:"pointer",letterSpacing:0.5 }}>
+                                <button onClick={()=>onNavigate&&onNavigate("workoutDetail", entry.workout)} style={{ flex:1,padding:"10px 0",borderRadius:50,background:ec,border:"none",fontFamily:FONT,fontWeight:800,fontSize:11,color:"#fff",cursor:"pointer",letterSpacing:0.5 }}>
                                   START
                                 </button>
                                 <button onClick={e=>{ e.stopPropagation(); setMoveEntry(entry); setMoveTargetDate(null); }} style={{ flex:1,padding:"10px 0",borderRadius:50,background:"#1a1a1a",border:`1px solid ${BORDER}`,fontFamily:FONT,fontWeight:700,fontSize:11,color:"#ccc",cursor:"pointer" }}>
@@ -8147,6 +8147,7 @@ function VTRXAppInner({ setPaymentPlan }) {
   const [activeTab, setActiveTab] = useState(0);
   const [innerPage, setInnerPage] = useState(null);
   const [selectedExercise, setSelectedExercise] = useState(null);
+  const [selectedScheduleWorkout, setSelectedScheduleWorkout] = useState(null);
   const [workoutDone, setWorkoutDone] = useState(false);
   const [lastWorkoutLogId, setLastWorkoutLogId] = useState(null);
   const [lastWorkoutStats, setLastWorkoutStats] = useState({ calories:0, duration:0, exercises:0, name:"", date:"" });
@@ -8447,8 +8448,9 @@ function VTRXAppInner({ setPaymentPlan }) {
     setTimeout(() => setNavExpanded(false), 250);
   };
 
-  const navigate = (page) => {
+  const navigate = (page, workoutData = null) => {
     if (dashScrollRef.current) savedScrollPos.current = dashScrollRef.current.scrollTop;
+    if (workoutData) setSelectedScheduleWorkout(workoutData);
     setInnerPage(page);
   };
 
@@ -8459,6 +8461,7 @@ function VTRXAppInner({ setPaymentPlan }) {
       setWorkoutStarted(false);
       setWorkoutElapsed(0);
     }
+    setSelectedScheduleWorkout(null);
     setInnerPage(null);
     setSelectedExercise(null);
     requestAnimationFrame(()=>{
@@ -8477,7 +8480,7 @@ function VTRXAppInner({ setPaymentPlan }) {
   if (innerPage==="profile") return <ProfilePage onBack={goBack} onLogout={handleLogout} streakDay={streakDay} workoutsTotal={workoutsTotal}/>;
   if (innerPage==="workoutDetail") {
     const fallbackW = WEEKLY_WORKOUTS[TODAY_IDX % WEEKLY_WORKOUTS.length];
-    const activeW   = apiWorkout || fallbackW;
+    const activeW   = selectedScheduleWorkout || apiWorkout || fallbackW;
     return <WorkoutDetailPage
       workout={activeW}
       elapsed={workoutElapsed} started={workoutStarted}
@@ -8635,7 +8638,7 @@ function VTRXAppInner({ setPaymentPlan }) {
                 apiCall("/users/mood", { method:"POST", body:JSON.stringify({ mood:key }) }).catch(()=>{});
               }
             }}
-            onNavigate={(page)=>{ if(page==="workoutDetail"){ setWorkoutDone(false); setWorkoutStarted(false); setWorkoutElapsed(0); } navigate(page); }}
+            onNavigate={(page)=>{ if(page==="workoutDetail"){ setWorkoutDone(false); setWorkoutStarted(false); setWorkoutElapsed(0); setSelectedScheduleWorkout(null); } navigate(page); }}
             onLogout={handleLogout}
           />
         )}
