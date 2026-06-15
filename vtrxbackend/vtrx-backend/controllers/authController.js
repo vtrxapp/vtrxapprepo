@@ -14,6 +14,7 @@ const clerk  = require('../services/clerkService');
 const logger = require('../utils/logger');
 const { validationResult } = require('express-validator');
 const notif  = require('../services/notificationService');
+const { sendWelcomeEmail } = require('../services/emailService');
 
 const signToken = (userId) => {
   return jwt.sign(
@@ -52,6 +53,9 @@ const signup = async (req, res) => {
     });
 
     logger.info(`New user signed up: ${email}`);
+
+    // Fire-and-forget — don't await so it never delays the signup response
+    sendWelcomeEmail({ email: user.email, name: user.name }).catch(() => {});
 
     res.status(201).json({
       success: true,
