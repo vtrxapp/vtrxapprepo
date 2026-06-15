@@ -2,6 +2,8 @@
 // server.js — VTRX Backend API Server v2.0
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Sentry MUST be initialised before any other require so it can instrument them
+require('./instrument');
 require('dotenv').config();
 
 const express     = require('express');
@@ -121,6 +123,10 @@ app.use('/api/upload',        uploadRoutes);
 app.use('*', (req, res) => {
   res.status(404).json({ success: false, message: `Route ${req.originalUrl} not found` });
 });
+
+// ── Sentry error handler (must be before any other error middleware) ───────────
+const Sentry = require('@sentry/node');
+Sentry.setupExpressErrorHandler(app);
 
 // ── Global error handler ──────────────────────────────────────────────────────
 app.use(errorHandler);
