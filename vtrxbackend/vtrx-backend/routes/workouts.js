@@ -1,12 +1,13 @@
 const express  = require('express');
 const workout  = require('../controllers/workoutController');
+const { getRecommendations } = require('../controllers/recommendationController');
 const { protect } = require('../middleware/auth');
 
 const router = express.Router();
 
 router.use(protect);
 
-router.get('/recommend',               workout.getRecommendation);
+router.get('/recommend',               getRecommendations);  // Pinecone-powered personalised recommendations
 router.get('/history',                 workout.getWorkoutHistory);
 router.get('/stats',                   workout.getWeeklyStats);
 router.get('/video-progress',          workout.getVideoProgress);

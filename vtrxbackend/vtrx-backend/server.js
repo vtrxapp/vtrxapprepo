@@ -137,8 +137,9 @@ app.use(errorHandler);
 const server = app.listen(PORT, () => {
   logger.info(`🚀 VTRX API v2.0 on port ${PORT} [${process.env.NODE_ENV}]`);
   logger.info(`📡 Health: http://localhost:${PORT}/health`);
-  // Seed recipes in background — server is already accepting connections
+  // Background startup tasks — server is already accepting connections
   require('./scripts/seedRecipes').run().catch(e => logger.error('Recipe seed error:', e));
+  require('./scripts/seedPinecone').run().catch(e => logger.error('Pinecone seed error:', e));
 });
 
 process.on('SIGTERM', () => {

@@ -7,6 +7,7 @@ const aiService = require('../services/aiService');
 const ymove     = require('../services/ymoveService');
 const logger    = require('../utils/logger');
 const notif     = require('../services/notificationService');
+const pine      = require('../services/pineconeService');
 
 // ── GET /api/workouts — Get available workout programmes ──────────────────────
 const getWorkouts = async (req, res) => {
@@ -210,6 +211,12 @@ const logWorkout = async (req, res) => {
     }
 
     logger.info(`Workout logged: ${name} by user ${req.user.id} (${completionPercentage ?? 100}% complete)`);
+
+    // If this log references a saved workout, keep its Pinecone vector fresh (fire-and-forget)
+    if (workoutId) {
+      prisma.workout.findUnique({ where: { id: workoutId }, include: { exercises: { include: { exercise: true } } } })
+        .then(w => w && pine.upsertWorkout(w)).catch(() => {});
+    }
 
     res.status(201).json({
       success: true,
