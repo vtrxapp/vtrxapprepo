@@ -1,0 +1,119 @@
+{
+  "name": "VTRX — Clerk New User → Mailchimp",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "clerk-user-created",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-clerk",
+      "name": "Clerk Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "clerk-user-created"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.type }}",
+              "operation": "equal",
+              "value2": "user.created"
+            }
+          ]
+        }
+      },
+      "id": "filter-event",
+      "name": "Filter: user.created only",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "email",
+              "value": "={{ $json.body.data.email_addresses[0].email_address }}"
+            },
+            {
+              "name": "firstName",
+              "value": "={{ $json.body.data.first_name }}"
+            },
+            {
+              "name": "lastName",
+              "value": "={{ $json.body.data.last_name }}"
+            },
+            {
+              "name": "clerkId",
+              "value": "={{ $json.body.data.id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-fields",
+      "name": "Extract User Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [680, 220]
+    },
+    {
+      "parameters": {
+        "operation": "subscribe",
+        "listId": {
+          "__rl": true,
+          "value": "YOUR_MAILCHIMP_AUDIENCE_ID",
+          "mode": "id"
+        },
+        "email": "={{ $json.email }}",
+        "status": "subscribed",
+        "mergeFieldsUi": {
+          "mergeFieldsValues": [
+            {
+              "name": "FNAME",
+              "value": "={{ $json.firstName }}"
+            },
+            {
+              "name": "LNAME",
+              "value": "={{ $json.lastName }}"
+            }
+          ]
+        },
+        "options": {
+          "tags": "vtrx-user,free-plan"
+        }
+      },
+      "id": "mailchimp-subscribe",
+      "name": "Mailchimp: Add to List",
+      "type": "n8n-nodes-base.mailchimp",
+      "typeVersion": 1,
+      "position": [900, 220]
+    }
+  ],
+  "connections": {
+    "Clerk Webhook": {
+      "main": [[{ "node": "Filter: user.created only", "type": "main", "index": 0 }]]
+    },
+    "Filter: user.created only": {
+      "main": [[{ "node": "Extract User Fields", "type": "main", "index": 0 }]]
+    },
+    "Extract User Fields": {
+      "main": [[{ "node": "Mailchimp: Add to List", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [{ "name": "vtrx" }]
+}

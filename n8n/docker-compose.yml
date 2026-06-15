@@ -1,0 +1,57 @@
+version: "3.8"
+
+# ── n8n self-hosted automation ────────────────────────────────────────────────
+# Local dev:  docker compose up -d
+# Railway:    use n8nio/n8n image directly (see README below)
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      # ── Auth ──────────────────────────────────────────────────────────────
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:?Set N8N_PASSWORD}
+
+      # ── Host (update to your Railway domain in production) ────────────────
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+      - WEBHOOK_URL=${WEBHOOK_URL:-http://localhost:5678/}
+
+      # ── Security ──────────────────────────────────────────────────────────
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:?Set N8N_ENCRYPTION_KEY}
+
+      # ── Timezone ──────────────────────────────────────────────────────────
+      - GENERIC_TIMEZONE=UTC
+      - TZ=UTC
+
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./workflows:/home/node/.n8n/workflows  # pre-load workflow JSONs
+
+volumes:
+  n8n_data:
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Railway deployment steps:
+#
+# 1. Railway dashboard → New Service → Docker Image → n8nio/n8n
+# 2. Settings → Networking → Generate Domain → set port 5678
+# 3. Add these environment variables in Railway:
+#
+#    N8N_BASIC_AUTH_ACTIVE   = true
+#    N8N_BASIC_AUTH_USER     = admin
+#    N8N_BASIC_AUTH_PASSWORD = <strong password>
+#    N8N_HOST                = <your-n8n.up.railway.app domain>
+#    N8N_PORT                = 5678
+#    N8N_PROTOCOL            = https
+#    WEBHOOK_URL             = https://<your-n8n.up.railway.app>/
+#    N8N_ENCRYPTION_KEY      = <run: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))">
+#
+# 4. Deploy → visit https://<your-n8n.up.railway.app> → log in → import workflows
+# ─────────────────────────────────────────────────────────────────────────────

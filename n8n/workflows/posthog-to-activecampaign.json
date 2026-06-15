@@ -1,0 +1,144 @@
+{
+  "name": "VTRX — PostHog Events → ActiveCampaign",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "posthog-events",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-posthog",
+      "name": "PostHog Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "posthog-events"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.event }}",
+              "operation": "regex",
+              "value2": "workout_completed|upgrade_clicked|subscription_started"
+            }
+          ]
+        }
+      },
+      "id": "filter-events",
+      "name": "Filter: Key Events Only",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "event",     "value": "={{ $json.body.event }}" },
+            { "name": "email",     "value": "={{ $json.body.properties.email ?? $json.body.properties.$email }}" },
+            { "name": "distinctId","value": "={{ $json.body.distinct_id }}" },
+            { "name": "timestamp", "value": "={{ $json.body.timestamp }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-event",
+      "name": "Extract Event Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [680, 220]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "email": "={{ $json.email }}",
+        "updateFields": {
+          "fieldValues": {
+            "field": [
+              {
+                "key": "vtrx_last_event",
+                "value": "={{ $json.event }}"
+              },
+              {
+                "key": "vtrx_distinct_id",
+                "value": "={{ $json.distinctId }}"
+              },
+              {
+                "key": "vtrx_last_active",
+                "value": "={{ $json.timestamp }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ac-upsert-contact",
+      "name": "ActiveCampaign: Upsert Contact",
+      "type": "n8n-nodes-base.activeCampaign",
+      "typeVersion": 1,
+      "position": [900, 160]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.event }}",
+              "operation": "equal",
+              "value2": "upgrade_clicked"
+            }
+          ]
+        }
+      },
+      "id": "check-upgrade",
+      "name": "Was it upgrade_clicked?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [900, 340]
+    },
+    {
+      "parameters": {
+        "operation": "addContactToList",
+        "contactEmail": "={{ $json.email }}",
+        "listId": {
+          "__rl": true,
+          "value": "YOUR_AC_UPGRADE_LIST_ID",
+          "mode": "id"
+        }
+      },
+      "id": "ac-upgrade-list",
+      "name": "ActiveCampaign: Add to Upgrade Nurture",
+      "type": "n8n-nodes-base.activeCampaign",
+      "typeVersion": 1,
+      "position": [1120, 280]
+    }
+  ],
+  "connections": {
+    "PostHog Webhook": {
+      "main": [[{ "node": "Filter: Key Events Only", "type": "main", "index": 0 }]]
+    },
+    "Filter: Key Events Only": {
+      "main": [[{ "node": "Extract Event Fields", "type": "main", "index": 0 }]]
+    },
+    "Extract Event Fields": {
+      "main": [
+        [{ "node": "ActiveCampaign: Upsert Contact", "type": "main", "index": 0 }],
+        [{ "node": "Was it upgrade_clicked?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Was it upgrade_clicked?": {
+      "main": [[{ "node": "ActiveCampaign: Add to Upgrade Nurture", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [{ "name": "vtrx" }]
+}
