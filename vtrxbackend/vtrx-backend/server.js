@@ -26,6 +26,7 @@ const notificationRoutes  = require('./routes/notifications');
 const aiRoutes            = require('./routes/ai');
 const uploadRoutes        = require('./routes/upload');
 const n8nRoutes           = require('./routes/n8n');
+const linearRoutes        = require('./routes/linear');
 
 const app  = express();
 app.set('trust proxy', 1);
@@ -120,6 +121,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/ai',            aiRoutes);
 app.use('/api/upload',        uploadRoutes);
 app.use('/api/n8n',           n8nRoutes);
+app.use('/api/linear',        linearRoutes);
 
 // ── 404 ───────────────────────────────────────────────────────────────────────
 app.use('*', (req, res) => {
