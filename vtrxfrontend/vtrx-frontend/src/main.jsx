@@ -1,7 +1,10 @@
 import * as Sentry from "@sentry/react";
+import { initAnalytics } from "./analytics";
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
+
+initAnalytics();
 
 Sentry.init({
   dsn: import.meta.env.VITE_SENTRY_DSN,

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, createContext, useContext } from "r
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, PaymentRequestButtonElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { getNotificationToken, onForegroundMessage, isPushSupported } from "./firebase";
+import { identifyUser, resetAnalytics, track } from "./analytics";
 
 // Stripe.js loaded once at module scope — publishable key is safe in client code
 const _stripePromise = import.meta?.env?.VITE_STRIPE_PUBLISHABLE_KEY
@@ -88,6 +89,7 @@ const useUser = () => useContext(UserCtx);
 // VTRXAppInner registers the setter; everything else just calls openPaymentSheet().
 let _openPaymentSheet = null;
 const openPaymentSheet = (plan = "monthly") => {
+  track("upgrade_clicked", { plan });
   if (_openPaymentSheet) {
     _openPaymentSheet(plan);
   } else {
@@ -6146,6 +6148,7 @@ function CheckoutForm({ plan, isTrial, clientSecret, onSuccess, onBack }) {
         setLoading(false);
       } else {
         ev.complete("success");
+        track("subscription_started", { plan, method: "wallet", isTrial });
         setIsPremium(true);
         setDone(true);
         setTimeout(onSuccess, 2600);
@@ -6170,6 +6173,7 @@ function CheckoutForm({ plan, isTrial, clientSecret, onSuccess, onBack }) {
       setLoading(false);
       return;
     }
+    track("subscription_started", { plan, method: "card", isTrial });
     setIsPremium(true);
     setDone(true);
     setTimeout(onSuccess, 2600);
@@ -8285,6 +8289,7 @@ function VTRXAppInner({ setPaymentPlan }) {
         if (u._count?.workoutLogs)  setWorkoutsTotal(u._count.workoutLogs);
         if (u.isPremium)            setIsPremium(true);
         if (u.subscription)         setUser(prev=>({...prev, subscription: u.subscription}));
+        identifyUser({ ...u, isPremium: u.isPremium });
         afterSplash("dashboard");
       } else {
         afterSplash("onboarding");
@@ -8491,6 +8496,7 @@ function VTRXAppInner({ setPaymentPlan }) {
     try {
       await apiCall("/auth/logout", { method: "POST", body: JSON.stringify({}) });
     } catch(_e){} finally {
+      resetAnalytics();
       clearAuth();
     }
     setUser({ name:"", age:"", gender:"", weight:"", height:"", goal:"", level:"", days:5 });
@@ -8554,7 +8560,7 @@ function VTRXAppInner({ setPaymentPlan }) {
       completedExercises={completedExNames}
       onTogglePause={()=>setWorkoutPaused(p=>!p)}
       onBack={goBack}
-      onStart={()=>{ setWorkoutStarted(true); setWorkoutPaused(false); }}
+      onStart={()=>{ setWorkoutStarted(true); setWorkoutPaused(false); track("workout_started", { name: activeW?.name, type: activeW?.type }); }}
       onStop={async (elapsedSeconds=0, completedExList=[], pct=0)=>{
         const mins      = Math.max(1, Math.round(elapsedSeconds / 60));
         const wType     = (activeW.type || "strength").toLowerCase();
@@ -8565,6 +8571,7 @@ function VTRXAppInner({ setPaymentPlan }) {
         const snapExSets   = loggedExSets;
 
         clearInterval(workoutTimerRef.current);
+        track("workout_stopped", { name: activeW?.name, type: wType, durationMins: mins, completionPct: pct, exercisesLogged: snapExNames.length });
         setWorkoutDone(false);
         setWorkoutStarted(false);
         setWorkoutPaused(false);
@@ -8624,6 +8631,7 @@ function VTRXAppInner({ setPaymentPlan }) {
         const shouldLog = mins >= minMins && (!needsSets || snapExNames.length > 0);
 
         if (shouldLog) {
+          track("workout_completed", { name: activeW?.name, type: wType, durationMins: mins, caloriesBurned: actCal, exercisesLogged: snapExNames.length, energyLevel: energyKey });
           setWorkoutDone(true);
           setStreakDay(s=>s+1);
           setWorkoutsTotal(t=>t+1);
@@ -8748,6 +8756,7 @@ function VTRXAppInner({ setPaymentPlan }) {
             onNotifReset={()=>setNotifCount(0)}
             onMoodSelect={(key)=>{
               setEnergyKey(key);
+              track("mood_logged", { mood: key });
               try { localStorage.setItem("vtrx_mood", JSON.stringify({key, date:new Date().toISOString().slice(0,10)})); } catch(_e){}
               if (!DEMO_MODE && getAuthToken()) {
                 apiCall("/users/mood", { method:"POST", body:JSON.stringify({ mood:key }) }).catch(()=>{});
