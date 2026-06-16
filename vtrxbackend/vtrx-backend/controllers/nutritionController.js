@@ -224,7 +224,10 @@ const syncYmoveRecipes = async (req, res) => {
         // ymove uses 'diet' (array) for dietary tags; fall back to 'tags'
         const tags         = Array.isArray(r.diet) ? r.diet : (Array.isArray(r.tags) ? r.tags : (r.tags ? [r.tags] : []));
         const description  = r.description || r.desc || null;
-        const ingredients  = Array.isArray(r.ingredients) ? r.ingredients : [];
+        // ingredients may be objects { name, amount } (from /recipes/:id) or strings
+        const ingredients  = Array.isArray(r.ingredients)
+          ? r.ingredients.map(i => typeof i === 'string' ? i : `${i.amount ? i.amount + ' ' : ''}${i.name || ''}`.trim())
+          : [];
         const instructions = Array.isArray(r.instructions) ? r.instructions
           : (typeof r.instructions === 'string' ? [r.instructions] : []);
 
@@ -306,13 +309,62 @@ const analyzeMeal = async (req, res) => {
   }
 };
 
+// ── GET /api/nutrition/recipes/diets — Available diet types ───────────────────
+const getRecipeDiets = async (_req, res) => {
+  try {
+    const diets = await ymove.getRecipeDiets();
+    res.json({ success: true, data: diets });
+  } catch (error) {
+    logger.error('getRecipeDiets error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch diet types' });
+  }
+};
+
+// ── GET /api/nutrition/recipes/meal-types — Available meal types ───────────────
+const getRecipeMealTypes = async (_req, res) => {
+  try {
+    const types = await ymove.getRecipeMealTypes();
+    res.json({ success: true, data: types });
+  } catch (error) {
+    logger.error('getRecipeMealTypes error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch meal types' });
+  }
+};
+
+// ── GET /api/nutrition/mealplans/generate — ymove recipe-based meal plan ───────
+// params: calories* (required), diet, meals, days, macroSplit
+// Distinct from /meal-plan which uses Claude AI for free-form suggestions
+const generateYmoveMealPlan = async (req, res) => {
+  const { calories, diet, meals, days, macroSplit } = req.query;
+  if (!calories) {
+    return res.status(400).json({ success: false, message: 'calories is required' });
+  }
+  try {
+    const result = await ymove.generateYmoveMealPlan({
+      calories: parseInt(calories),
+      diet,
+      meals:      meals ? parseInt(meals) : undefined,
+      days:       days  ? parseInt(days)  : 1,
+      macroSplit,
+    });
+    if (!result) return res.status(503).json({ success: false, message: 'Meal plan generation unavailable' });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    logger.error('generateYmoveMealPlan error:', error);
+    res.status(500).json({ success: false, message: 'Failed to generate meal plan' });
+  }
+};
+
 module.exports = {
   getRecipes,
   getRecipeById,
+  getRecipeDiets,
+  getRecipeMealTypes,
   saveRecipe,
   unsaveRecipe,
   getSavedRecipes,
   getMealPlan,
+  generateYmoveMealPlan,
   syncYmoveRecipes,
   getFoods,
   getFoodById,

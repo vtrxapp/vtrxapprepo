@@ -332,6 +332,28 @@ const getFoodById = async (id) => {
   }
 };
 
+// GET /recipes/diets — available diet types with recipe counts
+const getRecipeDiets = async () => {
+  if (!isConfigured()) return [];
+  try {
+    const { data } = await ymoveApi.get('/recipes/diets');
+    return toArray(data);
+  } catch {
+    return [];
+  }
+};
+
+// GET /recipes/meal-types — available meal types with recipe counts
+const getRecipeMealTypes = async () => {
+  if (!isConfigured()) return [];
+  try {
+    const { data } = await ymoveApi.get('/recipes/meal-types');
+    return toArray(data);
+  } catch {
+    return [];
+  }
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // NUTRITION — AI MEAL ANALYSIS
 // POST /nutrition/analyze  body: { text }
@@ -345,6 +367,32 @@ const analyzeMeal = async (text) => {
     return data?.data || data || null;
   } catch {
     logger.warn('ymove analyzeMeal failed');
+    return null;
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NUTRITION — YMOVE MEAL PLANS
+// GET /mealplans/generate  params: calories*, diet, meals, days, macroSplit
+// Generates a multi-day meal plan from ymove recipe database (distinct from our
+// AI-generated meal plan which uses Claude to compose free-form suggestions)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const generateYmoveMealPlan = async ({ calories, diet, meals, days = 1, macroSplit } = {}) => {
+  if (!isConfigured() || !calories) return null;
+  try {
+    const { data } = await ymoveApi.get('/mealplans/generate', {
+      params: {
+        calories,
+        ...(diet       && { diet }),
+        ...(meals      && { meals }),
+        ...(days       && { days }),
+        ...(macroSplit && { macroSplit }),
+      },
+    });
+    return data?.data || data || null;
+  } catch {
+    logger.warn('ymove generateYmoveMealPlan failed');
     return null;
   }
 };
@@ -372,9 +420,13 @@ module.exports = {
   // Nutrition — Recipes
   getRecipes,
   getRecipeById,
+  getRecipeDiets,
+  getRecipeMealTypes,
   // Nutrition — Food database
   getFoods,
   getFoodById,
   // Nutrition — AI analysis
   analyzeMeal,
+  // Nutrition — Ymove meal plans
+  generateYmoveMealPlan,
 };
