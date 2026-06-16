@@ -1920,7 +1920,7 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
     videoUrl: resolvedVideoUrl,
     hlsUrl: resolvedHlsUrl,
     videoUrlLoading: videoLoading,
-    thumbnailUrl: ex.thumbnailUrl || ex.img || null,
+    thumbnailUrl: ex.thumbnailUrl || ex.img || "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=400&q=70",
     exerciseName: ex.name,
     initialPositionSecs: resumePos,
     onPortraitDetected: setIsPortrait,
@@ -8227,16 +8227,9 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
             <span onClick={()=>onNavigate("workoutDetail")} style={{ fontFamily:FONT,fontSize:12,color:PRIMARY,cursor:"pointer",fontWeight:600 }}>View All</span>
           </div>
           <div style={{ display:"flex",gap:9,marginBottom:16,overflowX:"auto" }}>
-            {exPreview.map((ex, i) => ex ? (
+            {exPreview.map((ex, i) => (
               <div key={i} onClick={()=>onNavigate("workoutDetail")} style={{ minWidth:76,width:76,height:76,borderRadius:12,overflow:"hidden",flexShrink:0,cursor:"pointer" }}>
-                {ex.thumbnailUrl
-                  ? <img src={ex.thumbnailUrl} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
-                  : <div style={{ width:"100%",height:"100%",background:`${lvl?lvl.color:PRIMARY}22` }}/>
-                }
-              </div>
-            ) : (
-              <div key={i} onClick={()=>onNavigate("workoutDetail")} style={{ minWidth:76,width:76,height:76,borderRadius:12,background:`${PRIMARY}0d`,border:`1px dashed ${PRIMARY}33`,flexShrink:0,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center" }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.5" opacity="0.4"><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>
+                <img src={ex?.thumbnailUrl || ex?.img || workoutBanner} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
               </div>
             ))}
           </div>
