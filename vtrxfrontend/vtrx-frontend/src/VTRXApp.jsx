@@ -1300,9 +1300,10 @@ function VideoPlayer({ videoUrl, hlsUrl = null, thumbnailUrl, exerciseName, onPr
     setHasError(false);
     if (!videoUrl && !hlsUrl) return;
 
-    const isHls = (u) => u && (u.includes('.m3u8') || u.includes('/hls/') || u.includes('manifest'));
-    const streamUrl  = hlsUrl || (isHls(videoUrl) ? videoUrl : null);
-    const directUrl  = !isHls(videoUrl) ? videoUrl : null;
+    const looksLikeHls = (u) => u && u.toLowerCase().includes('.m3u8');
+    // hlsUrl (videoHlsUrl from ymove) is always HLS; videoUrl is direct MP4 unless it ends in .m3u8
+    const streamUrl  = hlsUrl || (looksLikeHls(videoUrl) ? videoUrl : null);
+    const directUrl  = streamUrl ? null : videoUrl;
 
     if (streamUrl && Hls.isSupported()) {
       const hls = new Hls({ startLevel: -1 });
