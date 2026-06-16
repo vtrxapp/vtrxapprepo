@@ -77,7 +77,7 @@ const getExercises = async ({ muscleGroup, exerciseType, equipment, difficulty, 
 
 // GET /exercises/:id — single exercise with video URL
 const getExerciseById = async (ymoveId) => {
-  if (!isConfigured() || !ymoveId) return null;
+  if (!isConfigured() || ymoveId == null || ymoveId === '') return null;
   try {
     const { data } = await ymoveApi.get(`/exercises/${ymoveId}`);
     return data?.data || data || null;
@@ -111,7 +111,7 @@ const getExerciseTypes = async () => {
 
 // Returns a fresh non-expired video URL for an exercise (video URLs expire after 48h)
 const getExerciseVideoUrl = async (ymoveId) => {
-  if (!isConfigured() || !ymoveId) return null;
+  if (!isConfigured() || ymoveId == null || ymoveId === '') return null;
   try {
     const exercise = await getExerciseById(ymoveId);
     return exercise?.video_url || exercise?.videoUrl || null;

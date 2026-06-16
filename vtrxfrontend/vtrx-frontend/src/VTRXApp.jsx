@@ -996,7 +996,7 @@ function normaliseExercise(ex) {
     cal:          ex.cal          || 0,
     img:          ex.thumbnailUrl || ex.img     || '',
     videoUrl:     ex.videoUrl     || null,
-    ymoveId:      ex.ymoveId      || ex.id || null,
+    ymoveId:      'ymoveId' in ex ? (ex.ymoveId || null) : (ex.id || null),
     thumbnailUrl: ex.thumbnailUrl || ex.img     || null,
     restSecs:     ex.restSecs     || 60,
     instructions: ex.instructions || null,

@@ -613,25 +613,7 @@ const getRecommendation = async (req, res) => {
               }));
             }
 
-            // Refresh thumbnailUrls from ymove — stored URLs expire after 48 h
-            const refreshed = await Promise.allSettled(
-              linked.map(async (ex) => {
-                if (!ex.ymoveId) return ex;
-                try {
-                  const fresh = await ymove.getExerciseById(ex.ymoveId);
-                  if (fresh) {
-                    return {
-                      ...ex,
-                      thumbnailUrl: fresh.thumbnail_url || fresh.thumbnailUrl || fresh.gif_url || ex.thumbnailUrl,
-                      videoUrl:     fresh.video_url     || fresh.videoUrl     || ex.videoUrl,
-                    };
-                  }
-                } catch (_) {}
-                return ex;
-              })
-            );
-
-            return refreshed.map((r, i) => r.status === 'fulfilled' ? r.value : linked[i]);
+            return linked;
           })(),
         }
       : {
@@ -1144,17 +1126,25 @@ const getYmoveUsage = async (_req, res) => {
 };
 
 // ── POST /api/workouts/ymove/sync-exercises ───────────────────────────────────
-// Fetches every ymove exercise that has a video (no cap cost) and upserts it
-// into our Exercise table with ymoveId set. Safe to call repeatedly.
-const syncYmoveExercises = async (_req, res) => {
+// Admin-only: fetches every ymove exercise that has a video (no cap cost) and
+// upserts it into our Exercise table with ymoveId set. Safe to call repeatedly.
+const syncYmoveExercises = async (req, res) => {
   if (!ymove.isConfigured()) {
     return res.status(503).json({ success: false, message: 'YMOVE_API_KEY not configured' });
   }
+  // Restrict to admin users — check isAdmin flag or ADMIN_USER_IDS env var
+  const adminIds = (process.env.ADMIN_USER_IDS || '').split(',').filter(Boolean);
+  const isAdmin  = req.user?.isAdmin || adminIds.includes(req.user?.id);
+  if (!isAdmin) {
+    return res.status(403).json({ success: false, message: 'Admin only' });
+  }
+
   try {
     let page = 1;
     const pageSize = 100;
-    let total = 0;
+    let fetchedTotal = null;   // null = unknown until first response
     let upserted = 0;
+    let skipped  = 0;
 
     while (true) {
       const { exercises, total: t } = await ymove.getExercises({
@@ -1164,35 +1154,44 @@ const syncYmoveExercises = async (_req, res) => {
         page,
       });
       if (!exercises.length) break;
-      total = t || total;
+
+      // Capture total from first page; if API returns 0 trust exercise count instead
+      if (fetchedTotal === null) fetchedTotal = t > 0 ? t : null;
 
       for (const ex of exercises) {
-        const ymoveId = String(ex.id || ex.ymoveId || '');
-        if (!ymoveId) continue;
+        const rawId   = ex.id != null ? ex.id : ex.ymoveId;
+        const ymoveId = rawId != null ? String(rawId) : '';
+        if (!ymoveId) { skipped++; continue; }
 
-        const name        = ex.name || 'Exercise';
-        const muscleGroup = ex.muscleGroup || ex.muscle_group || ex.primaryMuscle || 'Full Body';
-        const equipment   = ex.equipment   || null;
-        const thumbUrl    = ex.thumbnailUrl || ex.thumbnail_url || ex.gifUrl || ex.gif_url || null;
+        const name         = ex.name || 'Exercise';
+        const muscleGroup  = ex.muscleGroup || ex.muscle_group || ex.primaryMuscle || 'Full Body';
+        const equipment    = ex.equipment || null;
+        const thumbUrl     = ex.thumbnailUrl || ex.thumbnail_url || ex.gifUrl || ex.gif_url || null;
         const instructions = Array.isArray(ex.instructions)
           ? ex.instructions.join('\n')
           : (ex.instructions || ex.description || null);
 
-        await prisma.exercise.upsert({
-          where:  { ymoveId },
-          // If ymoveId already exists, update metadata; otherwise create
-          update: { name, muscleGroup, equipment, thumbnailUrl: thumbUrl, instructions },
-          create: { name, muscleGroup, equipment, thumbnailUrl: thumbUrl, instructions, ymoveId },
-        });
-        upserted++;
+        try {
+          await prisma.exercise.upsert({
+            where:  { ymoveId },
+            update: { name, muscleGroup, equipment, thumbnailUrl: thumbUrl, instructions },
+            create: { name, muscleGroup, equipment, thumbnailUrl: thumbUrl, instructions, ymoveId },
+          });
+          upserted++;
+        } catch (upsertErr) {
+          logger.warn(`ymove sync: skipping exercise ${ymoveId} — ${upsertErr.message}`);
+          skipped++;
+        }
       }
 
-      if (page * pageSize >= total || exercises.length < pageSize) break;
+      // Stop when we've fetched everything or the page is short (last page)
+      const fetched = page * pageSize;
+      if (exercises.length < pageSize || (fetchedTotal !== null && fetched >= fetchedTotal)) break;
       page++;
     }
 
-    logger.info(`ymove sync: upserted ${upserted} exercises with video`);
-    res.json({ success: true, data: { synced: upserted } });
+    logger.info(`ymove sync complete: ${upserted} upserted, ${skipped} skipped`);
+    res.json({ success: true, data: { synced: upserted, skipped } });
   } catch (error) {
     logger.error('syncYmoveExercises error:', error);
     res.status(500).json({ success: false, message: 'Sync failed' });
