@@ -8,44 +8,54 @@ const aiService = require('../services/aiService');
 const logger    = require('../utils/logger');
 
 // ── GET /api/nutrition/recipes — Browse recipes ───────────────────────────────
-// ymove params: query, diet, cuisine, mealType, maxCalories, minProtein, page, pageSize
+// Supports source=ymove (live paginated) or source=db (DB only) or source=all
 const getRecipes = async (req, res) => {
-  const { query, diet, cuisine, mealType, maxCalories, minProtein, search, limit = 20, offset = 0, source = 'all' } = req.query;
+  const { query, diet, cuisine, mealType, maxCalories, minProtein, search,
+          limit = 20, page = 1, source = 'ymove' } = req.query;
+  const pageNum = parseInt(page) || 1;
+  const pageSize = parseInt(limit) || 20;
 
   try {
     const searchTerm = query || search;
-    const dietArray  = diet ? diet.split(',') : undefined;
 
-    // Build database query filters
+    // ── ymove source: fully paginated through ymove API ──────────────────────
+    if (source === 'ymove') {
+      const result = await ymove.getRecipes({
+        query: searchTerm, diet, cuisine, mealType, maxCalories, minProtein,
+        limit: pageSize, page: pageNum,
+      });
+      return res.json({
+        success: true,
+        data: {
+          recipes: result.recipes || [],
+          total:   result.total   || 0,
+          hasMore: pageNum * pageSize < (result.total || 0),
+          page:    pageNum,
+        },
+      });
+    }
+
+    // ── DB source or all: paginate from our DB ─────────────────────────────
+    const dietArray = diet ? diet.split(',') : undefined;
     const where = {
       isPublic: true,
       ...(dietArray  && { tags: { hasSome: dietArray } }),
       ...(searchTerm && { name: { contains: searchTerm, mode: 'insensitive' } }),
     };
+    const offset = (pageNum - 1) * pageSize;
 
     const [dbRecipes, total] = await Promise.all([
-      prisma.recipe.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        take:    parseInt(limit),
-        skip:    parseInt(offset),
-      }),
+      prisma.recipe.findMany({ where, orderBy: { createdAt: 'desc' }, take: pageSize, skip: offset }),
       prisma.recipe.count({ where }),
     ]);
-
-    // Optionally fetch live from ymove
-    let ymoveRecipes = [];
-    if (source === 'ymove' || source === 'all') {
-      const result = await ymove.getRecipes({ query: searchTerm, diet, cuisine, mealType, maxCalories, minProtein });
-      ymoveRecipes = result.recipes || [];
-    }
 
     res.json({
       success: true,
       data: {
-        recipes: [...dbRecipes, ...ymoveRecipes],
-        total:   total + ymoveRecipes.length,
-        hasMore: parseInt(offset) + parseInt(limit) < total,
+        recipes: dbRecipes,
+        total,
+        hasMore: offset + pageSize < total,
+        page:    pageNum,
       },
     });
   } catch (error) {

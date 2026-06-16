@@ -1292,22 +1292,30 @@ function VideoPlayer({ videoUrl, hlsUrl = null, thumbnailUrl, exerciseName, onPr
   const [hasError,    setHasError]    = useState(false);
 
   // Manage video source — HLS via hls.js (Chrome/Firefox) or native (Safari/MP4)
+  // ymove may return HLS streams in either videoUrl or hlsUrl field
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
     setHasError(false);
     if (!videoUrl && !hlsUrl) return;
-    if (hlsUrl && Hls.isSupported()) {
+
+    const isHls = (u) => u && (u.includes('.m3u8') || u.includes('/hls/') || u.includes('manifest'));
+    const streamUrl  = hlsUrl || (isHls(videoUrl) ? videoUrl : null);
+    const directUrl  = !isHls(videoUrl) ? videoUrl : null;
+
+    if (streamUrl && Hls.isSupported()) {
       const hls = new Hls({ startLevel: -1 });
       hlsRef.current = hls;
-      hls.loadSource(hlsUrl);
+      hls.loadSource(streamUrl);
       hls.attachMedia(v);
       hls.on(Hls.Events.ERROR, (_, data) => { if (data.fatal) setHasError(true); });
-    } else if (hlsUrl && v.canPlayType('application/vnd.apple.mpegurl')) {
-      v.src = hlsUrl; // Safari native HLS
+    } else if (streamUrl && v.canPlayType('application/vnd.apple.mpegurl')) {
+      v.src = streamUrl; // Safari native HLS
+    } else if (directUrl) {
+      v.src = directUrl;
     } else if (videoUrl) {
-      v.src = videoUrl;
+      v.src = videoUrl; // last resort — try whatever URL we have
     }
     return () => { if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; } };
   }, [videoUrl, hlsUrl]);
@@ -1808,10 +1816,13 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
     // Always fetch fresh URLs — ymove CDN links expire after 48 h, so stored URLs go stale
     apiCall(`/workouts/exercise-video/${ex.ymoveId}`)
       .then(d => {
-        if (d?.data?.videoUrl) setResolvedVideoUrl(d.data.videoUrl);
-        if (d?.data?.hlsUrl)   setResolvedHlsUrl(d.data.hlsUrl);
+        const { videoUrl: vUrl, hlsUrl: hUrl } = d?.data || {};
+        console.log(`[video] ymoveId=${ex.ymoveId} videoUrl=${vUrl||'null'} hlsUrl=${hUrl||'null'}`);
+        if (vUrl) setResolvedVideoUrl(vUrl);
+        if (hUrl) setResolvedHlsUrl(hUrl);
+        if (!vUrl && !hUrl) console.warn(`[video] No URL returned for ymoveId=${ex.ymoveId} — check YMOVE_API_KEY in Railway`);
       })
-      .catch(()=>{})
+      .catch(err => console.error(`[video] fetch failed for ymoveId=${ex.ymoveId}:`, err))
       .finally(()=>{ setVideoLoading(false); });
   }, [ex.ymoveId, ex.videoUrl]);
 
@@ -7333,7 +7344,7 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
   useEffect(()=>{
     setLoadingRecipes(true);
     const diet = RECIPE_DIET_MAP[filter];
-    const qs   = new URLSearchParams({ limit: RECIPE_PAGE_SIZE, page: recipePage, source: 'all' });
+    const qs   = new URLSearchParams({ limit: RECIPE_PAGE_SIZE, page: recipePage, source: 'ymove' });
     if (diet) qs.set('diet', diet);
     apiCall(`/nutrition/recipes?${qs}`)
       .then(d=>{
