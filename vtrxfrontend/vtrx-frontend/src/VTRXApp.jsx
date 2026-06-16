@@ -1310,7 +1310,19 @@ function VideoPlayer({ videoUrl, hlsUrl = null, thumbnailUrl, exerciseName, onPr
       hlsRef.current = hls;
       hls.loadSource(streamUrl);
       hls.attachMedia(v);
-      hls.on(Hls.Events.ERROR, (_, data) => { if (data.fatal) setHasError(true); });
+      hls.on(Hls.Events.ERROR, (_, data) => {
+        if (data.fatal) {
+          // HLS failed — fall back to direct MP4 if available, else show error
+          hls.destroy();
+          hlsRef.current = null;
+          if (directUrl || videoUrl) {
+            setHasError(false);
+            v.src = directUrl || videoUrl;
+          } else {
+            setHasError(true);
+          }
+        }
+      });
     } else if (streamUrl && v.canPlayType('application/vnd.apple.mpegurl')) {
       v.src = streamUrl; // Safari native HLS
     } else if (directUrl) {
@@ -1391,8 +1403,10 @@ function VideoPlayer({ videoUrl, hlsUrl = null, thumbnailUrl, exerciseName, onPr
       document.removeEventListener('fullscreenchange', onFSChange);
       document.removeEventListener('webkitfullscreenchange', onFSChange);
     };
+  // videoUrl/hlsUrl added so the effect re-runs when the <video> element first appears
+  // (VideoPlayer renders a loading div while videoUrl is null — videoRef is null until URLs arrive)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialPositionSecs]);
+  }, [initialPositionSecs, videoUrl, hlsUrl]);
 
   const togglePlay = () => {
     const v = videoRef.current;
