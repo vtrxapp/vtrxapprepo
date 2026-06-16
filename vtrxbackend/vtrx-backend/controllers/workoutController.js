@@ -1085,6 +1085,64 @@ const replaceScheduleEntry = async (req, res) => {
   }
 };
 
+// ── GET /api/workouts/generate ────────────────────────────────────────────────
+const generateWorkout = async (req, res) => {
+  const { muscleGroup, difficulty, equipment, exerciseCount } = req.query;
+  try {
+    const result = await ymove.generateWorkout({ muscleGroup, difficulty, equipment, exerciseCount: parseInt(exerciseCount) || 6 });
+    if (!result) return res.status(503).json({ success: false, message: 'Workout generation unavailable' });
+    res.json({ success: true, data: result });
+  } catch (err) {
+    logger.error('generateWorkout error:', err.message);
+    res.status(500).json({ success: false, message: 'Failed to generate workout' });
+  }
+};
+
+// ── GET /api/workouts/program/generate ───────────────────────────────────────
+const generateProgram = async (req, res) => {
+  const { goal, weeks, daysPerWeek, difficulty, equipment } = req.query;
+  try {
+    const result = await ymove.generateProgram({ goal, weeks: parseInt(weeks) || 4, daysPerWeek: parseInt(daysPerWeek) || 3, difficulty, equipment });
+    if (!result) return res.status(503).json({ success: false, message: 'Program generation unavailable' });
+    res.json({ success: true, data: result });
+  } catch (err) {
+    logger.error('generateProgram error:', err.message);
+    res.status(500).json({ success: false, message: 'Failed to generate program' });
+  }
+};
+
+// ── GET /api/workouts/muscle-groups ──────────────────────────────────────────
+const getMuscleGroups = async (_req, res) => {
+  const groups = await ymove.getMuscleGroups();
+  res.json({ success: true, data: groups });
+};
+
+// ── GET /api/workouts/exercise-types ─────────────────────────────────────────
+const getExerciseTypes = async (_req, res) => {
+  const types = await ymove.getExerciseTypes();
+  res.json({ success: true, data: types });
+};
+
+// ── POST /api/workouts/posture/analyze ───────────────────────────────────────
+const analyzePosture = async (req, res) => {
+  const { imageUrl, base64, mimeType, exerciseId } = req.body;
+  if (!imageUrl && !base64) return res.status(400).json({ success: false, message: 'imageUrl or base64 required' });
+  try {
+    const result = await ymove.analyzePosture({ imageUrl, base64, mimeType, exerciseId });
+    if (!result) return res.status(503).json({ success: false, message: 'Posture analysis unavailable' });
+    res.json({ success: true, data: result });
+  } catch (err) {
+    logger.error('analyzePosture error:', err.message);
+    res.status(500).json({ success: false, message: 'Posture analysis failed' });
+  }
+};
+
+// ── GET /api/workouts/ymove/usage ─────────────────────────────────────────────
+const getYmoveUsage = async (_req, res) => {
+  const usage = await ymove.getUsage();
+  res.json({ success: true, data: usage });
+};
+
 module.exports = {
   getWorkouts,
   getWorkoutById,
@@ -1100,4 +1158,10 @@ module.exports = {
   getSchedule,
   moveScheduleEntry,
   replaceScheduleEntry,
+  generateWorkout,
+  generateProgram,
+  getMuscleGroups,
+  getExerciseTypes,
+  analyzePosture,
+  getYmoveUsage,
 };
