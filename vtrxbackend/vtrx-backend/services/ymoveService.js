@@ -63,7 +63,6 @@ const getExercises = async ({ muscleGroup, exerciseType, equipment, difficulty, 
         ...(difficulty   && { difficulty }),
         ...(hasVideo !== undefined && { hasVideo }),
         ...(search       && { search }),
-        includeVideos: false,
         limit,
         page,
       },
@@ -145,7 +144,6 @@ const generateWorkout = async ({ muscleGroup, difficulty, equipment, exerciseCou
         ...(difficulty     && { difficulty }),
         ...(equipment      && { equipment }),
         ...(exerciseCount  && { exerciseCount }),
-        includeVideos: false,
       },
     });
     return data?.data || data || null;
@@ -160,7 +158,7 @@ const getWorkouts = async ({ type, difficulty, limit = 20, page = 1 } = {}) => {
   if (!isConfigured()) return { workouts: [], total: 0 };
   try {
     const { data } = await ymoveApi.get('/workouts', {
-      params: { type, difficulty, includeVideos: false, limit, page },
+      params: { type, difficulty, limit, page },
     });
     return { workouts: toArray(data), total: data?.total || 0 };
   } catch {
@@ -194,7 +192,6 @@ const generateProgram = async ({ goal, weeks = 4, daysPerWeek = 3, difficulty, e
         ...(daysPerWeek  && { daysPerWeek }),
         ...(difficulty   && { difficulty }),
         ...(equipment    && { equipment }),
-        includeVideos: false,
       },
     });
     return data?.data || data || null;
