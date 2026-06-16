@@ -197,6 +197,16 @@ const RECIPES = [
 ];
 
 const NUTRITION_FILTERS = ["All","High Protein","Low Carb","Vegan","Vegetarian","Weight Loss","Muscle Gain","Meal Prep"];
+// Maps UI filter label → ymove diet query param
+const RECIPE_DIET_MAP = {
+  "High Protein": "high_protein",
+  "Low Carb":     "low_carb",
+  "Vegan":        "vegan",
+  "Vegetarian":   "vegetarian",
+  "Weight Loss":  "low_carb",
+  "Muscle Gain":  "high_protein",
+};
+const RECIPE_PAGE_SIZE = 20;
 
 // Normalise ymove/DB recipe → shape RecipeFullPage expects
 const normalizeRecipe = (r) => ({
@@ -7306,6 +7316,8 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
   // API-backed recipe state
   const [apiRecipes,     setApiRecipes]     = useState([]);
   const [loadingRecipes, setLoadingRecipes] = useState(false);
+  const [totalRecipes,   setTotalRecipes]   = useState(0);
+  const [recipePage,     setRecipePage]     = useState(1);
   const [savedRecipes,   setSavedRecipes]   = useState([]);
   const [savedSet,       setSavedSet]       = useState(new Set());
   const [selectedRecipe, setSelectedRecipe] = useState(null); // recipe object
@@ -7317,12 +7329,25 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
   // mealSwaps[dayIdx][slotLabel] = recipe object override for that slot
   const [mealSwaps, setMealSwaps] = useState({});
 
+  // Fetch paginated recipes from server whenever page or filter changes
   useEffect(()=>{
     setLoadingRecipes(true);
-    apiCall('/nutrition/recipes?limit=30&source=all')
-      .then(d=>{ if(d?.data?.recipes?.length) setApiRecipes(d.data.recipes.map(normalizeRecipe)); })
+    const diet = RECIPE_DIET_MAP[filter];
+    const qs   = new URLSearchParams({ limit: RECIPE_PAGE_SIZE, page: recipePage, source: 'all' });
+    if (diet) qs.set('diet', diet);
+    apiCall(`/nutrition/recipes?${qs}`)
+      .then(d=>{
+        if(d?.data?.recipes) {
+          setApiRecipes(d.data.recipes.map(normalizeRecipe));
+          setTotalRecipes(d.data.total || 0);
+        }
+      })
       .catch(()=>{})
       .finally(()=>setLoadingRecipes(false));
+  },[recipePage, filter]);
+
+  // Fetch saved recipes once on mount
+  useEffect(()=>{
     if (getAuthToken()) {
       apiCall('/nutrition/saved')
         .then(d=>{
@@ -7335,6 +7360,10 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
         .catch(()=>{});
     }
   },[]);
+
+  const totalPages = Math.max(1, Math.ceil(totalRecipes / RECIPE_PAGE_SIZE));
+
+  const handleFilterChange = (f) => { setFilter(f); setRecipePage(1); };
 
   const toggleSave = (recipe) => {
     const sid = String(recipe.id);
@@ -7361,13 +7390,10 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
   if (showUpgrade) return <UpgradePlanPage onBack={()=>setShowUpgrade(false)}/>;
 
   const displayRecipes = apiRecipes.length > 0 ? apiRecipes : RECIPES.map(normalizeRecipe);
-  const filtered = displayRecipes.filter(r=>{
-    const rtags = r.tags || r.cat || [];
-    const matchCat = filter==="All" || rtags.some(t=>
-      t.toLowerCase().includes(filter.toLowerCase()) || filter.toLowerCase().includes(t.toLowerCase())
-    );
-    const matchSearch = search==="" || (r.name||'').toLowerCase().includes(search.toLowerCase());
-    return matchCat && matchSearch;
+  // Diet filter is applied server-side; only apply local search here
+  const filtered = displayRecipes.filter(r => {
+    if (search === "") return true;
+    return (r.name||'').toLowerCase().includes(search.toLowerCase());
   });
 
   // ── Meal Plan helpers ─────────────────────────────────────────────────────────
@@ -7576,7 +7602,7 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
             {/* Filters */}
             <div style={{ display:"flex",gap:8,overflowX:"auto",marginBottom:14,paddingBottom:4 }}>
               {NUTRITION_FILTERS.map(f=>(
-                <button key={f} onClick={()=>setFilter(f)}
+                <button key={f} onClick={()=>handleFilterChange(f)}
                   style={{ flexShrink:0,padding:"6px 14px",borderRadius:20,border:`1.5px solid ${filter===f?PRIMARY:BORDER}`,background:filter===f?`${PRIMARY}18`:"transparent",fontFamily:FONT,fontWeight:600,fontSize:11,color:filter===f?PRIMARY:"#666",cursor:"pointer",transition:"all 0.2s" }}>
                   {f}
                 </button>
@@ -7613,6 +7639,49 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
                 );
               })}
             </div>
+
+            {/* ── Pagination ─────────────────────────────────────────────── */}
+            {totalPages > 1 && (
+              <div style={{ display:"flex",flexDirection:"column",alignItems:"center",gap:10,marginTop:20,paddingBottom:8 }}>
+                <div style={{ display:"flex",alignItems:"center",gap:6 }}>
+                  {/* Previous */}
+                  <button
+                    disabled={recipePage === 1}
+                    onClick={()=>{ setRecipePage(p=>p-1); scrollRef.current?.scrollTo({top:0,behavior:'smooth'}); }}
+                    style={{ width:34,height:34,borderRadius:10,border:`1.5px solid ${recipePage===1?BORDER:PRIMARY}`,background:"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:recipePage===1?"default":"pointer",opacity:recipePage===1?0.35:1 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={recipePage===1?"#555":PRIMARY} strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+                  </button>
+
+                  {/* Page numbers — show up to 5 around current page */}
+                  {Array.from({ length: totalPages }, (_,i)=>i+1)
+                    .filter(p => p===1 || p===totalPages || Math.abs(p - recipePage) <= 1)
+                    .reduce((acc, p, idx, arr) => {
+                      if (idx > 0 && p - arr[idx-1] > 1) acc.push('…');
+                      acc.push(p);
+                      return acc;
+                    }, [])
+                    .map((p, i) => p === '…'
+                      ? <span key={`ellipsis-${i}`} style={{ fontFamily:FONT,fontSize:12,color:"#555",width:20,textAlign:"center" }}>…</span>
+                      : <button key={p} onClick={()=>{ setRecipePage(p); scrollRef.current?.scrollTo({top:0,behavior:'smooth'}); }}
+                          style={{ width:34,height:34,borderRadius:10,border:`1.5px solid ${p===recipePage?PRIMARY:BORDER}`,background:p===recipePage?`${PRIMARY}18`:"transparent",fontFamily:FONT,fontWeight:700,fontSize:13,color:p===recipePage?PRIMARY:"#888",cursor:"pointer" }}>
+                          {p}
+                        </button>
+                    )
+                  }
+
+                  {/* Next */}
+                  <button
+                    disabled={recipePage === totalPages}
+                    onClick={()=>{ setRecipePage(p=>p+1); scrollRef.current?.scrollTo({top:0,behavior:'smooth'}); }}
+                    style={{ width:34,height:34,borderRadius:10,border:`1.5px solid ${recipePage===totalPages?BORDER:PRIMARY}`,background:"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:recipePage===totalPages?"default":"pointer",opacity:recipePage===totalPages?0.35:1 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={recipePage===totalPages?"#555":PRIMARY} strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                  </button>
+                </div>
+                <div style={{ fontFamily:FONT,fontSize:11,color:"#555" }}>
+                  Page {recipePage} of {totalPages} · {totalRecipes} recipes
+                </div>
+              </div>
+            )}
           </div>
         )}
 
