@@ -986,21 +986,32 @@ function generateWorkoutTitle(exercises) {
 
 // Normalise an exercise from either the API shape or the hardcoded EXERCISES shape
 function normaliseExercise(ex) {
+  // ymove /workouts/generate nests the exercise inside an 'exercise' key;
+  // flatten it before normalising so all fields are at the top level
+  const src = (ex.exercise && typeof ex.exercise === 'object') ? { ...ex.exercise, sets: ex.sets, reps: ex.reps, restSecs: ex.restSeconds ?? ex.restSecs } : ex;
+
+  // video URL: direct field, or primary video from videos array
+  const primaryVideo = Array.isArray(src.videos)
+    ? (src.videos.find(v => v.isPrimary) || src.videos[0])
+    : null;
+  const videoUrl = src.videoUrl || primaryVideo?.videoUrl || null;
+  const thumbUrl = src.thumbnailUrl || primaryVideo?.thumbnailUrl || src.img || null;
+
   return {
-    id:           ex.id           || null,
-    name:         ex.title        || ex.name         || 'Exercise',
-    sets:         ex.sets         || 3,
-    reps:         ex.reps         || '8-12',
-    muscles:      ex.muscleGroup  || ex.muscles || '',
-    equipment:    ex.equipment    || null,
-    cal:          ex.cal          || 0,
-    img:          ex.thumbnailUrl || ex.img     || '',
-    videoUrl:     ex.videoUrl     || null,
-    ymoveId:      'ymoveId' in ex ? (ex.ymoveId || null) : (ex.id || null),
-    thumbnailUrl: ex.thumbnailUrl || ex.img     || null,
-    restSecs:     ex.restSecs     || 60,
-    instructions: ex.instructions || null,
-    description:  ex.description  || null,
+    id:           src.id           || null,
+    name:         src.title        || src.name         || 'Exercise',
+    sets:         src.sets         || 3,
+    reps:         src.reps         || '8-12',
+    muscles:      src.muscleGroup  || src.muscles || '',
+    equipment:    src.equipment    || null,
+    cal:          src.cal          || 0,
+    img:          thumbUrl,
+    videoUrl,
+    ymoveId:      'ymoveId' in src ? (src.ymoveId || null) : (src.id || null),
+    thumbnailUrl: thumbUrl,
+    restSecs:     src.restSecs     || src.restSeconds || 60,
+    instructions: src.instructions || null,
+    description:  src.description  || null,
   };
 }
 

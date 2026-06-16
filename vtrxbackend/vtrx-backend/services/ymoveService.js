@@ -145,6 +145,8 @@ const generateWorkout = async ({ muscleGroup, difficulty, equipment, exerciseCou
         ...(difficulty     && { difficulty }),
         ...(equipment      && { equipment }),
         ...(exerciseCount  && { exerciseCount }),
+        includeWarmup:   false,   // warmup counts toward monthly cap
+        includeCooldown: false,   // cooldown counts toward monthly cap
       },
     });
     return data?.data || data || null;

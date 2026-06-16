@@ -1073,7 +1073,25 @@ const generateWorkout = async (req, res) => {
   try {
     const result = await ymove.generateWorkout({ muscleGroup, difficulty, equipment, exerciseCount: parseInt(exerciseCount) || 6 });
     if (!result) return res.status(503).json({ success: false, message: 'Workout generation unavailable' });
-    res.json({ success: true, data: result });
+
+    // ymove returns exercises as { exercise: {...}, sets, reps, restSeconds }
+    // Flatten so the frontend receives the same shape as DB-sourced exercises
+    const flatten = (entry) => ({
+      ...(entry.exercise || entry),
+      sets:     entry.sets     ?? 3,
+      reps:     entry.reps     ?? '8-12',
+      restSecs: entry.restSeconds ?? entry.restSecs ?? 60,
+    });
+
+    res.json({
+      success: true,
+      data: {
+        ...result,
+        exercises: (result.exercises || []).map(flatten),
+        warmup:    (result.warmup    || []).map(flatten),
+        cooldown:  (result.cooldown  || []).map(flatten),
+      },
+    });
   } catch (err) {
     logger.error('generateWorkout error:', err.message);
     res.status(500).json({ success: false, message: 'Failed to generate workout' });
