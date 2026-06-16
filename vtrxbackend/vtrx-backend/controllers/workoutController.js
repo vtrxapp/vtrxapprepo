@@ -1198,9 +1198,13 @@ const syncYmoveExercises = async (req, res) => {
   if (!ymove.isConfigured()) {
     return res.status(503).json({ success: false, message: 'YMOVE_API_KEY not configured' });
   }
-  // Restrict to admin users — check isAdmin flag or ADMIN_USER_IDS env var
-  const adminIds = (process.env.ADMIN_USER_IDS || '').split(',').filter(Boolean);
-  const isAdmin  = req.user?.isAdmin || adminIds.includes(req.user?.id);
+  // Restrict to admin users — check isAdmin flag, ADMIN_USER_IDS env var, or ADMIN_SECRET header
+  const adminIds     = (process.env.ADMIN_USER_IDS || '').split(',').filter(Boolean);
+  const adminSecret  = process.env.ADMIN_SECRET;
+  const secretHeader = req.headers['x-admin-secret'];
+  const isAdmin = req.user?.isAdmin
+    || adminIds.includes(req.user?.id)
+    || (adminSecret && secretHeader === adminSecret);
   if (!isAdmin) {
     return res.status(403).json({ success: false, message: 'Admin only' });
   }
@@ -1238,11 +1242,25 @@ const syncYmoveExercises = async (req, res) => {
           : (ex.instructions || ex.description || null);
 
         try {
-          await prisma.exercise.upsert({
-            where:  { ymoveId },
-            update: { name, muscleGroup, equipment, thumbnailUrl: thumbUrl, instructions },
-            create: { name, muscleGroup, equipment, thumbnailUrl: thumbUrl, instructions, ymoveId },
+          // First try to claim an existing exercise that has no ymoveId but the same name.
+          // This back-fills manually-seeded exercises so they get video URLs.
+          const existing = await prisma.exercise.findFirst({
+            where: { name: { equals: name, mode: 'insensitive' }, ymoveId: null },
           });
+          if (existing) {
+            await prisma.exercise.update({
+              where: { id: existing.id },
+              data: { ymoveId, muscleGroup, equipment,
+                      thumbnailUrl: thumbUrl || existing.thumbnailUrl || null,
+                      instructions: instructions || existing.instructions || null },
+            });
+          } else {
+            await prisma.exercise.upsert({
+              where:  { ymoveId },
+              update: { name, muscleGroup, equipment, thumbnailUrl: thumbUrl, instructions },
+              create: { name, muscleGroup, equipment, thumbnailUrl: thumbUrl, instructions, ymoveId },
+            });
+          }
           upserted++;
         } catch (upsertErr) {
           logger.warn(`ymove sync: skipping exercise ${ymoveId} — ${upsertErr.message}`);

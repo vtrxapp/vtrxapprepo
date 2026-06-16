@@ -198,8 +198,12 @@ const syncYmoveRecipes = async (req, res) => {
   if (!ymove.isConfigured()) {
     return res.status(503).json({ success: false, message: 'YMOVE_API_KEY not configured' });
   }
-  const adminIds = (process.env.ADMIN_USER_IDS || '').split(',').filter(Boolean);
-  const isAdmin  = req.user?.isAdmin || adminIds.includes(req.user?.id);
+  const adminIds     = (process.env.ADMIN_USER_IDS || '').split(',').filter(Boolean);
+  const adminSecret  = process.env.ADMIN_SECRET;
+  const secretHeader = req.headers['x-admin-secret'];
+  const isAdmin = req.user?.isAdmin
+    || adminIds.includes(req.user?.id)
+    || (adminSecret && secretHeader === adminSecret);
   if (!isAdmin) {
     return res.status(403).json({ success: false, message: 'Admin only' });
   }
