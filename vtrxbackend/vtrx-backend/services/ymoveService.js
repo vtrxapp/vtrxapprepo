@@ -261,14 +261,24 @@ const checkConnection = async () => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// NUTRITION / RECIPES (own DB — ymove API does not expose nutrition endpoints)
+// NUTRITION — RECIPES
+// GET /recipes  params: query, diet, cuisine, mealType, maxCalories, minProtein, page, pageSize
 // ─────────────────────────────────────────────────────────────────────────────
 
-const getRecipes = async ({ tags, goal, limit = 20, page = 1 } = {}) => {
+const getRecipes = async ({ query, diet, cuisine, mealType, maxCalories, minProtein, limit = 20, page = 1 } = {}) => {
   if (!isConfigured()) return { recipes: [] };
   try {
-    const { data } = await ymoveApi.get('/nutrition/recipes', {
-      params: { tags, goal, pageSize: limit, page },
+    const { data } = await ymoveApi.get('/recipes', {
+      params: {
+        ...(query       && { query }),
+        ...(diet        && { diet }),
+        ...(cuisine     && { cuisine }),
+        ...(mealType    && { mealType }),
+        ...(maxCalories && { maxCalories }),
+        ...(minProtein  && { minProtein }),
+        pageSize: limit,
+        page,
+      },
     });
     return { recipes: toArray(data), total: getTotal(data) };
   } catch {
@@ -279,9 +289,62 @@ const getRecipes = async ({ tags, goal, limit = 20, page = 1 } = {}) => {
 const getRecipeById = async (ymoveId) => {
   if (!isConfigured() || !ymoveId) return null;
   try {
-    const { data } = await ymoveApi.get(`/nutrition/recipes/${ymoveId}`);
+    const { data } = await ymoveApi.get(`/recipes/${ymoveId}`);
     return data?.data || data || null;
   } catch {
+    return null;
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NUTRITION — FOOD DATABASE
+// GET /foods  params: query*, source, usdaOnly, country, per, page, pageSize
+// GET /foods/:id
+// ─────────────────────────────────────────────────────────────────────────────
+
+const getFoods = async ({ query, source, usdaOnly, country, per, limit = 20, page = 1 } = {}) => {
+  if (!isConfigured() || !query) return { foods: [], total: 0 };
+  try {
+    const { data } = await ymoveApi.get('/foods', {
+      params: {
+        query,
+        ...(source   && { source }),
+        ...(usdaOnly !== undefined && { usdaOnly }),
+        ...(country  && { country }),
+        ...(per      && { per }),
+        pageSize: limit,
+        page,
+      },
+    });
+    return { foods: toArray(data), total: getTotal(data) };
+  } catch {
+    return { foods: [], total: 0 };
+  }
+};
+
+const getFoodById = async (id) => {
+  if (!isConfigured() || !id) return null;
+  try {
+    const { data } = await ymoveApi.get(`/foods/${id}`);
+    return data?.data || data || null;
+  } catch {
+    return null;
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NUTRITION — AI MEAL ANALYSIS
+// POST /nutrition/analyze  body: { text }
+// Returns per-food breakdown + totals; counts toward monthly analysis cap
+// ─────────────────────────────────────────────────────────────────────────────
+
+const analyzeMeal = async (text) => {
+  if (!isConfigured() || !text) return null;
+  try {
+    const { data } = await ymoveApi.post('/nutrition/analyze', { text });
+    return data?.data || data || null;
+  } catch {
+    logger.warn('ymove analyzeMeal failed');
     return null;
   }
 };
@@ -306,7 +369,12 @@ module.exports = {
   // Usage
   getUsage,
   checkConnection,
-  // Nutrition (own DB)
+  // Nutrition — Recipes
   getRecipes,
   getRecipeById,
+  // Nutrition — Food database
+  getFoods,
+  getFoodById,
+  // Nutrition — AI analysis
+  analyzeMeal,
 };

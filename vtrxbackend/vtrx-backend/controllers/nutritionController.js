@@ -8,15 +8,19 @@ const aiService = require('../services/aiService');
 const logger    = require('../utils/logger');
 
 // ── GET /api/nutrition/recipes — Browse recipes ───────────────────────────────
+// ymove params: query, diet, cuisine, mealType, maxCalories, minProtein, page, pageSize
 const getRecipes = async (req, res) => {
-  const { tags, goal, search, limit = 20, offset = 0, source = 'all' } = req.query;
+  const { query, diet, cuisine, mealType, maxCalories, minProtein, search, limit = 20, offset = 0, source = 'all' } = req.query;
 
   try {
+    const searchTerm = query || search;
+    const dietArray  = diet ? diet.split(',') : undefined;
+
     // Build database query filters
     const where = {
       isPublic: true,
-      ...(tags   && { tags: { hasSome: tags.split(',') } }),
-      ...(search && { name: { contains: search, mode: 'insensitive' } }),
+      ...(dietArray  && { tags: { hasSome: dietArray } }),
+      ...(searchTerm && { name: { contains: searchTerm, mode: 'insensitive' } }),
     };
 
     const [dbRecipes, total] = await Promise.all([
@@ -29,10 +33,10 @@ const getRecipes = async (req, res) => {
       prisma.recipe.count({ where }),
     ]);
 
-    // Optionally fetch from Ymove
+    // Optionally fetch live from ymove
     let ymoveRecipes = [];
     if (source === 'ymove' || source === 'all') {
-      const result = await ymove.getRecipes({ tags: tags?.split(','), goal });
+      const result = await ymove.getRecipes({ query: searchTerm, diet, cuisine, mealType, maxCalories, minProtein });
       ymoveRecipes = result.recipes || [];
     }
 
@@ -213,10 +217,12 @@ const syncYmoveRecipes = async (req, res) => {
         const protein      = parseFloat(r.protein) || 0;
         const carbs        = parseFloat(r.carbs)   || 0;
         const fat          = parseFloat(r.fat) || parseFloat(r.fats) || 0;
-        const prepTime     = parseInt(r.prepTime || r.prep_time || r.mins) || null;
+        // ymove uses prepTimeMinutes (docs confirmed); fall back to legacy field names
+        const prepTime     = parseInt(r.prepTimeMinutes || r.prepTime || r.prep_time || r.mins) || null;
         const servings     = parseInt(r.servings) || 1;
         const imageUrl     = r.imageUrl || r.image_url || r.img || null;
-        const tags         = Array.isArray(r.tags) ? r.tags : (r.tags ? [r.tags] : []);
+        // ymove uses 'diet' (array) for dietary tags; fall back to 'tags'
+        const tags         = Array.isArray(r.diet) ? r.diet : (Array.isArray(r.tags) ? r.tags : (r.tags ? [r.tags] : []));
         const description  = r.description || r.desc || null;
         const ingredients  = Array.isArray(r.ingredients) ? r.ingredients : [];
         const instructions = Array.isArray(r.instructions) ? r.instructions
@@ -248,6 +254,58 @@ const syncYmoveRecipes = async (req, res) => {
   }
 };
 
+// ── GET /api/nutrition/foods — Search food database ───────────────────────────
+// params: query (required), source, usdaOnly, country, per, page, pageSize
+const getFoods = async (req, res) => {
+  const { query, source, usdaOnly, country, per, limit = 20, page = 1 } = req.query;
+  if (!query) {
+    return res.status(400).json({ success: false, message: 'query is required' });
+  }
+  try {
+    const result = await ymove.getFoods({
+      query, source,
+      usdaOnly: usdaOnly === 'true' ? true : usdaOnly === 'false' ? false : undefined,
+      country, per,
+      limit: parseInt(limit), page: parseInt(page),
+    });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    logger.error('getFoods error:', error);
+    res.status(500).json({ success: false, message: 'Failed to search foods' });
+  }
+};
+
+// ── GET /api/nutrition/foods/:id — Single food item ───────────────────────────
+const getFoodById = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const food = await ymove.getFoodById(id);
+    if (!food) return res.status(404).json({ success: false, message: 'Food not found' });
+    res.json({ success: true, data: { food } });
+  } catch (error) {
+    logger.error('getFoodById error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch food' });
+  }
+};
+
+// ── POST /api/nutrition/analyze — AI meal text analysis ───────────────────────
+// body: { text: "grilled chicken with rice and broccoli" }
+// Returns per-food breakdown + totals; counts toward ymove monthly analysis cap
+const analyzeMeal = async (req, res) => {
+  const { text } = req.body;
+  if (!text) {
+    return res.status(400).json({ success: false, message: 'text is required' });
+  }
+  try {
+    const result = await ymove.analyzeMeal(text);
+    if (!result) return res.status(503).json({ success: false, message: 'Meal analysis unavailable' });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    logger.error('analyzeMeal error:', error);
+    res.status(500).json({ success: false, message: 'Failed to analyze meal' });
+  }
+};
+
 module.exports = {
   getRecipes,
   getRecipeById,
@@ -256,4 +314,7 @@ module.exports = {
   getSavedRecipes,
   getMealPlan,
   syncYmoveRecipes,
+  getFoods,
+  getFoodById,
+  analyzeMeal,
 };

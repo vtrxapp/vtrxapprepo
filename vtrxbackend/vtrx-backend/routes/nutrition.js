@@ -12,5 +12,8 @@ router.get('/saved',               nutrition.getSavedRecipes);
 router.post('/saved',              nutrition.saveRecipe);
 router.delete('/saved/:recipeId',  nutrition.unsaveRecipe);
 router.get('/meal-plan',           nutrition.getMealPlan);
+router.get('/foods',               nutrition.getFoods);             // GET /nutrition/foods?query=chicken
+router.get('/foods/:id',           nutrition.getFoodById);          // GET /nutrition/foods/:id
+router.post('/analyze',            nutrition.analyzeMeal);          // POST /nutrition/analyze
 
 module.exports = router;
