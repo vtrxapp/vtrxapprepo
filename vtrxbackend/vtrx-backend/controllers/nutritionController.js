@@ -208,7 +208,7 @@ const syncYmoveRecipes = async (req, res) => {
         const ymoveId = rawId != null ? String(rawId) : '';
         if (!ymoveId) { skipped++; continue; }
 
-        const name         = r.name || 'Recipe';
+        const name         = r.title || r.name || 'Recipe';
         const calories     = parseInt(r.calories) || 0;
         const protein      = parseFloat(r.protein) || 0;
         const carbs        = parseFloat(r.carbs)   || 0;

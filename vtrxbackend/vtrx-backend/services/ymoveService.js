@@ -43,8 +43,9 @@ ymoveApi.interceptors.response.use(
 
 const isConfigured = () => !!process.env.YMOVE_API_KEY;
 
-// Normalise response shapes
+// Normalise response shapes — ymove wraps lists in { data: [...], pagination: { total } }
 const toArray = r => Array.isArray(r) ? r : (r?.data || r?.exercises || r?.items || r?.results || []);
+const getTotal = r => r?.pagination?.total ?? r?.total ?? 0;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // EXERCISES
@@ -63,12 +64,12 @@ const getExercises = async ({ muscleGroup, exerciseType, equipment, difficulty, 
         ...(difficulty   && { difficulty }),
         ...(hasVideo !== undefined && { hasVideo }),
         ...(search       && { search }),
-        limit,
+        pageSize: limit,   // ymove uses pageSize, not limit
         page,
       },
     });
     const exercises = toArray(data);
-    return { exercises, total: data?.total || exercises.length };
+    return { exercises, total: getTotal(data) || exercises.length };
   } catch {
     return { exercises: [], total: 0 };
   }
@@ -158,9 +159,9 @@ const getWorkouts = async ({ type, difficulty, limit = 20, page = 1 } = {}) => {
   if (!isConfigured()) return { workouts: [], total: 0 };
   try {
     const { data } = await ymoveApi.get('/workouts', {
-      params: { type, difficulty, limit, page },
+      params: { type, difficulty, pageSize: limit, page },
     });
-    return { workouts: toArray(data), total: data?.total || 0 };
+    return { workouts: toArray(data), total: getTotal(data) };
   } catch {
     return { workouts: [], total: 0 };
   }
@@ -256,9 +257,9 @@ const getRecipes = async ({ tags, goal, limit = 20, page = 1 } = {}) => {
   if (!isConfigured()) return { recipes: [] };
   try {
     const { data } = await ymoveApi.get('/nutrition/recipes', {
-      params: { tags, goal, limit, page },
+      params: { tags, goal, pageSize: limit, page },
     });
-    return { recipes: toArray(data), total: data?.total || 0 };
+    return { recipes: toArray(data), total: getTotal(data) };
   } catch {
     return { recipes: [] };
   }

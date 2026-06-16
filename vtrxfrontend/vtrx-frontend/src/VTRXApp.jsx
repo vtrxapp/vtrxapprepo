@@ -988,7 +988,7 @@ function generateWorkoutTitle(exercises) {
 function normaliseExercise(ex) {
   return {
     id:           ex.id           || null,
-    name:         ex.name         || 'Exercise',
+    name:         ex.title        || ex.name         || 'Exercise',
     sets:         ex.sets         || 3,
     reps:         ex.reps         || '8-12',
     muscles:      ex.muscleGroup  || ex.muscles || '',

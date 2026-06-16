@@ -1163,7 +1163,7 @@ const syncYmoveExercises = async (req, res) => {
         const ymoveId = rawId != null ? String(rawId) : '';
         if (!ymoveId) { skipped++; continue; }
 
-        const name         = ex.name || 'Exercise';
+        const name         = ex.title || ex.name || 'Exercise';
         const muscleGroup  = ex.muscleGroup || ex.muscle_group || ex.primaryMuscle || 'Full Body';
         const equipment    = ex.equipment || null;
         const thumbUrl     = ex.thumbnailUrl || ex.thumbnail_url || ex.gifUrl || ex.gif_url || null;
