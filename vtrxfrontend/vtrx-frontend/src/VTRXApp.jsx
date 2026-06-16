@@ -1251,7 +1251,7 @@ function SwipeableSet({ set:s, index:i, activeSet, onUpdate, onComplete, onDelet
 // ─────────────────────────────────────────────────────────────────────────────
 const PLAYBACK_SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
-function VideoPlayer({ videoUrl, thumbnailUrl, exerciseName, onProgress, onVideoComplete, initialPositionSecs = 0, fillContainer = false, onPortraitDetected, isLoading = false }) {
+function VideoPlayer({ videoUrl, thumbnailUrl, exerciseName, onProgress, onVideoComplete, initialPositionSecs = 0, fillContainer = false, onPortraitDetected, videoUrlLoading = false }) {
   const videoRef    = useRef(null);
   const containerRef = useRef(null);
   const seekBarRef  = useRef(null);
@@ -1425,7 +1425,7 @@ function VideoPlayer({ videoUrl, thumbnailUrl, exerciseName, onProgress, onVideo
         {thumbnailUrl
           ? <img src={thumbnailUrl} alt="" style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', filter:'brightness(0.35)' }}/>
           : null}
-        {isLoading ? (
+        {videoUrlLoading ? (
           <div style={{ position:'relative', display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
             <div style={{ width:36, height:36, border:'2px solid rgba(255,255,255,0.08)', borderTop:'2px solid rgba(255,255,255,0.45)', borderRadius:'50%', animation:'spin 0.8s linear infinite' }}/>
           </div>
@@ -1844,7 +1844,7 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
 
   const videoProps = {
     videoUrl: resolvedVideoUrl,
-    isLoading: videoLoading,
+    videoUrlLoading: videoLoading,
     thumbnailUrl: ex.thumbnailUrl || ex.img || null,
     exerciseName: ex.name,
     initialPositionSecs: resumePos,
