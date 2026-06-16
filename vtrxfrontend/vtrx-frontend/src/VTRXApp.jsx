@@ -1251,7 +1251,7 @@ function SwipeableSet({ set:s, index:i, activeSet, onUpdate, onComplete, onDelet
 // ─────────────────────────────────────────────────────────────────────────────
 const PLAYBACK_SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
-function VideoPlayer({ videoUrl, thumbnailUrl, exerciseName, onProgress, onVideoComplete, initialPositionSecs = 0, fillContainer = false, onPortraitDetected }) {
+function VideoPlayer({ videoUrl, thumbnailUrl, exerciseName, onProgress, onVideoComplete, initialPositionSecs = 0, fillContainer = false, onPortraitDetected, isLoading = false }) {
   const videoRef    = useRef(null);
   const containerRef = useRef(null);
   const seekBarRef  = useRef(null);
@@ -1418,17 +1418,25 @@ function VideoPlayer({ videoUrl, thumbnailUrl, exerciseName, onProgress, onVideo
 
   const hasPiP = typeof document !== 'undefined' && 'pictureInPictureEnabled' in document;
 
-  // ── No video URL → show placeholder ───────────────────────────────────────
+  // ── No video URL → show loading spinner or placeholder ───────────────────
   if (!videoUrl) {
     return (
       <div style={{ position:'relative', width:'100%', height:210, background:'#0a0a0a', overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:10 }}>
         {thumbnailUrl
           ? <img src={thumbnailUrl} alt="" style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', filter:'brightness(0.35)' }}/>
           : null}
-        <div style={{ position:'relative', width:52, height:52, borderRadius:'50%', background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.12)', display:'flex', alignItems:'center', justifyContent:'center' }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="1.5"><polygon points="5 3 19 12 5 21"/></svg>
-        </div>
-        <span style={{ position:'relative', fontFamily:FONT, fontSize:10, color:'#444', letterSpacing:1.5 }}>DEMO VIDEO COMING SOON</span>
+        {isLoading ? (
+          <div style={{ position:'relative', display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
+            <div style={{ width:36, height:36, border:'2px solid rgba(255,255,255,0.08)', borderTop:'2px solid rgba(255,255,255,0.45)', borderRadius:'50%', animation:'spin 0.8s linear infinite' }}/>
+          </div>
+        ) : (
+          <>
+            <div style={{ position:'relative', width:52, height:52, borderRadius:'50%', background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.12)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="1.5"><polygon points="5 3 19 12 5 21"/></svg>
+            </div>
+            <span style={{ position:'relative', fontFamily:FONT, fontSize:10, color:'#444', letterSpacing:1.5 }}>DEMO VIDEO COMING SOON</span>
+          </>
+        )}
       </div>
     );
   }
@@ -1739,12 +1747,14 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
   const ex = exercise ? normaliseExercise(exercise) : normaliseExercise(EXERCISES[0]);
 
   const [resolvedVideoUrl, setResolvedVideoUrl] = useState(ex.videoUrl || null);
+  const [videoLoading, setVideoLoading] = useState(!!ex.ymoveId);
   const [resumePos, setResumePos] = useState(0);
   useEffect(()=>{
     setResolvedVideoUrl(ex.videoUrl || null); // show stored URL immediately while fresh one loads
-    if (!ex.ymoveId) return;                  // no ymoveId = no video source to refresh
+    if (!ex.ymoveId) { setVideoLoading(false); return; }
     const token = getAuthToken();
-    if (!token) return;
+    if (!token) { setVideoLoading(false); return; }
+    setVideoLoading(true);
     // Restore resume position
     try {
       const saved = JSON.parse(localStorage.getItem('vtrx_vidprog_' + ex.ymoveId) || 'null');
@@ -1753,7 +1763,8 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
     // Always fetch a fresh URL — ymove CDN links expire after 48 h, so stored URLs go stale
     apiCall(`/workouts/exercise-video/${ex.ymoveId}`)
       .then(d => { if (d?.data?.videoUrl) setResolvedVideoUrl(d.data.videoUrl); })
-      .catch(()=>{});
+      .catch(()=>{})
+      .finally(()=>{ setVideoLoading(false); });
   }, [ex.ymoveId, ex.videoUrl]);
 
   const [sets, setSets] = useState([{reps:"",weight:"",done:false},{reps:"",weight:"",done:false}]);
@@ -1833,6 +1844,7 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
 
   const videoProps = {
     videoUrl: resolvedVideoUrl,
+    isLoading: videoLoading,
     thumbnailUrl: ex.thumbnailUrl || ex.img || null,
     exerciseName: ex.name,
     initialPositionSecs: resumePos,
