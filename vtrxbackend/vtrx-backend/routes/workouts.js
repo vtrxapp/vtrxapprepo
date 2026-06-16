@@ -14,6 +14,7 @@ router.get('/muscle-groups',           workout.getMuscleGroups);        // GET /
 router.get('/exercise-types',          workout.getExerciseTypes);       // GET /workouts/exercise-types
 router.post('/posture/analyze',        workout.analyzePosture);         // POST /workouts/posture/analyze
 router.get('/ymove/usage',             workout.getYmoveUsage);          // GET /workouts/ymove/usage
+router.get('/ymove/debug/:id',         workout.debugYmoveExercise);     // GET /workouts/ymove/debug/:id — raw ymove response
 router.post('/ymove/sync-exercises',   workout.syncYmoveExercises);     // POST /workouts/ymove/sync-exercises
 router.get('/history',                 workout.getWorkoutHistory);
 router.get('/stats',                   workout.getWeeklyStats);

@@ -1125,6 +1125,32 @@ const getYmoveUsage = async (_req, res) => {
   res.json({ success: true, data: usage });
 };
 
+// ── GET /api/workouts/ymove/debug/:id — Raw ymove exercise response ───────────
+// Dumps exactly what ymove returns for an exercise ID so we can verify field names.
+const debugYmoveExercise = async (req, res) => {
+  const { id } = req.params;
+  if (!ymove.isConfigured()) {
+    return res.status(503).json({ success: false, message: 'YMOVE_API_KEY not set in Railway' });
+  }
+  try {
+    const raw = await ymove.getExerciseById(id);
+    const videoUrl = raw?.videoUrl || raw?.video_url
+      || raw?.videos?.find(v => v.isPrimary)?.videoUrl
+      || raw?.videos?.[0]?.videoUrl
+      || null;
+    res.json({
+      success: true,
+      data: {
+        raw,                          // full response so you can see all field names
+        resolvedVideoUrl: videoUrl,   // what our code would use as the video URL
+        hasVideo: !!videoUrl,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message, stack: err.stack });
+  }
+};
+
 // ── POST /api/workouts/ymove/sync-exercises ───────────────────────────────────
 // Admin-only: fetches every ymove exercise that has a video (no cap cost) and
 // upserts it into our Exercise table with ymoveId set. Safe to call repeatedly.
@@ -1219,5 +1245,6 @@ module.exports = {
   getExerciseTypes,
   analyzePosture,
   getYmoveUsage,
+  debugYmoveExercise,
   syncYmoveExercises,
 };
