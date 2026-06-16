@@ -2,6 +2,8 @@
 // server.js — VTRX Backend API Server v2.0
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Sentry MUST be initialised before any other require so it can instrument them
+require('./instrument');
 require('dotenv').config();
 
 const express     = require('express');
@@ -23,6 +25,8 @@ const paymentRoutes       = require('./routes/payments');
 const notificationRoutes  = require('./routes/notifications');
 const aiRoutes            = require('./routes/ai');
 const uploadRoutes        = require('./routes/upload');
+const n8nRoutes           = require('./routes/n8n');
+const linearRoutes        = require('./routes/linear');
 
 const app  = express();
 app.set('trust proxy', 1);
@@ -116,11 +120,17 @@ app.use('/api/payments',      paymentRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/ai',            aiRoutes);
 app.use('/api/upload',        uploadRoutes);
+app.use('/api/n8n',           n8nRoutes);
+app.use('/api/linear',        linearRoutes);
 
 // ── 404 ───────────────────────────────────────────────────────────────────────
 app.use('*', (req, res) => {
   res.status(404).json({ success: false, message: `Route ${req.originalUrl} not found` });
 });
+
+// ── Sentry error handler (must be before any other error middleware) ───────────
+const Sentry = require('@sentry/node');
+Sentry.setupExpressErrorHandler(app);
 
 // ── Global error handler ──────────────────────────────────────────────────────
 app.use(errorHandler);
@@ -129,8 +139,9 @@ app.use(errorHandler);
 const server = app.listen(PORT, () => {
   logger.info(`🚀 VTRX API v2.0 on port ${PORT} [${process.env.NODE_ENV}]`);
   logger.info(`📡 Health: http://localhost:${PORT}/health`);
-  // Seed recipes in background — server is already accepting connections
+  // Background startup tasks — server is already accepting connections
   require('./scripts/seedRecipes').run().catch(e => logger.error('Recipe seed error:', e));
+  require('./scripts/seedPinecone').run().catch(e => logger.error('Pinecone seed error:', e));
 });
 
 process.on('SIGTERM', () => {

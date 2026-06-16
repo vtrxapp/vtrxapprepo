@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, createContext, useContext } from "react";
 import { loadStripe } from "@stripe/stripe-js";
-import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
+import { Elements, PaymentElement, PaymentRequestButtonElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { getNotificationToken, onForegroundMessage, isPushSupported } from "./firebase";
+import { identifyUser, resetAnalytics, track } from "./analytics";
 
 // Stripe.js loaded once at module scope — publishable key is safe in client code
 const _stripePromise = import.meta?.env?.VITE_STRIPE_PUBLISHABLE_KEY
@@ -88,6 +89,7 @@ const useUser = () => useContext(UserCtx);
 // VTRXAppInner registers the setter; everything else just calls openPaymentSheet().
 let _openPaymentSheet = null;
 const openPaymentSheet = (plan = "monthly") => {
+  track("upgrade_clicked", { plan });
   if (_openPaymentSheet) {
     _openPaymentSheet(plan);
   } else {
@@ -1249,7 +1251,7 @@ function SwipeableSet({ set:s, index:i, activeSet, onUpdate, onComplete, onDelet
 // ─────────────────────────────────────────────────────────────────────────────
 const PLAYBACK_SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
-function VideoPlayer({ videoUrl, thumbnailUrl, exerciseName, onProgress, onVideoComplete, initialPositionSecs = 0, fillContainer = false, onPortraitDetected }) {
+function VideoPlayer({ videoUrl, thumbnailUrl, exerciseName, onProgress, onVideoComplete, initialPositionSecs = 0, fillContainer = false, onPortraitDetected, isLoading = false }) {
   const videoRef    = useRef(null);
   const containerRef = useRef(null);
   const seekBarRef  = useRef(null);
@@ -1416,17 +1418,25 @@ function VideoPlayer({ videoUrl, thumbnailUrl, exerciseName, onProgress, onVideo
 
   const hasPiP = typeof document !== 'undefined' && 'pictureInPictureEnabled' in document;
 
-  // ── No video URL → show placeholder ───────────────────────────────────────
+  // ── No video URL → show loading spinner or placeholder ───────────────────
   if (!videoUrl) {
     return (
       <div style={{ position:'relative', width:'100%', height:210, background:'#0a0a0a', overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:10 }}>
         {thumbnailUrl
           ? <img src={thumbnailUrl} alt="" style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', filter:'brightness(0.35)' }}/>
           : null}
-        <div style={{ position:'relative', width:52, height:52, borderRadius:'50%', background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.12)', display:'flex', alignItems:'center', justifyContent:'center' }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="1.5"><polygon points="5 3 19 12 5 21"/></svg>
-        </div>
-        <span style={{ position:'relative', fontFamily:FONT, fontSize:10, color:'#444', letterSpacing:1.5 }}>DEMO VIDEO COMING SOON</span>
+        {isLoading ? (
+          <div style={{ position:'relative', display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
+            <div style={{ width:36, height:36, border:'2px solid rgba(255,255,255,0.08)', borderTop:'2px solid rgba(255,255,255,0.45)', borderRadius:'50%', animation:'spin 0.8s linear infinite' }}/>
+          </div>
+        ) : (
+          <>
+            <div style={{ position:'relative', width:52, height:52, borderRadius:'50%', background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.12)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="1.5"><polygon points="5 3 19 12 5 21"/></svg>
+            </div>
+            <span style={{ position:'relative', fontFamily:FONT, fontSize:10, color:'#444', letterSpacing:1.5 }}>DEMO VIDEO COMING SOON</span>
+          </>
+        )}
       </div>
     );
   }
@@ -1737,12 +1747,14 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
   const ex = exercise ? normaliseExercise(exercise) : normaliseExercise(EXERCISES[0]);
 
   const [resolvedVideoUrl, setResolvedVideoUrl] = useState(ex.videoUrl || null);
+  const [videoLoading, setVideoLoading] = useState(!!ex.ymoveId);
   const [resumePos, setResumePos] = useState(0);
   useEffect(()=>{
     setResolvedVideoUrl(ex.videoUrl || null); // show stored URL immediately while fresh one loads
-    if (!ex.ymoveId) return;                  // no ymoveId = no video source to refresh
+    if (!ex.ymoveId) { setVideoLoading(false); return; }
     const token = getAuthToken();
-    if (!token) return;
+    if (!token) { setVideoLoading(false); return; }
+    setVideoLoading(true);
     // Restore resume position
     try {
       const saved = JSON.parse(localStorage.getItem('vtrx_vidprog_' + ex.ymoveId) || 'null');
@@ -1751,7 +1763,8 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
     // Always fetch a fresh URL — ymove CDN links expire after 48 h, so stored URLs go stale
     apiCall(`/workouts/exercise-video/${ex.ymoveId}`)
       .then(d => { if (d?.data?.videoUrl) setResolvedVideoUrl(d.data.videoUrl); })
-      .catch(()=>{});
+      .catch(()=>{})
+      .finally(()=>{ setVideoLoading(false); });
   }, [ex.ymoveId, ex.videoUrl]);
 
   const [sets, setSets] = useState([{reps:"",weight:"",done:false},{reps:"",weight:"",done:false}]);
@@ -1831,6 +1844,7 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
 
   const videoProps = {
     videoUrl: resolvedVideoUrl,
+    isLoading: videoLoading,
     thumbnailUrl: ex.thumbnailUrl || ex.img || null,
     exerciseName: ex.name,
     initialPositionSecs: resumePos,
@@ -6083,6 +6097,7 @@ function PaymentSheet({ initialPlan = "monthly", onClose }) {
               <CheckoutForm
                 plan={plan}
                 isTrial={isTrial}
+                clientSecret={clientSecret}
                 onSuccess={onClose}
                 onBack={()=>setClientSecret(null)}
               />
@@ -6099,39 +6114,78 @@ function PaymentSheet({ initialPlan = "monthly", onClose }) {
   );
 }
 
-function CheckoutForm({ plan, isTrial, onSuccess, onBack }) {
+function CheckoutForm({ plan, isTrial, clientSecret, onSuccess, onBack }) {
   const stripe    = useStripe();
   const elements  = useElements();
   const { setIsPremium } = useUser();
-  const [loading, setLoading] = useState(false);
-  const [err,     setErr]     = useState("");
-  const [done,    setDone]    = useState(false);
+  const [loading,   setLoading]   = useState(false);
+  const [err,       setErr]       = useState("");
+  const [done,      setDone]      = useState(false);
+  const [payReq,    setPayReq]    = useState(null);
+  const [prChecked, setPrChecked] = useState(false);
 
-  const PLAN_LABEL = { monthly:"$9.99 / month", annual:"$69.99 / year" };
+  const PLAN_LABEL  = { monthly:"$9.99 / month", annual:"$69.99 / year" };
+  const PLAN_AMOUNT = { monthly: 999, annual: 6999 };
+
+  // Build a PaymentRequest so we can show native Apple Pay / Google Pay buttons
+  useEffect(() => {
+    if (!stripe || !clientSecret) return;
+    const pr = stripe.paymentRequest({
+      country:  "US",
+      currency: "usd",
+      total: {
+        label:  isTrial ? "VTRX Premium (30-day free trial)" : `VTRX Premium ${plan === "annual" ? "Annual" : "Monthly"}`,
+        amount: isTrial ? 0 : (PLAN_AMOUNT[plan] || 999),
+      },
+      requestPayerName:  false,
+      requestPayerEmail: false,
+    });
+
+    pr.canMakePayment().then(result => {
+      if (result) setPayReq(pr);
+      setPrChecked(true);
+    });
+
+    pr.on("paymentmethod", async (ev) => {
+      setLoading(true); setErr("");
+      const confirmFn = isTrial ? stripe.confirmSetup : stripe.confirmPayment;
+      const { error } = await confirmFn({
+        clientSecret,
+        confirmParams: { payment_method: ev.paymentMethod.id },
+        redirect: "if_required",
+      });
+      if (error) {
+        ev.complete("fail");
+        setErr(error.message || "Payment failed.");
+        setLoading(false);
+      } else {
+        ev.complete("success");
+        track("subscription_started", { plan, method: "wallet", isTrial });
+        setIsPremium(true);
+        setDone(true);
+        setTimeout(onSuccess, 2600);
+      }
+    });
+  }, [stripe, clientSecret, plan, isTrial]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!stripe || !elements) return;
     setLoading(true); setErr("");
-
-    // SetupIntent (trial) → confirmSetup; PaymentIntent → confirmPayment
     const confirmFn = isTrial
       ? (opts) => stripe.confirmSetup(opts)
       : (opts) => stripe.confirmPayment(opts);
-
     const { error } = await confirmFn({
       elements,
       confirmParams: { return_url: window.location.origin },
       redirect: "if_required",
     });
-
     if (error) {
       setErr(error.message || "Payment failed. Please check your card details.");
       setLoading(false);
       return;
     }
-
-    // Payment confirmed — update UI immediately; webhook syncs DB in background
+    track("subscription_started", { plan, method: "card", isTrial });
     setIsPremium(true);
     setDone(true);
     setTimeout(onSuccess, 2600);
@@ -6165,14 +6219,35 @@ function CheckoutForm({ plan, isTrial, onSuccess, onBack }) {
         </div>
       </div>
 
-      {/* Stripe Payment Element — handles card + Apple Pay + Google Pay */}
-      <PaymentElement
-        options={{
-          layout:  { type:"tabs", defaultCollapsed:false },
-          wallets: { applePay:"auto", googlePay:"auto" },
-          fields:  { billingDetails:{ name:"auto" } },
-        }}
-      />
+      {/* Apple Pay / Google Pay — shown as a prominent button when the browser supports it */}
+      {prChecked && payReq && (
+        <>
+          <PaymentRequestButtonElement
+            options={{
+              paymentRequest: payReq,
+              style: { paymentRequestButton: { type:"default", theme:"dark", height:"50px" } },
+            }}
+          />
+          <div style={{ display:"flex",alignItems:"center",gap:10,margin:"16px 0 14px" }}>
+            <div style={{ flex:1,height:1,background:"rgba(255,255,255,0.1)" }}/>
+            <span style={{ fontFamily:FONT,fontSize:11,color:"#555",letterSpacing:0.4 }}>or pay with card</span>
+            <div style={{ flex:1,height:1,background:"rgba(255,255,255,0.1)" }}/>
+          </div>
+        </>
+      )}
+
+      {/* Card form — wallets hidden when the PaymentRequestButton is already showing them */}
+      {prChecked && (
+        <PaymentElement
+          options={{
+            layout:  { type:"tabs", defaultCollapsed:false },
+            wallets: payReq
+              ? { applePay:"never", googlePay:"never" }
+              : { applePay:"auto",  googlePay:"auto"  },
+            fields:  { billingDetails:{ name:"auto" } },
+          }}
+        />
+      )}
 
       {err&&<div style={{ fontFamily:FONT,fontSize:13,color:"#EF4444",marginTop:14,textAlign:"center",lineHeight:1.4 }}>{err}</div>}
 
@@ -8226,6 +8301,7 @@ function VTRXAppInner({ setPaymentPlan }) {
         if (u._count?.workoutLogs)  setWorkoutsTotal(u._count.workoutLogs);
         if (u.isPremium)            setIsPremium(true);
         if (u.subscription)         setUser(prev=>({...prev, subscription: u.subscription}));
+        identifyUser({ ...u, isPremium: u.isPremium });
         afterSplash("dashboard");
       } else {
         afterSplash("onboarding");
@@ -8432,6 +8508,7 @@ function VTRXAppInner({ setPaymentPlan }) {
     try {
       await apiCall("/auth/logout", { method: "POST", body: JSON.stringify({}) });
     } catch(_e){} finally {
+      resetAnalytics();
       clearAuth();
     }
     setUser({ name:"", age:"", gender:"", weight:"", height:"", goal:"", level:"", days:5 });
@@ -8495,7 +8572,7 @@ function VTRXAppInner({ setPaymentPlan }) {
       completedExercises={completedExNames}
       onTogglePause={()=>setWorkoutPaused(p=>!p)}
       onBack={goBack}
-      onStart={()=>{ setWorkoutStarted(true); setWorkoutPaused(false); }}
+      onStart={()=>{ setWorkoutStarted(true); setWorkoutPaused(false); track("workout_started", { name: activeW?.name, type: activeW?.type }); }}
       onStop={async (elapsedSeconds=0, completedExList=[], pct=0)=>{
         const mins      = Math.max(1, Math.round(elapsedSeconds / 60));
         const wType     = (activeW.type || "strength").toLowerCase();
@@ -8506,6 +8583,7 @@ function VTRXAppInner({ setPaymentPlan }) {
         const snapExSets   = loggedExSets;
 
         clearInterval(workoutTimerRef.current);
+        track("workout_stopped", { name: activeW?.name, type: wType, durationMins: mins, completionPct: pct, exercisesLogged: snapExNames.length });
         setWorkoutDone(false);
         setWorkoutStarted(false);
         setWorkoutPaused(false);
@@ -8565,6 +8643,7 @@ function VTRXAppInner({ setPaymentPlan }) {
         const shouldLog = mins >= minMins && (!needsSets || snapExNames.length > 0);
 
         if (shouldLog) {
+          track("workout_completed", { name: activeW?.name, type: wType, durationMins: mins, caloriesBurned: actCal, exercisesLogged: snapExNames.length, energyLevel: energyKey });
           setWorkoutDone(true);
           setStreakDay(s=>s+1);
           setWorkoutsTotal(t=>t+1);
@@ -8689,6 +8768,7 @@ function VTRXAppInner({ setPaymentPlan }) {
             onNotifReset={()=>setNotifCount(0)}
             onMoodSelect={(key)=>{
               setEnergyKey(key);
+              track("mood_logged", { mood: key });
               try { localStorage.setItem("vtrx_mood", JSON.stringify({key, date:new Date().toISOString().slice(0,10)})); } catch(_e){}
               if (!DEMO_MODE && getAuthToken()) {
                 apiCall("/users/mood", { method:"POST", body:JSON.stringify({ mood:key }) }).catch(()=>{});

@@ -1,0 +1,157 @@
+{
+  "name": "VTRX — Stripe New Subscriber → Slack",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "stripe-events",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-stripe",
+      "name": "Stripe Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "stripe-events"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.type }}",
+              "operation": "equal",
+              "value2": "checkout.session.completed"
+            }
+          ]
+        }
+      },
+      "id": "filter-checkout",
+      "name": "Filter: checkout.session.completed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "customerEmail",
+              "value": "={{ $json.body.data.object.customer_details.email }}"
+            },
+            {
+              "name": "amountTotal",
+              "value": "={{ ($json.body.data.object.amount_total / 100).toFixed(2) }}"
+            },
+            {
+              "name": "currency",
+              "value": "={{ $json.body.data.object.currency.toUpperCase() }}"
+            },
+            {
+              "name": "plan",
+              "value": "={{ $json.body.data.object.metadata.plan ?? 'unknown' }}"
+            },
+            {
+              "name": "customerId",
+              "value": "={{ $json.body.data.object.customer }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-payment",
+      "name": "Extract Payment Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [680, 220]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "YOUR_SLACK_CHANNEL_ID",
+          "mode": "id"
+        },
+        "text": "💰 *New VTRX subscriber!*",
+        "otherOptions": {
+          "includeLinkToWorkflow": false
+        },
+        "blocksUi": {
+          "blocksValues": [
+            {
+              "type": "section",
+              "textUi": {
+                "text": "💰 *New VTRX Premium subscriber!*\n\n*Email:* {{ $json.customerEmail }}\n*Plan:* {{ $json.plan }}\n*Amount:* ${{ $json.amountTotal }} {{ $json.currency }}\n*Stripe customer:* `{{ $json.customerId }}`"
+              }
+            },
+            {
+              "type": "divider"
+            },
+            {
+              "type": "context",
+              "elementsUi": {
+                "elementsValues": [
+                  {
+                    "type": "mrkdwn",
+                    "text": "{{ $now.toISO() }}"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "id": "slack-alert",
+      "name": "Slack: Post Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [900, 220]
+    },
+    {
+      "parameters": {
+        "operation": "subscribe",
+        "listId": {
+          "__rl": true,
+          "value": "YOUR_MAILCHIMP_AUDIENCE_ID",
+          "mode": "id"
+        },
+        "email": "={{ $json.customerEmail }}",
+        "status": "subscribed",
+        "options": {
+          "tags": "premium,paid"
+        }
+      },
+      "id": "mailchimp-premium-tag",
+      "name": "Mailchimp: Tag as Premium",
+      "type": "n8n-nodes-base.mailchimp",
+      "typeVersion": 1,
+      "position": [900, 380]
+    }
+  ],
+  "connections": {
+    "Stripe Webhook": {
+      "main": [[{ "node": "Filter: checkout.session.completed", "type": "main", "index": 0 }]]
+    },
+    "Filter: checkout.session.completed": {
+      "main": [[{ "node": "Extract Payment Fields", "type": "main", "index": 0 }]]
+    },
+    "Extract Payment Fields": {
+      "main": [
+        [{ "node": "Slack: Post Alert", "type": "main", "index": 0 }],
+        [{ "node": "Mailchimp: Tag as Premium", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [{ "name": "vtrx" }]
+}

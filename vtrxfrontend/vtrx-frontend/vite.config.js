@@ -33,7 +33,7 @@ export default defineConfig({
 
   build: {
     outDir:    'dist',
-    sourcemap: false, // Set to true for debugging production issues
+    sourcemap: "hidden", // generated but not referenced in output — upload to Sentry for readable traces
     rollupOptions: {
       output: {
         // Split code into chunks for faster loading

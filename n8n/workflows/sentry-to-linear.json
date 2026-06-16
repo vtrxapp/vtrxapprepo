@@ -1,0 +1,152 @@
+{
+  "name": "VTRX — Sentry Error → Linear Issue",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sentry-to-linear",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-sentry",
+      "name": "Sentry Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "sentry-to-linear"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.action }}",
+              "operation": "equal",
+              "value2": "created"
+            }
+          ]
+        }
+      },
+      "id": "filter-new-issues",
+      "name": "Filter: New Issues Only",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.body.data.event.level === 'error' || $json.body.data.event.level === 'fatal' ? 1 : 0 }}",
+              "operation": "equal",
+              "value2": 1
+            }
+          ]
+        }
+      },
+      "id": "filter-severity",
+      "name": "Filter: Error/Fatal Only",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [680, 220]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "title",
+              "value": "=[Sentry] {{ $json.body.data.issue.title }}"
+            },
+            {
+              "name": "description",
+              "value": "=**Sentry Issue:** [{{ $json.body.data.issue.shortId }}]({{ $json.body.data.issue.permalink }})\n\n**Error:** {{ $json.body.data.issue.title }}\n\n**Culprit:** `{{ $json.body.data.issue.culprit }}`\n\n**Environment:** {{ $json.body.data.issue.project.name }}\n\n**First seen:** {{ $json.body.data.issue.firstSeen }}\n\n**Level:** {{ $json.body.data.event.level }}"
+            },
+            {
+              "name": "priority",
+              "value": "={{ $json.body.data.event.level === 'fatal' ? 1 : 2 }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "build-issue-payload",
+      "name": "Build Issue Payload",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [900, 220]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "teamId": {
+          "__rl": true,
+          "value": "YOUR_LINEAR_ENGINEERING_TEAM_ID",
+          "mode": "id"
+        },
+        "title": "={{ $json.title }}",
+        "additionalFields": {
+          "description": "={{ $json.description }}",
+          "priority": "={{ $json.priority }}",
+          "labelIds": ["YOUR_LINEAR_BUG_LABEL_ID"]
+        }
+      },
+      "id": "linear-create-issue",
+      "name": "Linear: Create Bug Issue",
+      "type": "n8n-nodes-base.linear",
+      "typeVersion": 1,
+      "position": [1120, 220]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "YOUR_SLACK_ENGINEERING_CHANNEL_ID",
+          "mode": "id"
+        },
+        "blocksUi": {
+          "blocksValues": [
+            {
+              "type": "section",
+              "textUi": {
+                "text": "🚨 *New bug auto-created in Linear from Sentry*\n\n*Issue:* <{{ $node['Linear: Create Bug Issue'].json.url }}|{{ $node['Linear: Create Bug Issue'].json.identifier }} — {{ $node['Build Issue Payload'].json.title }}>\n*Priority:* {{ $node['Build Issue Payload'].json.priority === 1 ? 'Urgent' : 'High' }}\n*Sentry:* {{ $node['Sentry Webhook'].json.body.data.issue.permalink }}"
+              }
+            }
+          ]
+        },
+        "otherOptions": {}
+      },
+      "id": "slack-notify",
+      "name": "Slack: Notify Engineering",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [1340, 220]
+    }
+  ],
+  "connections": {
+    "Sentry Webhook": {
+      "main": [[{ "node": "Filter: New Issues Only", "type": "main", "index": 0 }]]
+    },
+    "Filter: New Issues Only": {
+      "main": [[{ "node": "Filter: Error/Fatal Only", "type": "main", "index": 0 }]]
+    },
+    "Filter: Error/Fatal Only": {
+      "main": [[{ "node": "Build Issue Payload", "type": "main", "index": 0 }]]
+    },
+    "Build Issue Payload": {
+      "main": [[{ "node": "Linear: Create Bug Issue", "type": "main", "index": 0 }]]
+    },
+    "Linear: Create Bug Issue": {
+      "main": [[{ "node": "Slack: Notify Engineering", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "meta": { "templateCredsSetupCompleted": false },
+  "tags": [{ "name": "vtrx" }, { "name": "linear" }]
+}
