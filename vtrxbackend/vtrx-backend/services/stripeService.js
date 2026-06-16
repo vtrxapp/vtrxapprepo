@@ -17,6 +17,7 @@
 const Stripe = require('stripe');
 const prisma  = require('../config/database');
 const logger  = require('../utils/logger');
+const make    = require('./makeService');
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: '2024-06-20',
@@ -363,6 +364,9 @@ const activatePremium = async ({ userId, plan, stripeSubscriptionId }) => {
       },
     }),
   ]);
+
+  // Notify Make.com → Slack + CRM tag
+  make.send('SUBSCRIPTION', { userId, plan, stripeSubscriptionId });
 };
 
 // ── Get Subscription Status ────────────────────────────────────────────────────

@@ -15,6 +15,7 @@ const logger = require('../utils/logger');
 const { validationResult } = require('express-validator');
 const notif  = require('../services/notificationService');
 const { sendWelcomeEmail } = require('../services/emailService');
+const make   = require('../services/makeService');
 
 const signToken = (userId) => {
   return jwt.sign(
@@ -56,6 +57,7 @@ const signup = async (req, res) => {
 
     // Fire-and-forget — don't await so it never delays the signup response
     sendWelcomeEmail({ email: user.email, name: user.name }).catch(() => {});
+    make.send('USER_SIGNUP', { email: user.email, name: user.name, userId: user.id });
 
     res.status(201).json({
       success: true,
