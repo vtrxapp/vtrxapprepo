@@ -3,6 +3,7 @@ import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, PaymentRequestButtonElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { getNotificationToken, onForegroundMessage, isPushSupported } from "./firebase";
 import { identifyUser, resetAnalytics, track } from "./analytics";
+import Hls from "hls.js";
 
 // Stripe.js loaded once at module scope — publishable key is safe in client code
 const _stripePromise = import.meta?.env?.VITE_STRIPE_PUBLISHABLE_KEY
@@ -1262,12 +1263,13 @@ function SwipeableSet({ set:s, index:i, activeSet, onUpdate, onComplete, onDelet
 // ─────────────────────────────────────────────────────────────────────────────
 const PLAYBACK_SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
-function VideoPlayer({ videoUrl, thumbnailUrl, exerciseName, onProgress, onVideoComplete, initialPositionSecs = 0, fillContainer = false, onPortraitDetected, videoUrlLoading = false }) {
+function VideoPlayer({ videoUrl, hlsUrl = null, thumbnailUrl, exerciseName, onProgress, onVideoComplete, initialPositionSecs = 0, fillContainer = false, onPortraitDetected, videoUrlLoading = false }) {
   const videoRef    = useRef(null);
   const containerRef = useRef(null);
   const seekBarRef  = useRef(null);
   const hideTimer   = useRef(null);
   const isDragging  = useRef(false);
+  const hlsRef      = useRef(null);
 
   const [isPlaying,   setIsPlaying]   = useState(false);
   const [currentTime, setCurrentTime] = useState(initialPositionSecs);
@@ -1278,6 +1280,27 @@ function VideoPlayer({ videoUrl, thumbnailUrl, exerciseName, onProgress, onVideo
   const [showControls, setShowControls] = useState(true);
   const [isLoading,   setIsLoading]   = useState(false);
   const [hasError,    setHasError]    = useState(false);
+
+  // Manage video source — HLS via hls.js (Chrome/Firefox) or native (Safari/MP4)
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
+    setHasError(false);
+    if (!videoUrl && !hlsUrl) return;
+    if (hlsUrl && Hls.isSupported()) {
+      const hls = new Hls({ startLevel: -1 });
+      hlsRef.current = hls;
+      hls.loadSource(hlsUrl);
+      hls.attachMedia(v);
+      hls.on(Hls.Events.ERROR, (_, data) => { if (data.fatal) setHasError(true); });
+    } else if (hlsUrl && v.canPlayType('application/vnd.apple.mpegurl')) {
+      v.src = hlsUrl; // Safari native HLS
+    } else if (videoUrl) {
+      v.src = videoUrl;
+    }
+    return () => { if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; } };
+  }, [videoUrl, hlsUrl]);
 
   const speed = PLAYBACK_SPEEDS[speedIdx];
   const pct   = duration > 0 ? (currentTime / duration) * 100 : 0;
@@ -1430,7 +1453,7 @@ function VideoPlayer({ videoUrl, thumbnailUrl, exerciseName, onProgress, onVideo
   const hasPiP = typeof document !== 'undefined' && 'pictureInPictureEnabled' in document;
 
   // ── No video URL → show loading spinner or placeholder ───────────────────
-  if (!videoUrl) {
+  if (!videoUrl && !hlsUrl) {
     return (
       <div style={{ position:'relative', width:'100%', height:210, background:'#0a0a0a', overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:10 }}>
         {thumbnailUrl
@@ -1462,10 +1485,9 @@ function VideoPlayer({ videoUrl, thumbnailUrl, exerciseName, onProgress, onVideo
       onMouseMove={resetHideTimer}
       onTouchStart={resetHideTimer}
     >
-      {/* ─ Video element ─ */}
+      {/* ─ Video element — src is managed imperatively in the hlsRef useEffect above ─ */}
       <video
         ref={videoRef}
-        src={videoUrl}
         poster={thumbnailUrl || undefined}
         style={{ width:'100%', height:'100%', objectFit: isFullscreen ? 'contain' : 'cover', display:'block' }}
         playsInline
@@ -1758,10 +1780,12 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
   const ex = exercise ? normaliseExercise(exercise) : normaliseExercise(EXERCISES[0]);
 
   const [resolvedVideoUrl, setResolvedVideoUrl] = useState(ex.videoUrl || null);
+  const [resolvedHlsUrl,   setResolvedHlsUrl]   = useState(null);
   const [videoLoading, setVideoLoading] = useState(!!ex.ymoveId);
   const [resumePos, setResumePos] = useState(0);
   useEffect(()=>{
     setResolvedVideoUrl(ex.videoUrl || null); // show stored URL immediately while fresh one loads
+    setResolvedHlsUrl(null);
     if (!ex.ymoveId) { setVideoLoading(false); return; }
     const token = getAuthToken();
     if (!token) { setVideoLoading(false); return; }
@@ -1771,9 +1795,12 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
       const saved = JSON.parse(localStorage.getItem('vtrx_vidprog_' + ex.ymoveId) || 'null');
       if (saved?.pos > 5) setResumePos(saved.pos);
     } catch(_e){}
-    // Always fetch a fresh URL — ymove CDN links expire after 48 h, so stored URLs go stale
+    // Always fetch fresh URLs — ymove CDN links expire after 48 h, so stored URLs go stale
     apiCall(`/workouts/exercise-video/${ex.ymoveId}`)
-      .then(d => { if (d?.data?.videoUrl) setResolvedVideoUrl(d.data.videoUrl); })
+      .then(d => {
+        if (d?.data?.videoUrl) setResolvedVideoUrl(d.data.videoUrl);
+        if (d?.data?.hlsUrl)   setResolvedHlsUrl(d.data.hlsUrl);
+      })
       .catch(()=>{})
       .finally(()=>{ setVideoLoading(false); });
   }, [ex.ymoveId, ex.videoUrl]);
@@ -1855,6 +1882,7 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
 
   const videoProps = {
     videoUrl: resolvedVideoUrl,
+    hlsUrl: resolvedHlsUrl,
     videoUrlLoading: videoLoading,
     thumbnailUrl: ex.thumbnailUrl || ex.img || null,
     exerciseName: ex.name,

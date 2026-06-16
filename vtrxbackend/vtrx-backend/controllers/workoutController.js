@@ -811,11 +811,11 @@ const getUpcomingWorkouts = async (req, res) => {
 const getExerciseVideoUrl = async (req, res) => {
   const { ymoveId } = req.params;
   try {
-    const url = await ymove.getExerciseVideoUrl(ymoveId);
-    if (!url) {
+    const { videoUrl, hlsUrl } = await ymove.getExerciseVideoUrl(ymoveId);
+    if (!videoUrl && !hlsUrl) {
       return res.status(404).json({ success: false, message: 'Video not available' });
     }
-    res.json({ success: true, data: { videoUrl: url, expiresIn: 48 * 3600 } });
+    res.json({ success: true, data: { videoUrl, hlsUrl, expiresIn: 48 * 3600 } });
   } catch (error) {
     logger.error('getExerciseVideoUrl error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch video URL' });
@@ -1152,16 +1152,16 @@ const debugYmoveExercise = async (req, res) => {
   }
   try {
     const raw = await ymove.getExerciseById(id);
-    const videoUrl = raw?.videoUrl || raw?.video_url
-      || raw?.videos?.find(v => v.isPrimary)?.videoUrl
-      || raw?.videos?.[0]?.videoUrl
-      || null;
+    const primaryVideo = Array.isArray(raw?.videos) ? (raw.videos.find(v => v.isPrimary) || raw.videos[0]) : null;
+    const videoUrl = raw?.videoUrl || raw?.video_url || primaryVideo?.videoUrl || null;
+    const hlsUrl   = raw?.videoHlsUrl || null;
     res.json({
       success: true,
       data: {
-        raw,                          // full response so you can see all field names
-        resolvedVideoUrl: videoUrl,   // what our code would use as the video URL
-        hasVideo: !!videoUrl,
+        raw,                        // full response so you can see all field names
+        resolvedVideoUrl: videoUrl, // what our code uses as the MP4 video URL
+        resolvedHlsUrl:   hlsUrl,   // HLS streaming URL if available
+        hasVideo: !!videoUrl || !!hlsUrl,
       },
     });
   } catch (err) {

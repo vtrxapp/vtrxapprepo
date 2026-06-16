@@ -109,15 +109,21 @@ const getExerciseTypes = async () => {
   }
 };
 
-// Returns a fresh non-expired video URL for an exercise (video URLs expire after 48h)
+// Returns fresh non-expired video URLs for an exercise (video URLs expire after 48h)
+// Returns { videoUrl, hlsUrl } — hlsUrl is an HLS (.m3u8) streaming URL for broad device support
 const getExerciseVideoUrl = async (ymoveId) => {
-  if (!isConfigured() || ymoveId == null || ymoveId === '') return null;
+  if (!isConfigured() || ymoveId == null || ymoveId === '') return { videoUrl: null, hlsUrl: null };
   try {
     const exercise = await getExerciseById(ymoveId);
-    return exercise?.video_url || exercise?.videoUrl || null;
+    const primaryVideo = Array.isArray(exercise?.videos)
+      ? (exercise.videos.find(v => v.isPrimary) || exercise.videos[0])
+      : null;
+    const videoUrl = exercise?.videoUrl || exercise?.video_url || primaryVideo?.videoUrl || null;
+    const hlsUrl   = exercise?.videoHlsUrl || null;
+    return { videoUrl, hlsUrl };
   } catch {
     logger.warn(`ymove video URL failed for ${ymoveId}`);
-    return null;
+    return { videoUrl: null, hlsUrl: null };
   }
 };
 
