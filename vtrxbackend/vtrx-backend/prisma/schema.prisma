@@ -96,7 +96,7 @@ model Exercise {
   equipment    String?  // "Barbell", "Dumbbells", "Bodyweight"
   instructions String?
   videoUrl     String?  // S3/CloudFront URL or Ymove video ID
-  ymoveId      String?  // Ymove exercise ID
+  ymoveId      String?  @unique // Ymove exercise ID
   thumbnailUrl String?
   createdAt    DateTime @default(now())
 

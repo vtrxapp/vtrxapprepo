@@ -1143,6 +1143,62 @@ const getYmoveUsage = async (_req, res) => {
   res.json({ success: true, data: usage });
 };
 
+// ── POST /api/workouts/ymove/sync-exercises ───────────────────────────────────
+// Fetches every ymove exercise that has a video (no cap cost) and upserts it
+// into our Exercise table with ymoveId set. Safe to call repeatedly.
+const syncYmoveExercises = async (_req, res) => {
+  if (!ymove.isConfigured()) {
+    return res.status(503).json({ success: false, message: 'YMOVE_API_KEY not configured' });
+  }
+  try {
+    let page = 1;
+    const pageSize = 100;
+    let total = 0;
+    let upserted = 0;
+
+    while (true) {
+      const { exercises, total: t } = await ymove.getExercises({
+        hasVideo: true,
+        includeVideos: false,  // don't burn cap — metadata only
+        limit: pageSize,
+        page,
+      });
+      if (!exercises.length) break;
+      total = t || total;
+
+      for (const ex of exercises) {
+        const ymoveId = String(ex.id || ex.ymoveId || '');
+        if (!ymoveId) continue;
+
+        const name        = ex.name || 'Exercise';
+        const muscleGroup = ex.muscleGroup || ex.muscle_group || ex.primaryMuscle || 'Full Body';
+        const equipment   = ex.equipment   || null;
+        const thumbUrl    = ex.thumbnailUrl || ex.thumbnail_url || ex.gifUrl || ex.gif_url || null;
+        const instructions = Array.isArray(ex.instructions)
+          ? ex.instructions.join('\n')
+          : (ex.instructions || ex.description || null);
+
+        await prisma.exercise.upsert({
+          where:  { ymoveId },
+          // If ymoveId already exists, update metadata; otherwise create
+          update: { name, muscleGroup, equipment, thumbnailUrl: thumbUrl, instructions },
+          create: { name, muscleGroup, equipment, thumbnailUrl: thumbUrl, instructions, ymoveId },
+        });
+        upserted++;
+      }
+
+      if (page * pageSize >= total || exercises.length < pageSize) break;
+      page++;
+    }
+
+    logger.info(`ymove sync: upserted ${upserted} exercises with video`);
+    res.json({ success: true, data: { synced: upserted } });
+  } catch (error) {
+    logger.error('syncYmoveExercises error:', error);
+    res.status(500).json({ success: false, message: 'Sync failed' });
+  }
+};
+
 module.exports = {
   getWorkouts,
   getWorkoutById,
@@ -1164,4 +1220,5 @@ module.exports = {
   getExerciseTypes,
   analyzePosture,
   getYmoveUsage,
+  syncYmoveExercises,
 };
