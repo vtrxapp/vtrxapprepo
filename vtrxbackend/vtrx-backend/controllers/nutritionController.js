@@ -178,6 +178,76 @@ const getMealPlan = async (req, res) => {
   }
 };
 
+// ── POST /api/nutrition/ymove/sync-recipes ───────────────────────────────────
+// Admin-only: fetches all ymove recipes and upserts into the Recipe table.
+const syncYmoveRecipes = async (req, res) => {
+  if (!ymove.isConfigured()) {
+    return res.status(503).json({ success: false, message: 'YMOVE_API_KEY not configured' });
+  }
+  const adminIds = (process.env.ADMIN_USER_IDS || '').split(',').filter(Boolean);
+  const isAdmin  = req.user?.isAdmin || adminIds.includes(req.user?.id);
+  if (!isAdmin) {
+    return res.status(403).json({ success: false, message: 'Admin only' });
+  }
+
+  try {
+    let page = 1;
+    const pageSize = 100;
+    let fetchedTotal = null;
+    let upserted = 0;
+    let skipped  = 0;
+
+    while (true) {
+      const { recipes, total: t } = await ymove.getRecipes({ limit: pageSize, page });
+      if (!recipes.length) break;
+
+      if (fetchedTotal === null) fetchedTotal = t > 0 ? t : null;
+
+      for (const r of recipes) {
+        const rawId   = r.id != null ? r.id : r.ymoveId;
+        const ymoveId = rawId != null ? String(rawId) : '';
+        if (!ymoveId) { skipped++; continue; }
+
+        const name         = r.name || 'Recipe';
+        const calories     = parseInt(r.calories) || 0;
+        const protein      = parseFloat(r.protein) || 0;
+        const carbs        = parseFloat(r.carbs)   || 0;
+        const fat          = parseFloat(r.fat) || parseFloat(r.fats) || 0;
+        const prepTime     = parseInt(r.prepTime || r.prep_time || r.mins) || null;
+        const servings     = parseInt(r.servings) || 1;
+        const imageUrl     = r.imageUrl || r.image_url || r.img || null;
+        const tags         = Array.isArray(r.tags) ? r.tags : (r.tags ? [r.tags] : []);
+        const description  = r.description || r.desc || null;
+        const ingredients  = Array.isArray(r.ingredients) ? r.ingredients : [];
+        const instructions = Array.isArray(r.instructions) ? r.instructions
+          : (typeof r.instructions === 'string' ? [r.instructions] : []);
+
+        try {
+          await prisma.recipe.upsert({
+            where:  { ymoveId },
+            update: { name, calories, protein, carbs, fat, prepTime, servings, imageUrl, tags, description, ingredients, instructions },
+            create: { name, calories, protein, carbs, fat, prepTime, servings, imageUrl, tags, description, ingredients, instructions, ymoveId, isPublic: true },
+          });
+          upserted++;
+        } catch (err) {
+          logger.warn(`ymove recipe sync: skipping ${ymoveId} — ${err.message}`);
+          skipped++;
+        }
+      }
+
+      const fetched = page * pageSize;
+      if (recipes.length < pageSize || (fetchedTotal !== null && fetched >= fetchedTotal)) break;
+      page++;
+    }
+
+    logger.info(`ymove recipe sync complete: ${upserted} upserted, ${skipped} skipped`);
+    res.json({ success: true, data: { synced: upserted, skipped } });
+  } catch (error) {
+    logger.error('syncYmoveRecipes error:', error);
+    res.status(500).json({ success: false, message: 'Recipe sync failed' });
+  }
+};
+
 module.exports = {
   getRecipes,
   getRecipeById,
@@ -185,4 +255,5 @@ module.exports = {
   unsaveRecipe,
   getSavedRecipes,
   getMealPlan,
+  syncYmoveRecipes,
 };

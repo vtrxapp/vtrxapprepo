@@ -238,7 +238,7 @@ model Recipe {
   description  String?
   ingredients  String[]
   instructions String[]
-  ymoveId      String?
+  ymoveId      String?     @unique
   isPublic     Boolean     @default(true)
   createdAt    DateTime    @default(now())
 
