@@ -141,16 +141,17 @@ const getBatchVideoUrls = async (ymoveIds = []) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // GET /workouts/generate — generate a workout by muscle group / params
-// Params: muscleGroup, difficulty, equipment, exerciseCount
-const generateWorkout = async ({ muscleGroup, difficulty, equipment, exerciseCount = 6 } = {}) => {
+// Params: muscleGroup, exerciseType, difficulty, equipment, exerciseCount
+const generateWorkout = async ({ muscleGroup, exerciseType, difficulty, equipment, exerciseCount = 6 } = {}) => {
   if (!isConfigured()) return null;
   try {
     const { data } = await ymoveApi.get('/workouts/generate', {
       params: {
-        ...(muscleGroup    && { muscleGroup }),
-        ...(difficulty     && { difficulty }),
-        ...(equipment      && { equipment }),
-        ...(exerciseCount  && { exerciseCount }),
+        ...(muscleGroup  && { muscleGroup }),
+        ...(exerciseType && { exerciseType }),
+        ...(difficulty   && { difficulty }),
+        ...(equipment    && { equipment }),
+        ...(exerciseCount && { exerciseCount }),
         includeWarmup:   false,   // warmup counts toward monthly cap
         includeCooldown: false,   // cooldown counts toward monthly cap
       },
@@ -196,11 +197,13 @@ const generateProgram = async ({ goal, weeks = 4, daysPerWeek = 3, difficulty, e
   try {
     const { data } = await ymoveApi.get('/programs/generate', {
       params: {
-        ...(goal         && { goal }),
-        ...(weeks        && { weeks }),
-        ...(daysPerWeek  && { daysPerWeek }),
-        ...(difficulty   && { difficulty }),
-        ...(equipment    && { equipment }),
+        ...(goal        && { goal }),
+        ...(weeks       && { weeks }),
+        ...(daysPerWeek && { daysPerWeek }),
+        ...(difficulty  && { difficulty }),
+        ...(equipment   && { equipment }),
+        includeWarmup:   false,   // warmup counts toward monthly cap (x daysPerWeek x weeks)
+        includeCooldown: false,   // cooldown counts toward monthly cap
       },
     });
     return data?.data || data || null;

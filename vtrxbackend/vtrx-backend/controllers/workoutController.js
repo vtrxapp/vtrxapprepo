@@ -1069,9 +1069,9 @@ const replaceScheduleEntry = async (req, res) => {
 
 // ── GET /api/workouts/generate ────────────────────────────────────────────────
 const generateWorkout = async (req, res) => {
-  const { muscleGroup, difficulty, equipment, exerciseCount } = req.query;
+  const { muscleGroup, exerciseType, difficulty, equipment, exerciseCount } = req.query;
   try {
-    const result = await ymove.generateWorkout({ muscleGroup, difficulty, equipment, exerciseCount: parseInt(exerciseCount) || 6 });
+    const result = await ymove.generateWorkout({ muscleGroup, exerciseType, difficulty, equipment, exerciseCount: parseInt(exerciseCount) || 6 });
     if (!result) return res.status(503).json({ success: false, message: 'Workout generation unavailable' });
 
     // ymove returns exercises as { exercise: {...}, sets, reps, restSeconds }
@@ -1104,7 +1104,29 @@ const generateProgram = async (req, res) => {
   try {
     const result = await ymove.generateProgram({ goal, weeks: parseInt(weeks) || 4, daysPerWeek: parseInt(daysPerWeek) || 3, difficulty, equipment });
     if (!result) return res.status(503).json({ success: false, message: 'Program generation unavailable' });
-    res.json({ success: true, data: result });
+
+    // Flatten nested { exercise: {...}, sets, reps, restSeconds } in every day's exercises
+    const flattenEntry = (entry) => ({
+      ...(entry.exercise || entry),
+      sets:     entry.sets     ?? 3,
+      reps:     entry.reps     ?? '8-12',
+      restSecs: entry.restSeconds ?? entry.restSecs ?? 60,
+    });
+
+    const flattenDay = (day) => ({
+      ...day,
+      exercises: (day.exercises || []).map(flattenEntry),
+      warmup:    (day.warmup    || []).map(flattenEntry),
+      cooldown:  (day.cooldown  || []).map(flattenEntry),
+    });
+
+    res.json({
+      success: true,
+      data: {
+        ...result,
+        weeklySchedule: (result.weeklySchedule || []).map(flattenDay),
+      },
+    });
   } catch (err) {
     logger.error('generateProgram error:', err.message);
     res.status(500).json({ success: false, message: 'Failed to generate program' });
