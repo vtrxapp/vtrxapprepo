@@ -2218,24 +2218,30 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
         {/* Full-screen portrait video behind everything */}
         <VideoPlayer ref={videoPlayerRef} {...videoProps} fillContainer portraitMode />
 
-        {/* Centered play button — floats above panel, only shown when paused */}
+        {/* Play button — centered in visible area ABOVE the panel (top 32%).
+            Tapping play also dismisses the panel so the full portrait video is revealed. */}
         {!portraitPlaying && (
           <div
-            style={{ position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",zIndex:17,cursor:"pointer" }}
-            onClick={() => { videoPlayerRef.current?.togglePlay(); setPortraitPlaying(true); }}
+            style={{ position:"absolute", top:0, left:0, right:0, height:"32%",
+                     zIndex:16, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer" }}
+            onClick={() => {
+              videoPlayerRef.current?.togglePlay();
+              setPortraitPlaying(true);
+              // Auto-dismiss panel so the full portrait video fills the screen
+              if (panelRef.current) {
+                panelRef.current.style.transition = 'transform 0.38s cubic-bezier(0.32,0.72,0,1)';
+                panelRef.current.style.transform  = 'translateY(100%)';
+              }
+              setTimeout(() => setPanelOpen(false), 380);
+            }}
           >
-            <div style={{ width:64,height:64,borderRadius:"50%",background:PRIMARY,border:"2px solid rgba(255,255,255,0.25)",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 0 32px ${PRIMARY}88` }}>
+            <div style={{ width:64, height:64, borderRadius:"50%", background:PRIMARY,
+                          border:"2px solid rgba(255,255,255,0.3)", display:"flex",
+                          alignItems:"center", justifyContent:"center",
+                          boxShadow:`0 0 36px ${PRIMARY}99` }}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21"/></svg>
             </div>
           </div>
-        )}
-
-        {/* Transparent tap zone in visible area (above panel) — tap to pause while playing */}
-        {panelOpen && portraitPlaying && (
-          <div
-            style={{ position:"absolute",top:0,left:0,right:0,height:"32%",zIndex:16 }}
-            onClick={() => { videoPlayerRef.current?.togglePlay(); setPortraitPlaying(false); }}
-          />
         )}
 
         {/* Back button + title — always visible at top */}
