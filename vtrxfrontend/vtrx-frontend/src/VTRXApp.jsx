@@ -235,8 +235,24 @@ const normalizeInstructions = (r) => {
   return [];
 };
 
+// Extract prep time (in minutes) from free text — title or description
+const extractMinsFromText = (text) => {
+  if (!text) return 0;
+  const minMatch = text.match(/(\d+)\s*[-–]?\s*(?:minute|min|mins)/i);
+  if (minMatch) return parseInt(minMatch[1], 10);
+  const hrMatch = text.match(/(\d+)\s*hour/i);
+  if (hrMatch) return parseInt(hrMatch[1], 10) * 60;
+  return 0;
+};
+
 // Normalise ymove/DB recipe → shape RecipeFullPage expects
-const normalizeRecipe = (r) => ({
+const normalizeRecipe = (r) => {
+  const structuredMins = r.prepTimeMinutes || r.prep_time || r.prepTime || r.mins;
+  const prepMins = structuredMins ||
+    extractMinsFromText(r.name || r.title) ||
+    extractMinsFromText(r.description || r.summary || r.desc) ||
+    0;
+  return ({
   id:          r.id,
   ymoveId:     r.ymoveId || null,
   name:        r.name || r.title || 'Recipe',
@@ -245,9 +261,9 @@ const normalizeRecipe = (r) => ({
   protein:     Math.round(r.protein  || 0),
   fats:        r.fat      || r.fats  || 0,
   carbs:       r.carbs    || r.carbohydrates || 0,
-  mins:        r.prepTimeMinutes || r.prep_time || r.prepTime || r.mins || 0,
-  time:        `${r.prepTimeMinutes || r.prep_time || r.prepTime || r.mins || 0} min`,
-  prep:        `${r.prepTimeMinutes || r.prep_time || r.prepTime || r.mins || 0} min`,
+  mins:        prepMins,
+  time:        `${prepMins} min`,
+  prep:        `${prepMins} min`,
   servings:    r.servings  || 1,
   desc:        cleanRecipeDesc(r.description || r.summary || r.desc || r.shortDescription || ''),
   ingredients: (r.ingredients || []).map(ing => {
@@ -261,7 +277,8 @@ const normalizeRecipe = (r) => ({
   }),
   steps:       normalizeInstructions(r),
   tags:        r.tags || r.categories || r.cat || [],
-});
+  });
+};
 
 const WEEK_DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
