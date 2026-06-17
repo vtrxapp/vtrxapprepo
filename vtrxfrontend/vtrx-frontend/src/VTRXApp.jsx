@@ -1860,8 +1860,10 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
   const [isPortrait, setIsPortrait]   = useState(false);
   const [panelOpen,  setPanelOpen]    = useState(true);
   const [panelDragY, setPanelDragY]   = useState(0);
-  const dragRef      = useRef({ startY: 0, active: false });
+  const dragRef       = useRef({ startY: 0, active: false });
   const panelDragYRef = useRef(0);
+  // CSS variable on the panel element lets us skip React re-renders for smooth drag
+  const panelRef      = useRef(null);
 
   const completedSets = sets.filter(s=>s.done).length;
   const allDone = completedSets === sets.length;
@@ -1903,21 +1905,35 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
 
   const progressPct = (completedSets / sets.length) * 100;
 
-  // Portrait panel drag handlers (only handle drag-handle touch, not scroll area)
+  // Portrait panel drag — manipulate DOM directly so every pixel of drag
+  // moves the panel instantly with zero React re-render overhead.
   const onHandleTouchStart = (e) => {
     dragRef.current = { startY: e.touches[0].clientY, active: true };
+    if (panelRef.current) panelRef.current.style.transition = 'none';
+    e.stopPropagation();
   };
   const onHandleTouchMove = (e) => {
     if (!dragRef.current.active) return;
     const dy = Math.max(0, e.touches[0].clientY - dragRef.current.startY);
     panelDragYRef.current = dy;
-    setPanelDragY(dy);
+    if (panelRef.current) panelRef.current.style.transform = `translateY(${dy}px)`;
+    e.stopPropagation();
   };
-  const onHandleTouchEnd = () => {
-    if (panelDragYRef.current > 80) setPanelOpen(false);
-    setPanelDragY(0);
-    panelDragYRef.current = 0;
+  const onHandleTouchEnd = (e) => {
     dragRef.current.active = false;
+    const dy = panelDragYRef.current;
+    panelDragYRef.current = 0;
+    if (panelRef.current) {
+      panelRef.current.style.transition = 'transform 0.38s cubic-bezier(0.32,0.72,0,1)';
+      panelRef.current.style.transform  = dy > 60 ? 'translateY(100%)' : 'translateY(0px)';
+    }
+    if (dy > 60) {
+      // Delay state update until animation finishes so the slide-out plays
+      setTimeout(() => { setPanelOpen(false); setPanelDragY(0); }, 380);
+    } else {
+      setPanelDragY(0);
+    }
+    e?.stopPropagation?.();
   };
 
   const exSubtitle = [ex.muscles, ex.equipment].filter(Boolean).join(' · ');
@@ -2085,7 +2101,6 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
 
   // ── PORTRAIT LAYOUT: video fills screen, panel slides from bottom ───────────
   if (isPortrait && resolvedVideoUrl) {
-    const panelTransform = panelOpen ? `translateY(${panelDragY}px)` : "translateY(100%)";
     return (
       <div style={{ position:"absolute",inset:0,background:"#000",overflow:"hidden" }}>
 
@@ -2108,8 +2123,21 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
         {!panelOpen && (
           <div style={{ position:"absolute",bottom:36,left:0,right:0,zIndex:20,display:"flex",justifyContent:"center" }}>
             <button
-              onTouchStart={()=>setPanelOpen(true)}
-              onClick={()=>setPanelOpen(true)}
+              onTouchStart={(e)=>{
+                e.stopPropagation();
+                if (panelRef.current) {
+                  panelRef.current.style.transition = 'transform 0.38s cubic-bezier(0.32,0.72,0,1)';
+                  panelRef.current.style.transform  = 'translateY(0px)';
+                }
+                setPanelOpen(true);
+              }}
+              onClick={()=>{
+                if (panelRef.current) {
+                  panelRef.current.style.transition = 'transform 0.38s cubic-bezier(0.32,0.72,0,1)';
+                  panelRef.current.style.transform  = 'translateY(0px)';
+                }
+                setPanelOpen(true);
+              }}
               style={{ background:"rgba(255,255,255,0.13)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",border:"1px solid rgba(255,255,255,0.22)",borderRadius:40,padding:"10px 24px",display:"flex",alignItems:"center",gap:8,cursor:"pointer" }}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><polyline points="18 15 12 9 6 15"/></svg>
@@ -2118,8 +2146,9 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
           </div>
         )}
 
-        {/* Sliding panel — drag handle collapses it, revealing full video */}
+        {/* Sliding panel — swipe the drag zone down to reveal the full video */}
         <div
+          ref={panelRef}
           style={{
             position:"absolute",bottom:0,left:0,right:0,zIndex:15,
             height:"68%",
@@ -2127,20 +2156,27 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
             backdropFilter:"blur(18px)",
             WebkitBackdropFilter:"blur(18px)",
             borderRadius:"22px 22px 0 0",
-            transform:panelTransform,
-            transition:dragRef.current.active ? "none" : "transform 0.38s cubic-bezier(0.32,0.72,0,1)",
+            transform: panelOpen ? "translateY(0px)" : "translateY(100%)",
+            transition:"transform 0.38s cubic-bezier(0.32,0.72,0,1)",
             display:"flex",flexDirection:"column",
             boxShadow:"0 -16px 60px rgba(0,0,0,0.65)",
+            willChange:"transform",
           }}
         >
-          {/* Drag handle — touch here to swipe panel away */}
+          {/* Drag zone — large tap target, full width; swipe down to hide panel */}
           <div
-            style={{ paddingTop:12,paddingBottom:6,display:"flex",justifyContent:"center",alignItems:"center",flexShrink:0,userSelect:"none",touchAction:"none",cursor:"grab" }}
+            style={{
+              paddingTop:14,paddingBottom:14,
+              display:"flex",flexDirection:"column",alignItems:"center",gap:6,
+              flexShrink:0,userSelect:"none",touchAction:"none",cursor:"grab",
+              WebkitUserSelect:"none",
+            }}
             onTouchStart={onHandleTouchStart}
             onTouchMove={onHandleTouchMove}
             onTouchEnd={onHandleTouchEnd}
           >
-            <div style={{ width:36,height:4,borderRadius:2,background:"rgba(255,255,255,0.22)" }}/>
+            <div style={{ width:44,height:5,borderRadius:3,background:"rgba(255,255,255,0.4)" }}/>
+            <div style={{ fontFamily:FONT,fontSize:10,color:"rgba(255,255,255,0.35)",letterSpacing:1.5 }}>SWIPE DOWN TO HIDE</div>
           </div>
 
           {/* Scrollable content */}
