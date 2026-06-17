@@ -250,10 +250,15 @@ const normalizeRecipe = (r) => ({
   prep:        `${r.prep_time || r.prepTime || r.mins || '?'} min`,
   servings:    r.servings  || 1,
   desc:        cleanRecipeDesc(r.description || r.summary || r.desc || r.shortDescription || ''),
-  ingredients: (r.ingredients || []).map(ing =>
-    typeof ing === 'string' ? ing
-    : [ing.amount, ing.unit, ing.name].filter(Boolean).join(' ') || String(ing)
-  ),
+  ingredients: (r.ingredients || []).map(ing => {
+    if (typeof ing === 'string') return ing;
+    // ymove uses 'quantity' not 'amount'; unit is separate; ingredient name may be in 'ingredient'
+    const qty   = ing.amount ?? ing.quantity ?? ing.qty ?? '';
+    const unit  = ing.unit  ?? ing.measure ?? '';
+    const name  = ing.name  ?? ing.ingredient ?? ing.item ?? '';
+    const qtyStr = qty !== '' && qty !== 0 ? String(qty) : '';
+    return [qtyStr, unit, name].filter(Boolean).join(' ') || String(ing);
+  }),
   steps:       normalizeInstructions(r),
   tags:        r.tags || r.categories || r.cat || [],
 });
@@ -725,6 +730,9 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // ── RECIPE FULL PAGE ─────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
+// Module-level cache: recipe detail fetched once per session, re-opens are instant
+const _recipeDetailCache = {};
+
 function RecipeFullPage({ recipe, r, isSaved, saved, onSave, onToggleSave, onBack }) {
   const base   = recipe || r;
   const isS    = isSaved !== undefined ? isSaved : (saved || false);
@@ -740,8 +748,19 @@ function RecipeFullPage({ recipe, r, isSaved, saved, onSave, onToggleSave, onBac
     if (!base) return;
     const lookupId = base.id || base.ymoveId;
     if (!lookupId) return;
+    // Serve from cache instantly on re-open
+    if (_recipeDetailCache[lookupId]) {
+      setDetail(_recipeDetailCache[lookupId]);
+      return;
+    }
     apiCall(`/nutrition/recipes/${lookupId}`)
-      .then(d => { if (d?.data?.recipe) setDetail(normalizeRecipe(d.data.recipe)); })
+      .then(d => {
+        if (d?.data?.recipe) {
+          const normalized = normalizeRecipe(d.data.recipe);
+          _recipeDetailCache[lookupId] = normalized;
+          setDetail(normalized);
+        }
+      })
       .catch(() => {});
   }, [base?.id]);
   // Merge: use base as shell, overlay detail fields when available
@@ -1394,13 +1413,16 @@ function VideoPlayer({ videoUrl, hlsUrl = null, thumbnailUrl, exerciseName, onPr
     const onPlay     = () => { setIsPlaying(true);  resetHideTimer(); };
     const onPause    = () => { setIsPlaying(false); setShowControls(true); clearTimeout(hideTimer.current); };
     const onLoading  = () => setIsLoading(true);
-    const onCanPlay  = () => { setIsLoading(false); setHasError(false); };
-    const onMeta     = () => {
-      setDuration(v.duration || 0);
-      if (initialPositionSecs > 0) v.currentTime = initialPositionSecs;
+    const detectPortrait = () => {
       if (onPortraitDetected && v.videoWidth && v.videoHeight) {
         onPortraitDetected(v.videoHeight > v.videoWidth);
       }
+    };
+    const onCanPlay  = () => { setIsLoading(false); setHasError(false); detectPortrait(); };
+    const onMeta     = () => {
+      setDuration(v.duration || 0);
+      if (initialPositionSecs > 0) v.currentTime = initialPositionSecs;
+      detectPortrait(); // may be 0x0 for HLS at this point — onCanPlay catches it
     };
     const onTime     = () => {
       setCurrentTime(v.currentTime);
@@ -1909,7 +1931,14 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
     const scrollEl = exScrollRef.current;
 
     const onStart = (e) => {
-      dragRef.current = { startY: e.touches[0].clientY, isDismissing: false, decided: false };
+      const rect = panel.getBoundingClientRect();
+      const offsetInPanel = e.touches[0].clientY - rect.top;
+      dragRef.current = {
+        startY: e.touches[0].clientY,
+        isDismissing: false,
+        decided: false,
+        fromPillArea: offsetInPanel < 72,  // pill + label region — always dismissible
+      };
       panel.style.transition = 'none';
     };
 
@@ -1919,7 +1948,8 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
       if (!d.decided) {
         if (Math.abs(dy) < 6) return;                         // wait until direction is clear
         const scrollTop = scrollEl?.scrollTop ?? 0;
-        d.isDismissing = dy > 0 && scrollTop <= 0;            // downward + scroll at top → dismiss
+        // Dismiss if: pulled from pill area OR dragging down while already at scroll top
+        d.isDismissing = dy > 0 && (d.fromPillArea || scrollTop <= 0);
         d.decided = true;
       }
       if (d.isDismissing) {

@@ -305,9 +305,16 @@ const syncYmoveRecipes = async (req, res) => {
               .replace(/\s{2,}/g, ' ')
               .trim() || null
           : null;
-        // ingredients may be objects { name, amount } (from /recipes/:id) or strings
+        // ingredients may be objects (ymove uses quantity/unit/name) or plain strings
         const ingredients  = Array.isArray(r.ingredients)
-          ? r.ingredients.map(i => typeof i === 'string' ? i : `${i.amount ? i.amount + ' ' : ''}${i.name || ''}`.trim())
+          ? r.ingredients.map(i => {
+              if (typeof i === 'string') return i;
+              const qty  = i.amount ?? i.quantity ?? i.qty ?? '';
+              const unit = i.unit ?? i.measure ?? '';
+              const name = i.name ?? i.ingredient ?? i.item ?? '';
+              const qStr = qty !== '' && qty !== 0 ? String(qty) : '';
+              return [qStr, unit, name].filter(Boolean).join(' ');
+            }).filter(Boolean)
           : [];
         const instructions = Array.isArray(r.instructions) ? r.instructions
           : (typeof r.instructions === 'string' ? [r.instructions] : []);
