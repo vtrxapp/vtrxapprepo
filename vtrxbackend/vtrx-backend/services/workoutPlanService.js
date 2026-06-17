@@ -1,22 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// services/workoutPlanService.js — AI Workout Plan Generator (Anthropic Claude)
+// services/workoutPlanService.js — AI Workout Plan Generator (OpenAI)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const Anthropic = require('@anthropic-ai/sdk');
-const logger    = require('../utils/logger');
-
-let anthropic = null;
-const getClient = () => {
-  if (!anthropic) {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      logger.warn('ANTHROPIC_API_KEY not set — AI plan generation disabled');
-      return null;
-    }
-    anthropic = new Anthropic({ apiKey });
-  }
-  return anthropic;
-};
+const { getOpenAIClient } = require('./openaiClient');
+const logger              = require('../utils/logger');
 
 const SYSTEM_PROMPT = `You are VTRX's AI personal trainer. You create professional, science-based workout plans tailored to each user's exact profile. Every plan must be:
 
@@ -52,7 +39,7 @@ const buildEquipmentText = (equipment = [], location = '') => {
   ].filter(Boolean).join('\n');
 };
 
-// ── Build the Claude user prompt from user profile ────────────────────────────
+// ── Build the user prompt from user profile ────────────────────────────────────
 const buildUserPrompt = (user) => {
   const goal         = user.goal          || 'Stay Active';
   const level        = user.fitnessLevel  || 'Beginner';
@@ -189,24 +176,26 @@ const parseJSON = (raw) => {
 
 // ── Main export ───────────────────────────────────────────────────────────────
 const generateWorkoutPlan = async (user) => {
-  const client = getClient();
-  if (!client) throw new Error('ANTHROPIC_API_KEY not configured');
+  const client = getOpenAIClient();
+  if (!client) throw new Error('OPENAI_API_KEY not configured');
 
   const userPrompt = buildUserPrompt(user);
 
   logger.info(`Generating AI workout plan for user ${user.id} (${user.goal}, ${user.fitnessLevel})`);
 
-  const message = await client.messages.create({
-    model:      'claude-sonnet-4-6',
+  const response = await client.chat.completions.create({
+    model:      'gpt-4o-mini',
     max_tokens: 8000,
-    system:     SYSTEM_PROMPT,
-    messages:   [{ role: 'user', content: userPrompt }],
+    messages: [
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user',   content: userPrompt },
+    ],
   });
 
-  const text = message.content[0]?.text || '';
+  const text = response.choices[0].message.content || '';
   const plan = parseJSON(text);
 
-  logger.info(`Plan generated for user ${user.id}: "${plan.plan_name}" (${message.usage?.output_tokens || 0} tokens)`);
+  logger.info(`Plan generated for user ${user.id}: "${plan.plan_name}" (${response.usage?.completion_tokens || 0} tokens)`);
   return plan;
 };
 

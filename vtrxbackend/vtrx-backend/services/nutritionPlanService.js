@@ -1,21 +1,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// services/nutritionPlanService.js — AI Nutrition Plan Generator
+// services/nutritionPlanService.js — AI Nutrition Plan Generator (OpenAI)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const Anthropic = require('@anthropic-ai/sdk');
-const logger    = require('../utils/logger');
-const ymove     = require('./ymoveService');
-
-// ── Lazy Anthropic client (same singleton as workoutPlanService) ──────────────
-let anthropic = null;
-const getClient = () => {
-  if (!anthropic) {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) { logger.warn('ANTHROPIC_API_KEY not set'); return null; }
-    anthropic = new Anthropic({ apiKey });
-  }
-  return anthropic;
-};
+const { getOpenAIClient } = require('./openaiClient');
+const logger              = require('../utils/logger');
+const ymove               = require('./ymoveService');
 
 // ── Height string → cm ────────────────────────────────────────────────────────
 const parseHeightToCm = (heightStr) => {
@@ -290,22 +279,24 @@ const calculateNutritionTargets = (user) => {
 
 // ── Main export ───────────────────────────────────────────────────────────────
 const generateNutritionPlan = async (user) => {
-  const client = getClient();
-  if (!client) throw new Error('ANTHROPIC_API_KEY not configured');
+  const client = getOpenAIClient();
+  if (!client) throw new Error('OPENAI_API_KEY not configured');
 
   const calcs = calculateNutritionTargets(user);
   logger.info(`Generating nutrition plan for user ${user.id} (goal=${user.nutritionGoal}, ${calcs.calorieTarget} cal/day)`);
 
-  const message = await client.messages.create({
-    model:      'claude-sonnet-4-6',
+  const response = await client.chat.completions.create({
+    model:      'gpt-4o-mini',
     max_tokens: 10000,
-    system:     SYSTEM_PROMPT,
-    messages:   [{ role: 'user', content: buildPrompt(user, calcs) }],
+    messages: [
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user',   content: buildPrompt(user, calcs) },
+    ],
   });
 
-  const raw  = message.content[0]?.text || '';
+  const raw  = response.choices[0].message.content || '';
   const plan = parseJSON(raw);
-  logger.info(`Nutrition plan generated for user ${user.id}: "${plan.plan_name}" (${message.usage?.output_tokens || 0} tokens)`);
+  logger.info(`Nutrition plan generated for user ${user.id}: "${plan.plan_name}" (${response.usage?.completion_tokens || 0} tokens)`);
 
   const enriched = await enrichWithYmove(plan);
   return { plan: enriched, calcs };
