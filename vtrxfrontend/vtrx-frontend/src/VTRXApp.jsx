@@ -1895,11 +1895,64 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
 
   const [isPortrait, setIsPortrait]   = useState(false);
   const [panelOpen,  setPanelOpen]    = useState(true);
-  const [panelDragY, setPanelDragY]   = useState(0);
-  const dragRef       = useRef({ startY: 0, active: false });
+  const dragRef       = useRef({ startY: 0, isDismissing: false, decided: false });
   const panelDragYRef = useRef(0);
-  // CSS variable on the panel element lets us skip React re-renders for smooth drag
   const panelRef      = useRef(null);
+  const swipeUpStartY = useRef(0);
+
+  // Attach native (non-passive) touch listeners to the panel so we can call
+  // preventDefault() when we've decided the gesture is a dismiss swipe.
+  // JSX onTouchMove handlers are passive in most browsers and can't preventDefault.
+  useEffect(() => {
+    if (!isPortrait || !panelOpen || !panelRef.current) return;
+    const panel   = panelRef.current;
+    const scrollEl = exScrollRef.current;
+
+    const onStart = (e) => {
+      dragRef.current = { startY: e.touches[0].clientY, isDismissing: false, decided: false };
+      panel.style.transition = 'none';
+    };
+
+    const onMove = (e) => {
+      const d = dragRef.current;
+      const dy = e.touches[0].clientY - d.startY;
+      if (!d.decided) {
+        if (Math.abs(dy) < 6) return;                         // wait until direction is clear
+        const scrollTop = scrollEl?.scrollTop ?? 0;
+        d.isDismissing = dy > 0 && scrollTop <= 0;            // downward + scroll at top → dismiss
+        d.decided = true;
+      }
+      if (d.isDismissing) {
+        e.preventDefault();                                    // prevent scroll while dismissing
+        const clampedDy = Math.max(0, dy);
+        panelDragYRef.current = clampedDy;
+        panel.style.transform = `translateY(${clampedDy}px)`;
+      }
+    };
+
+    const onEnd = () => {
+      const d = dragRef.current;
+      if (!d.decided) { panel.style.transition = 'transform 0.38s cubic-bezier(0.32,0.72,0,1)'; return; }
+      const dy = panelDragYRef.current;
+      panelDragYRef.current = 0;
+      panel.style.transition = 'transform 0.38s cubic-bezier(0.32,0.72,0,1)';
+      if (d.isDismissing && dy > 60) {
+        panel.style.transform = 'translateY(100%)';
+        setTimeout(() => setPanelOpen(false), 380);
+      } else {
+        panel.style.transform = 'translateY(0px)';
+      }
+    };
+
+    panel.addEventListener('touchstart', onStart, { passive: true });
+    panel.addEventListener('touchmove',  onMove,  { passive: false });
+    panel.addEventListener('touchend',   onEnd,   { passive: true  });
+    return () => {
+      panel.removeEventListener('touchstart', onStart);
+      panel.removeEventListener('touchmove',  onMove);
+      panel.removeEventListener('touchend',   onEnd);
+    };
+  }, [isPortrait, panelOpen]);
 
   const completedSets = sets.filter(s=>s.done).length;
   const allDone = completedSets === sets.length;
@@ -1941,36 +1994,6 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
 
   const progressPct = (completedSets / sets.length) * 100;
 
-  // Portrait panel drag — manipulate DOM directly so every pixel of drag
-  // moves the panel instantly with zero React re-render overhead.
-  const onHandleTouchStart = (e) => {
-    dragRef.current = { startY: e.touches[0].clientY, active: true };
-    if (panelRef.current) panelRef.current.style.transition = 'none';
-    e.stopPropagation();
-  };
-  const onHandleTouchMove = (e) => {
-    if (!dragRef.current.active) return;
-    const dy = Math.max(0, e.touches[0].clientY - dragRef.current.startY);
-    panelDragYRef.current = dy;
-    if (panelRef.current) panelRef.current.style.transform = `translateY(${dy}px)`;
-    e.stopPropagation();
-  };
-  const onHandleTouchEnd = (e) => {
-    dragRef.current.active = false;
-    const dy = panelDragYRef.current;
-    panelDragYRef.current = 0;
-    if (panelRef.current) {
-      panelRef.current.style.transition = 'transform 0.38s cubic-bezier(0.32,0.72,0,1)';
-      panelRef.current.style.transform  = dy > 60 ? 'translateY(100%)' : 'translateY(0px)';
-    }
-    if (dy > 60) {
-      // Delay state update until animation finishes so the slide-out plays
-      setTimeout(() => { setPanelOpen(false); setPanelDragY(0); }, 380);
-    } else {
-      setPanelDragY(0);
-    }
-    e?.stopPropagation?.();
-  };
 
   const exSubtitle = [ex.muscles, ex.equipment].filter(Boolean).join(' · ');
 
@@ -2135,89 +2158,78 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
     </div>
   );
 
-  // ── PORTRAIT LAYOUT: video fills screen, panel slides from bottom ───────────
+  // ── PORTRAIT LAYOUT: video fills screen, content panel slides from bottom ─────
   if (isPortrait && resolvedVideoUrl) {
+    const openPanel = () => {
+      if (panelRef.current) {
+        panelRef.current.style.transition = 'transform 0.38s cubic-bezier(0.32,0.72,0,1)';
+        panelRef.current.style.transform  = 'translateY(0px)';
+      }
+      setPanelOpen(true);
+    };
+
     return (
       <div style={{ position:"absolute",inset:0,background:"#000",overflow:"hidden" }}>
 
-        {/* Full-screen portrait video as background */}
+        {/* Full-screen portrait video behind everything */}
         <VideoPlayer {...videoProps} fillContainer />
 
-        {/* Header gradient overlay */}
-        <div style={{ position:"absolute",top:0,left:0,right:0,zIndex:20,padding:"50px 18px 24px",background:"linear-gradient(180deg,rgba(0,0,0,0.8) 0%,transparent 100%)",pointerEvents:"none" }}>
+        {/* Back button + title — always visible at top */}
+        <div style={{ position:"absolute",top:0,left:0,right:0,zIndex:20,padding:"50px 18px 24px",background:"linear-gradient(180deg,rgba(0,0,0,0.75) 0%,transparent 100%)",pointerEvents:"none" }}>
           <div style={{ display:"flex",alignItems:"center",pointerEvents:"all" }}>
             <button onClick={onBack} style={{ width:36,height:36,borderRadius:"50%",background:"rgba(0,0,0,0.5)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",border:"1px solid rgba(255,255,255,0.15)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"#fff",fontSize:20,flexShrink:0 }}>‹</button>
             <div style={{ flex:1,textAlign:"center",padding:"0 12px" }}>
               <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:"#fff",textShadow:"0 1px 6px rgba(0,0,0,0.7)" }}>{ex.name}</div>
-              {exSubtitle && <div style={{ fontFamily:FONT,fontSize:12,color:"rgba(255,255,255,0.75)",marginTop:3 }}>{exSubtitle}</div>}
+              {exSubtitle && <div style={{ fontFamily:FONT,fontSize:12,color:"rgba(255,255,255,0.7)",marginTop:3 }}>{exSubtitle}</div>}
             </div>
             <div style={{ width:36 }}/>
           </div>
         </div>
 
-        {/* Show Details pill when panel is dismissed */}
+        {/* When panel is hidden: full-screen swipe-up zone to restore it */}
         {!panelOpen && (
-          <div style={{ position:"absolute",bottom:36,left:0,right:0,zIndex:20,display:"flex",justifyContent:"center" }}>
-            <button
-              onTouchStart={(e)=>{
-                e.stopPropagation();
-                if (panelRef.current) {
-                  panelRef.current.style.transition = 'transform 0.38s cubic-bezier(0.32,0.72,0,1)';
-                  panelRef.current.style.transform  = 'translateY(0px)';
-                }
-                setPanelOpen(true);
-              }}
-              onClick={()=>{
-                if (panelRef.current) {
-                  panelRef.current.style.transition = 'transform 0.38s cubic-bezier(0.32,0.72,0,1)';
-                  panelRef.current.style.transform  = 'translateY(0px)';
-                }
-                setPanelOpen(true);
-              }}
-              style={{ background:"rgba(255,255,255,0.13)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",border:"1px solid rgba(255,255,255,0.22)",borderRadius:40,padding:"10px 24px",display:"flex",alignItems:"center",gap:8,cursor:"pointer" }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><polyline points="18 15 12 9 6 15"/></svg>
-              <span style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#fff" }}>Show Details</span>
-            </button>
+          <div
+            style={{ position:"absolute",inset:0,zIndex:14 }}
+            onTouchStart={(e) => { swipeUpStartY.current = e.touches[0].clientY; }}
+            onTouchEnd={(e) => {
+              const dy = swipeUpStartY.current - e.changedTouches[0].clientY;
+              if (dy > 40) openPanel(); // upward swipe anywhere on screen
+            }}
+          >
+            {/* Subtle "swipe up" hint at bottom */}
+            <div style={{ position:"absolute",bottom:44,left:0,right:0,display:"flex",flexDirection:"column",alignItems:"center",gap:6,pointerEvents:"none" }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="2.5"><polyline points="18 15 12 9 6 15"/></svg>
+              <div style={{ fontFamily:FONT,fontSize:11,color:"rgba(255,255,255,0.4)",letterSpacing:1.5 }}>SWIPE UP FOR DETAILS</div>
+            </div>
           </div>
         )}
 
-        {/* Sliding panel — swipe the drag zone down to reveal the full video */}
+        {/* Content panel — native touch listeners (see useEffect) handle the drag */}
         <div
           ref={panelRef}
           style={{
             position:"absolute",bottom:0,left:0,right:0,zIndex:15,
             height:"68%",
-            background:"linear-gradient(180deg,rgba(10,14,30,0.94) 0%,rgba(10,15,30,0.98) 40%)",
-            backdropFilter:"blur(18px)",
-            WebkitBackdropFilter:"blur(18px)",
-            borderRadius:"22px 22px 0 0",
+            background:"linear-gradient(180deg,rgba(8,12,26,0.96) 0%,rgba(8,12,26,0.99) 40%)",
+            backdropFilter:"blur(20px)",
+            WebkitBackdropFilter:"blur(20px)",
+            borderRadius:"24px 24px 0 0",
             transform: panelOpen ? "translateY(0px)" : "translateY(100%)",
             transition:"transform 0.38s cubic-bezier(0.32,0.72,0,1)",
             display:"flex",flexDirection:"column",
-            boxShadow:"0 -16px 60px rgba(0,0,0,0.65)",
+            boxShadow:"0 -20px 60px rgba(0,0,0,0.7)",
             willChange:"transform",
           }}
         >
-          {/* Drag zone — large tap target, full width; swipe down to hide panel */}
-          <div
-            style={{
-              paddingTop:14,paddingBottom:14,
-              display:"flex",flexDirection:"column",alignItems:"center",gap:6,
-              flexShrink:0,userSelect:"none",touchAction:"none",cursor:"grab",
-              WebkitUserSelect:"none",
-            }}
-            onTouchStart={onHandleTouchStart}
-            onTouchMove={onHandleTouchMove}
-            onTouchEnd={onHandleTouchEnd}
-          >
-            <div style={{ width:44,height:5,borderRadius:3,background:"rgba(255,255,255,0.4)" }}/>
-            <div style={{ fontFamily:FONT,fontSize:10,color:"rgba(255,255,255,0.35)",letterSpacing:1.5 }}>SWIPE DOWN TO HIDE</div>
+          {/* Pill handle — visual affordance only; the whole panel is draggable */}
+          <div style={{ paddingTop:12,paddingBottom:10,display:"flex",flexDirection:"column",alignItems:"center",gap:5,flexShrink:0,userSelect:"none",pointerEvents:"none" }}>
+            <div style={{ width:44,height:5,borderRadius:3,background:"rgba(255,255,255,0.35)" }}/>
+            <div style={{ fontFamily:FONT,fontSize:10,color:"rgba(255,255,255,0.3)",letterSpacing:1.5 }}>SWIPE DOWN TO HIDE</div>
           </div>
 
           {/* Scrollable content */}
           <div ref={exScrollRef} style={{ flex:1,overflowY:"auto",paddingBottom:110 }}>
-            <div style={{ padding:"8px 16px 0" }}>{innerContent}</div>
+            <div style={{ padding:"4px 16px 0" }}>{innerContent}</div>
           </div>
 
           {cta}
