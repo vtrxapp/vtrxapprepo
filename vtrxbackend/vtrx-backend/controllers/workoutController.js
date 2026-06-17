@@ -826,10 +826,39 @@ const getExerciseVideoUrl = async (req, res) => {
 
     // Name-based fallback: exercise has no ymoveId — search ymove to find it
     if (!videoUrl && !hlsUrl && name) {
-      const { exercises } = await ymove.getExercises({ search: name, limit: 5 });
-      const match = exercises.find(e =>
-        (e.title || e.name || '').toLowerCase() === name.toLowerCase()
-      ) || exercises[0];
+      // Normalise common gym abbreviations before searching
+      const NAME_MAP = {
+        'rdl':          'romanian deadlift',
+        'romanian dl':  'romanian deadlift',
+        'db ':          'dumbbell ',
+        'bb ':          'barbell ',
+        'ohp':          'overhead press',
+        'cgbp':         'close grip bench press',
+        'incline db':   'incline dumbbell',
+        'decline db':   'decline dumbbell',
+      };
+      let searchName = name.toLowerCase();
+      for (const [abbr, full] of Object.entries(NAME_MAP)) {
+        if (searchName === abbr || searchName.startsWith(abbr)) {
+          searchName = searchName.replace(abbr, full);
+          break;
+        }
+      }
+
+      // Try search using both ymove param variants (search= and query=)
+      let exercises = [];
+      for (const paramKey of ['search', 'query']) {
+        const res = await ymove.getExercises({ [paramKey]: searchName, limit: 10 });
+        if (res.exercises.length > 0) { exercises = res.exercises; break; }
+      }
+
+      // Prefer exact name match, then partial match, then first result with a video
+      const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const nameLower = norm(searchName);
+      const match =
+        exercises.find(e => norm(e.title || e.name) === nameLower) ||
+        exercises.find(e => norm(e.title || e.name).includes(nameLower) || nameLower.includes(norm(e.title || e.name))) ||
+        exercises[0];
 
       if (match) {
         foundId = match.id != null ? String(match.id) : null;
@@ -956,6 +985,7 @@ const formatScheduleEntry = async (s) => {
         sets:         3,
         reps:         '8-12',
         thumbnailUrl: ex.thumbnailUrl || null,
+        ymoveId:      ex.ymoveId      || null,
       }));
     } else {
       mappedExercises = matched.map(we => ({
@@ -965,6 +995,7 @@ const formatScheduleEntry = async (s) => {
         sets:         we.sets,
         reps:         we.reps,
         thumbnailUrl: we.exercise.thumbnailUrl || null,
+        ymoveId:      we.exercise.ymoveId      || null,
       }));
     }
   } else {
@@ -975,6 +1006,7 @@ const formatScheduleEntry = async (s) => {
       sets:         we.sets,
       reps:         we.reps,
       thumbnailUrl: we.exercise.thumbnailUrl || null,
+      ymoveId:      we.exercise.ymoveId      || null,
     }));
   }
 
