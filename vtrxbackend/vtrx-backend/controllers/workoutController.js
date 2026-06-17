@@ -218,6 +218,9 @@ const logWorkout = async (req, res) => {
         .then(w => w && pine.upsertWorkout(w)).catch(() => {});
     }
 
+    // Milestone notifications (fire-and-forget)
+    require('../services/notificationScheduler').checkMilestones(req.user.id).catch(() => {});
+
     res.status(201).json({
       success: true,
       message: 'Workout logged successfully!',

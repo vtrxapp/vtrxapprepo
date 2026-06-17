@@ -5145,32 +5145,81 @@ function NotifSectionIcon({ type }) {
 }
 function NotifSettingsPage({ onBack }) {
   const { dark } = useTheme();
-  const T = dark ? DARK : LIGHT;
   const notifScrollRef = useScrollPos("notif-settings");
-  const [settings, setSettings] = useState({
-    dailyWorkout: true,  restDay: false,
-    mealOfDay: true,     waterIntake: true,
-    streakAlert: true,   aiSummary: false,    weeklyReport: true,
-    newChallenges: false, challengeProgress: false,
-    likesComments: false, directMessages: false, newFollowers: false,
-    specialOffers: false, productRecs: false,
-  });
-  const toggle = k => setSettings(p => ({...p, [k]: !p[k]}));
+
+  const [prefs, setPrefs]       = useState(null);
+  const [saving, setSaving]     = useState(false);
+  const [saved, setSaved]       = useState(false);
+  const [testing, setTesting]   = useState(false);
+  const [testSent, setTestSent] = useState(false);
+
+  // Load preferences from backend
+  useEffect(() => {
+    apiCall('/notifications/preferences')
+      .then(d => {
+        if (d?.data?.preferences) setPrefs(d.data.preferences);
+      })
+      .catch(() => {
+        // Fallback defaults if server unreachable
+        setPrefs({
+          workoutReminderOn: true, workoutReminderHour: 8,
+          streakAlertOn: true, reengagementOn: true,
+          milestoneOn: true, weeklyRecapOn: true, trialWarningOn: true,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+        });
+      });
+  }, []);
+
+  const toggle = async (key) => {
+    const next = { ...prefs, [key]: !prefs[key] };
+    setPrefs(next);
+    await apiCall('/notifications/preferences', {
+      method: 'PATCH',
+      body: JSON.stringify({ [key]: !prefs[key] }),
+    }).catch(() => {});
+  };
+
+  const setReminderHour = async (h) => {
+    const next = { ...prefs, workoutReminderHour: h };
+    setPrefs(next);
+    setSaving(true);
+    await apiCall('/notifications/preferences', {
+      method: 'PATCH',
+      body: JSON.stringify({ workoutReminderHour: h }),
+    }).catch(() => {});
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  const sendTest = async () => {
+    setTesting(true);
+    await apiCall('/notifications/test', { method: 'POST', body: JSON.stringify({ type: 'workout_reminder' }) }).catch(() => {});
+    setTesting(false);
+    setTestSent(true);
+    setTimeout(() => setTestSent(false), 3000);
+  };
 
   const Toggle = ({ k }) => (
     <button onClick={() => toggle(k)} style={{
       width:50, height:28, borderRadius:14, border:"none", cursor:"pointer",
-      background: settings[k] ? PRIMARY : "#374151",
+      background: prefs?.[k] ? PRIMARY : "#374151",
       position:"relative", transition:"background 0.25s", flexShrink:0,
+      opacity: prefs ? 1 : 0.4,
     }}>
       <div style={{
         width:22, height:22, borderRadius:"50%", background:"#fff",
         position:"absolute", top:3,
-        left: settings[k] ? 25 : 3,
+        left: prefs?.[k] ? 25 : 3,
         transition:"left 0.25s", boxShadow:"0 1px 4px rgba(0,0,0,0.3)",
       }}/>
     </button>
   );
+
+  const HOUR_LABELS = [
+    "12am","1am","2am","3am","4am","5am","6am","7am","8am","9am","10am","11am",
+    "12pm","1pm","2pm","3pm","4pm","5pm","6pm","7pm","8pm","9pm","10pm","11pm",
+  ];
 
   const Section = ({ icon, iconBg, title, sub, rows, locked }) => (
     <div style={{ background:"#fff", borderRadius:20, padding:"18px 20px", marginBottom:14 }}>
@@ -5210,55 +5259,82 @@ function NotifSettingsPage({ onBack }) {
       </div>
 
       <div ref={notifScrollRef} style={{ flex:1, overflowY:"auto", padding:"0 16px 32px" }}>
-        {/* Info banner */}
-        <div style={{ background:PRIMARY, borderRadius:16, padding:"14px 18px", marginBottom:20, display:"flex", gap:14, alignItems:"flex-start" }}>
-          <div style={{ width:32, height:32, borderRadius:"50%", background:"rgba(255,255,255,0.2)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>
-          <div>
-            <div style={{ fontFamily:FONT, fontWeight:700, fontSize:14, color:"#fff", marginBottom:3 }}>Notification Timing</div>
-            <div style={{ fontFamily:FONT, fontSize:13, color:"rgba(255,255,255,0.85)", lineHeight:1.55 }}>You can customize notification times in your device settings or by tapping on individual notification types above.</div>
+
+        {/* Workout reminder time picker */}
+        <div style={{ background:"#fff", borderRadius:20, padding:"18px 20px", marginBottom:14 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:16 }}>
+            <div style={{ width:48, height:48, borderRadius:"50%", background:PRIMARY, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+              <NotifSectionIcon type="workout"/>
+            </div>
+            <div>
+              <div style={{ fontFamily:FONT, fontWeight:800, fontSize:16, color:"#111" }}>Workout Reminders</div>
+              <div style={{ fontFamily:FONT, fontSize:12, color:"#888888", marginTop:2 }}>Get notified about your daily workout</div>
+            </div>
           </div>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+            <div>
+              <div style={{ fontFamily:FONT, fontWeight:600, fontSize:14, color:"#111" }}>Daily workout reminder</div>
+              <div style={{ fontFamily:FONT, fontSize:12, color:"#888888", marginTop:2 }}>Only sent if you haven't trained yet</div>
+            </div>
+            <Toggle k="workoutReminderOn"/>
+          </div>
+          {prefs?.workoutReminderOn && (
+            <div>
+              <div style={{ fontFamily:FONT, fontWeight:600, fontSize:13, color:"#555", marginBottom:8 }}>
+                Reminder time: <span style={{ color:PRIMARY, fontWeight:800 }}>{HOUR_LABELS[prefs?.workoutReminderHour ?? 8]}</span>
+                {saving && <span style={{ color:"#aaa", fontWeight:400, marginLeft:8 }}>saving…</span>}
+                {saved  && <span style={{ color:"#22C55E", fontWeight:400, marginLeft:8 }}>saved ✓</span>}
+              </div>
+              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                {[5,6,7,8,9,10,11,12,17,18,19,20].map(h => (
+                  <button key={h} onClick={() => setReminderHour(h)} style={{
+                    padding:"5px 11px", borderRadius:20, border:"none", cursor:"pointer",
+                    background: (prefs?.workoutReminderHour ?? 8) === h ? PRIMARY : "#f0f0f0",
+                    color: (prefs?.workoutReminderHour ?? 8) === h ? "#fff" : "#555",
+                    fontFamily:FONT, fontWeight:700, fontSize:12,
+                  }}>{HOUR_LABELS[h]}</button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
-        <Section icon="workout" iconBg={PRIMARY} title="Workout Reminders" sub="Get notified about your scheduled workouts"
-          rows={[
-            {key:"dailyWorkout", label:"Daily workout reminders",  sub:"Remind me to exercise daily"},
-            {key:"restDay",      label:"Rest day reminders",       sub:"Gentle reminders for recovery days"},
-          ]}
+        <Section icon="trophy" iconBg="#22C55E" title="Streak Protection" sub="Alert at 6pm if your streak is at risk"
+          rows={[{ key:"streakAlertOn", label:"Streak alert", sub:"Warn me if I haven't trained and my streak will break" }]}
         />
-        <Section icon="meal" iconBg="#F97316" title="Meal & Hydration" sub="Stay on top of nutrition and water goals"
-          rows={[
-            {key:"mealOfDay",    label:"Meal of the Day",          sub:"Daily reminder to check your meal suggestion"},
-            {key:"waterIntake",  label:"Water intake reminders",   sub:"Stay hydrated throughout the day"},
-          ]}
+        <Section icon="users" iconBg="#F97316" title="Re-engagement" sub="Friendly nudge after 5+ days away"
+          rows={[{ key:"reengagementOn", label:"Comeback reminders", sub:"Reach out if I've been quiet for a while" }]}
         />
-        <Section icon="goal" iconBg="#22C55E" title="Progress & Insights" sub="Streaks, AI analysis and weekly reports"
-          rows={[
-            {key:"streakAlert",  label:"Streak alerts",            sub:"Warn me if I'm at risk of losing my streak"},
-            {key:"aiSummary",    label:"AI summary ready",         sub:"Notify when my performance analysis is ready"},
-            {key:"weeklyReport", label:"Weekly progress report",   sub:"Sunday summary of my training week"},
-          ]}
+        <Section icon="tag" iconBg="#A855F7" title="Milestones & Achievements" sub="Celebrate your wins"
+          rows={[{ key:"milestoneOn", label:"Milestone celebrations", sub:"1st workout, 7-day streak, 30-day member and more" }]}
         />
-        <Section icon="challenge" iconBg="#A855F7" title="Challenge Updates" sub="Coming soon — challenge mode launches next update"
-          locked={true}
-          rows={[
-            {key:"newChallenges",      label:"New challenges",      sub:"Notify when new challenges are available"},
-            {key:"challengeProgress",  label:"Challenge progress",  sub:"Updates on your challenge achievements"},
-          ]}
+        <Section icon="users" iconBg="#0EA5E9" title="Weekly Recap" sub="Sunday 10am progress summary"
+          rows={[{ key:"weeklyRecapOn", label:"Weekly progress report", sub:"Sent Sunday at 10am only if you trained that week" }]}
         />
-        <Section icon="community" iconBg="#0EA5E9" title="Community" sub="Coming soon — social features launching soon"
-          locked={true}
-          rows={[
-            {key:"likesComments",  label:"Likes and comments",     sub:"When someone likes or comments on your posts"},
-            {key:"directMessages", label:"Direct messages",        sub:"New messages from other users"},
-            {key:"newFollowers",   label:"New followers",          sub:"When someone starts following you"},
-          ]}
+        <Section icon="tag" iconBg="#EF4444" title="Trial & Billing" sub="Never miss a payment deadline"
+          rows={[{ key:"trialWarningOn", label:"Trial expiry warning", sub:"3 days and 24h before your trial ends" }]}
         />
-        <Section icon="promo" iconBg="#374151" title="Promotions & Offers" sub="Deals and personalised recommendations"
-          rows={[
-            {key:"specialOffers", label:"Special offers",          sub:"Discounts on premium features and gear"},
-            {key:"productRecs",   label:"Product recommendations", sub:"Personalised fitness product suggestions"},
-          ]}
-        />
+
+        {/* Test notification */}
+        <div style={{ background:"rgba(255,255,255,0.06)", borderRadius:20, padding:"16px 20px", marginTop:4 }}>
+          <div style={{ fontFamily:FONT, fontWeight:700, fontSize:14, color:"#fff", marginBottom:6 }}>Test push notifications</div>
+          <div style={{ fontFamily:FONT, fontSize:12, color:"rgba(255,255,255,0.55)", marginBottom:14 }}>
+            Send yourself a test notification to confirm everything is working.
+          </div>
+          <button onClick={sendTest} disabled={testing || testSent} style={{
+            width:"100%", padding:"12px", borderRadius:14, border:"none", cursor:"pointer",
+            background: testSent ? "#22C55E" : PRIMARY,
+            color:"#fff", fontFamily:FONT, fontWeight:800, fontSize:14,
+            opacity: testing ? 0.7 : 1,
+          }}>
+            {testSent ? "✓ Notification sent!" : testing ? "Sending…" : "Send Test Notification"}
+          </button>
+        </div>
+
+        {/* Timezone info */}
+        <div style={{ textAlign:"center", marginTop:18, fontFamily:FONT, fontSize:11, color:"rgba(255,255,255,0.3)" }}>
+          Times shown in your local timezone · {prefs?.timezone || 'Detecting…'}
+        </div>
       </div>
     </div>
   );
@@ -8575,9 +8651,10 @@ function VTRXAppInner({ setPaymentPlan }) {
     try {
       const token = await getNotificationToken();
       if (token) {
+        const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
         await apiCall('/notifications/register', {
           method: 'POST',
-          body: JSON.stringify({ token, platform: 'web' }),
+          body: JSON.stringify({ token, platform: 'web', timezone }),
         });
       }
     } catch(_e) {}

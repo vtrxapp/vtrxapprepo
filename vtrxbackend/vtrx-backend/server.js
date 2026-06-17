@@ -142,6 +142,7 @@ const server = app.listen(PORT, () => {
   // Background startup tasks — server is already accepting connections
   require('./scripts/seedRecipes').run().catch(e => logger.error('Recipe seed error:', e));
   require('./scripts/seedPinecone').run().catch(e => logger.error('Pinecone seed error:', e));
+  require('./services/notificationScheduler').start();
 });
 
 process.on('SIGTERM', () => {

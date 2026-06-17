@@ -56,8 +56,9 @@ model User {
   deviceTokens    DeviceToken[]
   personalRecords PersonalRecord[]
   waterLogs       WaterLog[]
-  videoProgress   VideoProgress[]
-  schedules       WorkoutSchedule[]
+  videoProgress         VideoProgress[]
+  schedules             WorkoutSchedule[]
+  notificationPrefs     NotificationPreference?
 
   @@map("users")
 }
@@ -427,4 +428,36 @@ model WaterLog {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("water_logs")
+}
+
+// ── NOTIFICATION_PREFERENCES ──────────────────────────────────────────────────
+// Per-user notification opt-in/out and schedule settings
+model NotificationPreference {
+  id                   String   @id @default(uuid())
+  userId               String   @unique
+  timezone             String   @default("UTC")
+  workoutReminderOn    Boolean  @default(true)
+  workoutReminderHour  Int      @default(8)   // 0-23 in user's local time
+  streakAlertOn        Boolean  @default(true)
+  reengagementOn       Boolean  @default(true)
+  milestoneOn          Boolean  @default(true)
+  weeklyRecapOn        Boolean  @default(true)
+  trialWarningOn       Boolean  @default(true)
+  updatedAt            DateTime @updatedAt
+
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
+}
+
+// ── NOTIFICATION_LOG ──────────────────────────────────────────────────────────
+// Dedup log to avoid sending the same notification type more than once per window
+model NotificationLog {
+  id           String   @id @default(uuid())
+  userId       String
+  type         String
+  sentAt       DateTime @default(now())
+
+  @@index([userId, type, sentAt])
+  @@map("notification_log")
 }
