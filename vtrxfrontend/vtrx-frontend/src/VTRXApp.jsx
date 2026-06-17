@@ -208,9 +208,37 @@ const RECIPE_DIET_MAP = {
 };
 const RECIPE_PAGE_SIZE = 20;
 
+// Strip Wikibooks/CC attribution appended by ymove to some recipe descriptions
+const cleanRecipeDesc = (s) => {
+  if (!s) return '';
+  return s
+    .replace(/\[Adapted from Wikibooks[^\]]*\]/gi, '')
+    .replace(/Adapted from Wikibooks[^.]*\./gi, '')
+    .replace(/\(CC BY[^)]*\)/gi, '')
+    .replace(/https?:\/\/en\.wikibooks\.org\S*/gi, '')
+    .replace(/https?:\/\/\S+wikibooks\S*/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+};
+
+const normalizeInstructions = (r) => {
+  const raw = r.instructions ?? r.steps ?? r.directions ?? r.method ?? null;
+  if (Array.isArray(raw) && raw.length > 0) {
+    return raw.map(s =>
+      typeof s === 'string' ? s.trim()
+      : s.description || s.step || s.text || s.body || String(s)
+    ).filter(Boolean);
+  }
+  if (typeof raw === 'string' && raw.trim()) {
+    return raw.split(/\n+/).map(s => s.trim()).filter(Boolean);
+  }
+  return [];
+};
+
 // Normalise ymove/DB recipe → shape RecipeFullPage expects
 const normalizeRecipe = (r) => ({
   id:          r.id,
+  ymoveId:     r.ymoveId || null,
   name:        r.name || r.title || 'Recipe',
   img:         r.image_url || r.imageUrl || r.thumbnail_url || r.thumbnailUrl || r.image || r.img || '',
   cal:         r.calories || r.cal || 0,
@@ -221,18 +249,12 @@ const normalizeRecipe = (r) => ({
   time:        `${r.prep_time || r.prepTime || r.mins || '?'} min`,
   prep:        `${r.prep_time || r.prepTime || r.mins || '?'} min`,
   servings:    r.servings  || 1,
-  desc:        r.description || r.summary || r.desc || r.shortDescription || '',
+  desc:        cleanRecipeDesc(r.description || r.summary || r.desc || r.shortDescription || ''),
   ingredients: (r.ingredients || []).map(ing =>
     typeof ing === 'string' ? ing
     : [ing.amount, ing.unit, ing.name].filter(Boolean).join(' ') || String(ing)
   ),
-  steps:       Array.isArray(r.instructions)
-    ? r.instructions.map(s => typeof s === 'string' ? s : s.description || s.step || s.text || String(s))
-    : Array.isArray(r.steps)
-      ? r.steps.map(s => typeof s === 'string' ? s : s.description || s.step || s.text || String(s))
-      : typeof r.instructions === 'string'
-        ? r.instructions.split('\n').filter(Boolean)
-        : [],
+  steps:       normalizeInstructions(r),
   tags:        r.tags || r.categories || r.cat || [],
 });
 
@@ -704,14 +726,28 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
 // ── RECIPE FULL PAGE ─────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
 function RecipeFullPage({ recipe, r, isSaved, saved, onSave, onToggleSave, onBack }) {
-  const meal  = recipe || r;
-  const isS   = isSaved !== undefined ? isSaved : (saved || false);
+  const base   = recipe || r;
+  const isS    = isSaved !== undefined ? isSaved : (saved || false);
   const doSave = onSave || onToggleSave || (()=>{});
   const [checked,    setChecked]    = useState([]);
   const [rating,     setRating]     = useState(0);
   const [hovered,    setHovered]    = useState(0);
   const [rated,      setRated]      = useState(false);
   const [showRating, setShowRating] = useState(false);
+  // Fetch full recipe detail to get instructions (search results omit them)
+  const [detail, setDetail] = useState(null);
+  useEffect(() => {
+    if (!base) return;
+    const lookupId = base.id || base.ymoveId;
+    if (!lookupId) return;
+    apiCall(`/nutrition/recipes/${lookupId}`)
+      .then(d => { if (d?.data?.recipe) setDetail(normalizeRecipe(d.data.recipe)); })
+      .catch(() => {});
+  }, [base?.id]);
+  // Merge: use base as shell, overlay detail fields when available
+  const meal = detail
+    ? { ...base, ...detail, desc: detail.desc || base?.desc, img: base?.img || detail.img }
+    : base;
   if (!meal) return null;
   const toggle = (i) => setChecked(p => p.includes(i) ? p.filter(x=>x!==i) : [...p,i]);
   const handleRate = (star) => { setRating(star); setRated(true); setTimeout(()=>setShowRating(false),1400); };

@@ -71,13 +71,70 @@ const getRecipeById = async (req, res) => {
   try {
     let recipe = await prisma.recipe.findUnique({ where: { id } });
 
-    // If not in our DB, try Ymove
+    // If not in our DB, try ymove directly (id may be a ymoveId/slug)
     if (!recipe) {
       recipe = await ymove.getRecipeById(id);
     }
 
     if (!recipe) {
       return res.status(404).json({ success: false, message: 'Recipe not found' });
+    }
+
+    // DB recipes from the sync often lack instructions (search endpoint omits them).
+    // Fetch the full detail from ymove if instructions are missing and we have a ymoveId.
+    const hasInstructions = Array.isArray(recipe.instructions)
+      ? recipe.instructions.length > 0
+      : !!recipe.instructions;
+
+    if (!hasInstructions && recipe.ymoveId) {
+      const fresh = await ymove.getRecipeById(recipe.ymoveId);
+      if (fresh) {
+        const freshInstructions = Array.isArray(fresh.instructions)
+          ? fresh.instructions
+          : typeof fresh.instructions === 'string'
+            ? [fresh.instructions]
+            : [];
+        // Strip Wikibooks attribution from description
+        const cleanDesc = (s) => s
+          ? s.replace(/\[Adapted from Wikibooks[^\]]*\]/gi, '')
+             .replace(/Adapted from Wikibooks[^.]*\./gi, '')
+             .replace(/\(CC BY[^)]*\)/gi, '')
+             .replace(/https?:\/\/[^\s]*wikibooks[^\s]*/gi, '')
+             .replace(/\s{2,}/g, ' ')
+             .trim()
+          : s;
+
+        // Merge fresh data onto the DB record and persist for future requests
+        recipe = {
+          ...recipe,
+          instructions: freshInstructions.length > 0 ? freshInstructions : recipe.instructions,
+          description:  cleanDesc(fresh.description || recipe.description),
+        };
+        // Back-fill instructions in DB so next request is instant
+        if (freshInstructions.length > 0) {
+          prisma.recipe.update({
+            where: { id: recipe.id },
+            data:  {
+              instructions: freshInstructions,
+              description:  recipe.description,
+            },
+          }).catch(() => {});
+        }
+      }
+    }
+
+    // Always clean the description before returning
+    if (recipe.description) {
+      recipe = {
+        ...recipe,
+        description: recipe.description
+          .replace(/\[Adapted from Wikibooks[^\]]*\]/gi, '')
+          .replace(/Adapted from Wikibooks[^.]*\./gi, '')
+          .replace(/\(CC BY[^)]*\)/gi, '')
+          .replace(/https?:\/\/[^\s]*wikibooks[^\s]*/gi, '')
+          .replace(/\s{2,}/g, ' ')
+          .trim(),
+      };
     }
 
     res.json({ success: true, data: { recipe } });
@@ -238,7 +295,16 @@ const syncYmoveRecipes = async (req, res) => {
         const imageUrl     = r.imageUrl || r.image_url || r.img || null;
         // ymove uses 'diet' (array) for dietary tags; fall back to 'tags'
         const tags         = Array.isArray(r.diet) ? r.diet : (Array.isArray(r.tags) ? r.tags : (r.tags ? [r.tags] : []));
-        const description  = r.description || r.desc || null;
+        const rawDesc      = r.description || r.desc || null;
+        const description  = rawDesc
+          ? rawDesc
+              .replace(/\[Adapted from Wikibooks[^\]]*\]/gi, '')
+              .replace(/Adapted from Wikibooks[^.]*\./gi, '')
+              .replace(/\(CC BY[^)]*\)/gi, '')
+              .replace(/https?:\/\/[^\s]*wikibooks[^\s]*/gi, '')
+              .replace(/\s{2,}/g, ' ')
+              .trim() || null
+          : null;
         // ingredients may be objects { name, amount } (from /recipes/:id) or strings
         const ingredients  = Array.isArray(r.ingredients)
           ? r.ingredients.map(i => typeof i === 'string' ? i : `${i.amount ? i.amount + ' ' : ''}${i.name || ''}`.trim())
