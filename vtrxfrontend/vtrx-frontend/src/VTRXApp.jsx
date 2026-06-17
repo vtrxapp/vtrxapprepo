@@ -3630,8 +3630,13 @@ function WorkoutScreen({ onContinue, onBack }) {
   return <Shell bg="https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=800&q=80" overlay="linear-gradient(180deg,rgba(0,0,0,0.55) 0%,rgba(0,0,0,0.55) 30%,rgba(0,0,0,0.85) 100%)"><NavBar title="Customize Workout" step={2} total={4} onBack={onBack} onSkip={onContinue}/><div style={{ flex:1,overflowY:"auto",padding:"0 24px 24px" }}><Q n="1" text="What is your primary goal?" sub="(Select one)"/><ChipGroup options={["Build Muscle","Lose Weight","Stay Active","Improve Endurance","Get Toned"]} value={goal} onChange={setGoal}/><Q n="2" text="What is your experience level?" sub="(Select one)"/><ChipGroup options={["Beginner","Intermediate","Advanced","Professional"]} value={level} onChange={setLevel}/><Q n="3" text="What is your preferred workout style?" sub="(Pick 1–3)"/><ChipGroup options={["Strength Training","Cardio","HIIT","Bodyweight","Functional Fitness"]} value={style} onChange={setStyle} multi/><Q n="4" text="How many times do you want to work out each week?"/><ChipGroup options={["1–2 Days/Week","3–4 Days/Week","5+ Days/Week"]} value={days} onChange={setDays}/><Q n="5" text="Where do you usually work out?" sub="(Select one)"/><ChipGroup options={["Full Gym","Home","Outdoors","Mix of both"]} value={location} onChange={setLocation}/><Q n="6" text="What equipment do you have access to?" sub="(Select all that apply)"/><ChipGroup options={["Dumbbells","Barbell & Plates","Pull-up Bar","Resistance Bands","Kettlebells","Bench","Cable Machine","No Equipment"]} value={equip} onChange={setEquip} multi/><Q n="7" text="How much time can you dedicate to fitness daily?"/><ChipGroup options={["15–30 minutes","30–45 minutes","45–60 minutes","60+ minutes"]} value={time} onChange={setTime}/><div style={{marginTop:28}}><CTA label="CONTINUE" onClick={()=>{ const newPrefs={goal:goal||user.goal, fitnessLevel:level||user.fitnessLevel, workoutTime:time, workoutLocation:location, location:location, workoutStyle:style, equipment:equip, daysPerWeek:parseInt(days)||user.daysPerWeek}; setUser(u=>({...u,...newPrefs})); if(getAuthToken()){apiCall('/users/profile',{method:'PUT',body:JSON.stringify({goal:newPrefs.goal,fitnessLevel:newPrefs.fitnessLevel,daysPerWeek:newPrefs.daysPerWeek,equipment:newPrefs.equipment,location:newPrefs.location,sessionDuration:time,preferredStyles:Array.isArray(style)?style:[style].filter(Boolean)})}).catch(()=>{}); } onContinue(); }}/></div></div></Shell>;
 }
 function NutritionScreen({ onContinue, onBack }) {
+  const { setUser } = useUser();
   const[want,setWant]=useState("");const[nutGoal,setNutGoal]=useState("");const[track,setTrack]=useState("");const[diet,setDiet]=useState([]);const[meals,setMeals]=useState("");
-  return <Shell bg="https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=800&q=80" overlay="linear-gradient(180deg,rgba(0,10,20,0.45) 0%,rgba(0,10,20,0.55) 30%,rgba(0,10,20,0.9) 100%)"><NavBar title="Customize Nutrition" step={3} total={4} onBack={onBack} onSkip={onContinue}/><div style={{ flex:1,overflowY:"auto",padding:"0 24px 24px" }}><Q n="1" text="Would you like meal suggestions based on your goals?"/><ChipGroup options={["Yes","No"]} value={want} onChange={setWant}/><Q n="2" text="What's your main nutrition goal?"/><ChipGroup options={["Lose Fat","Build Muscle","Maintain","Eat clean","Improve Energy"]} value={nutGoal} onChange={setNutGoal}/><Q n="3" text="Do you track your calories or macros?"/><ChipGroup options={["Yes, both","Only Calories","No, but I'd like to","No, not interested"]} value={track} onChange={setTrack}/><Q n="4" text="Do you have any dietary preferences or restrictions?"/><ChipGroup options={["Vegan","Vegetarian","Gluten Free","Dairy-Free","No Peanuts","Other?"]} value={diet} onChange={setDiet} multi/><Q n="5" text="How many meals do you eat daily?"/><ChipGroup options={["2 meals","3 meals","4+ meals","It varies"]} value={meals} onChange={setMeals}/><div style={{marginTop:28}}><CTA label="CONTINUE" onClick={onContinue}/></div></div></Shell>;
+  const GOAL_MAP  = {"Lose Fat":"lose_fat","Build Muscle":"build_muscle","Maintain":"maintain","Eat clean":"eat_clean","Improve Energy":"improve_energy"};
+  const TRACK_MAP = {"Yes, both":"yes_both","Only Calories":"only_calories","No, but I'd like to":"no_but_interested","No, not interested":"no_not_interested"};
+  const DIET_MAP  = {"Vegan":"vegan","Vegetarian":"vegetarian","Gluten Free":"gluten_free","Dairy-Free":"dairy_free","No Peanuts":"no_peanuts","Other?":"other"};
+  const MEALS_MAP = {"2 meals":"2","3 meals":"3","4+ meals":"4_plus","It varies":"varies"};
+  return <Shell bg="https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=800&q=80" overlay="linear-gradient(180deg,rgba(0,10,20,0.45) 0%,rgba(0,10,20,0.55) 30%,rgba(0,10,20,0.9) 100%)"><NavBar title="Customize Nutrition" step={3} total={4} onBack={onBack} onSkip={onContinue}/><div style={{ flex:1,overflowY:"auto",padding:"0 24px 24px" }}><Q n="1" text="Would you like meal suggestions based on your goals?"/><ChipGroup options={["Yes","No"]} value={want} onChange={setWant}/><Q n="2" text="What's your main nutrition goal?"/><ChipGroup options={["Lose Fat","Build Muscle","Maintain","Eat clean","Improve Energy"]} value={nutGoal} onChange={setNutGoal}/><Q n="3" text="Do you track your calories or macros?"/><ChipGroup options={["Yes, both","Only Calories","No, but I'd like to","No, not interested"]} value={track} onChange={setTrack}/><Q n="4" text="Do you have any dietary preferences or restrictions?"/><ChipGroup options={["Vegan","Vegetarian","Gluten Free","Dairy-Free","No Peanuts","Other?"]} value={diet} onChange={setDiet} multi/><Q n="5" text="How many meals do you eat daily?"/><ChipGroup options={["2 meals","3 meals","4+ meals","It varies"]} value={meals} onChange={setMeals}/><div style={{marginTop:28}}><CTA label="CONTINUE" onClick={()=>{ const prefs={ wantsMealSuggestions:want==="Yes", nutritionGoal:GOAL_MAP[nutGoal]||nutGoal||"maintain", trackingPreference:TRACK_MAP[track]||track||"no_not_interested", dietaryRestrictions:diet.map(d=>DIET_MAP[d]||d.toLowerCase().replace(/\s+/g,"_")), mealsPerDay:MEALS_MAP[meals]||meals||"3" }; setUser(u=>({...u,...prefs})); if(getAuthToken()){apiCall('/users/profile',{method:'PUT',body:JSON.stringify(prefs)}).catch(()=>{});} onContinue(); }}/></div></div></Shell>;
 }
 function ChallengeScreen({ onContinue, onBack }) {
   return (
@@ -7400,6 +7405,8 @@ function ProfilePage({ onBack, onLogout, onNavigate, streakDay=1, workoutsTotal=
           icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.8"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>}/>
         <ProfileRow label="Privacy & Security"   sub="Data protection and account security"      onPress={()=>setSubPage("privacy")}
           icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.8"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>}/>
+        <ProfileRow label="My Nutrition Plan"       sub="View or regenerate your 7-day meal plan"   onPress={()=>setSubPage("nutriRegen")}
+          icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#A3E635" strokeWidth="1.8"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>}/>
         <ProfileRow label="My AI Workout Plan"    sub="View or regenerate your 4-week programme"  onPress={()=>onNavigate&&onNavigate("myPlan")}
           icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>}/>
         <ProfileRow label="Support"              sub="Help center and contact support"            onPress={()=>setSubPage("support")}
@@ -7411,6 +7418,7 @@ function ProfilePage({ onBack, onLogout, onNavigate, streakDay=1, workoutsTotal=
 
       </div>
       {/* Sub-page overlays — ProfilePage stays mounted preserving scroll */}
+      {subPage==="nutriRegen"   && <NutriRegenPage onBack={()=>setSubPage(null)} onNavigate={onNavigate}/>}
       {subPage==="progress"     && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><ProgressPhotosPage     onBack={()=>setSubPage(null)}/></div>}
       {subPage==="account"      && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><AccountSettingsPage    onBack={()=>setSubPage(null)} onLogout={onLogout}/></div>}
       {subPage==="fitness"      && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><FitnessPreferencesPage onBack={()=>setSubPage(null)}/></div>}
@@ -7603,6 +7611,68 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
   const [selectedDay, setSelectedDay] = useState(new Date().getDay()===0?6:new Date().getDay()-1);
   // mealSwaps[dayIdx][slotLabel] = recipe object override for that slot
   const [mealSwaps, setMealSwaps] = useState({});
+
+  // ── AI Nutrition Plan state ───────────────────────────────────────────────
+  const { user: currentUser } = useUser();
+  const [aiNutritionPlan,    setAiNutritionPlan]    = useState(null);
+  const [aiPlanLoading,      setAiPlanLoading]       = useState(false);
+  const [aiPlanGenerating,   setAiPlanGenerating]    = useState(false);
+  const [aiPlanError,        setAiPlanError]         = useState(null);
+  const [todayFoodLogs,      setTodayFoodLogs]       = useState([]);
+  const [loggedMeals,        setLoggedMeals]         = useState(new Set());
+  const [expandedPlanMeal,   setExpandedPlanMeal]    = useState(null);
+  const [confirmNutriRegen,  setConfirmNutriRegen]   = useState(false);
+  const [aiShoppingChecked,  setAiShoppingChecked]   = useState(new Set());
+
+  const AI_PLAN_DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+  const AI_PLAN_SHORT = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+  const loadAiNutritionPlan = async () => {
+    setAiPlanLoading(true); setAiPlanError(null);
+    try {
+      const res = await apiCall('/nutrition/active-plan');
+      if (res?.data?.plan) setAiNutritionPlan(res.data.plan);
+    } catch(_) { setAiPlanError('Could not load plan.'); }
+    setAiPlanLoading(false);
+  };
+
+  const loadTodayFoodLogs = async () => {
+    try {
+      const res = await apiCall('/nutrition/food-log/today');
+      if (res?.data?.logs) setTodayFoodLogs(res.data.logs);
+    } catch(_) {}
+  };
+
+  const generateAiNutritionPlan = async () => {
+    setAiPlanGenerating(true); setAiPlanError(null); setConfirmNutriRegen(false);
+    try {
+      const res = await apiCall('/nutrition/generate-plan', { method: 'POST' });
+      if (res?.data?.plan) setAiNutritionPlan(res.data.plan);
+    } catch(_) { setAiPlanError('Generation failed — please try again.'); }
+    setAiPlanGenerating(false);
+  };
+
+  const logPlanMeal = async (meal, dayKey) => {
+    const mealId = `${dayKey}-${meal.meal_name}-${meal.recipe_name}`;
+    setLoggedMeals(prev => new Set([...prev, mealId]));
+    try {
+      await apiCall('/nutrition/food-log', { method:'POST', body:JSON.stringify({ mealName:meal.meal_name, recipeName:meal.recipe_name, calories:meal.calories, proteinG:meal.protein_g, carbsG:meal.carbs_g, fatG:meal.fat_g, fromPlan:true }) });
+      loadTodayFoodLogs();
+    } catch(_) {}
+  };
+
+  useEffect(() => {
+    if (subTab === 1 && !aiNutritionPlan && !aiPlanLoading && getAuthToken()) {
+      loadAiNutritionPlan();
+      loadTodayFoodLogs();
+    }
+  }, [subTab]);
+
+  const todayConsumed = todayFoodLogs.reduce((a, l) => ({ cal:a.cal+(l.calories||0), protein:a.protein+(l.proteinG||0), carbs:a.carbs+(l.carbsG||0), fat:a.fat+(l.fatG||0) }), {cal:0,protein:0,carbs:0,fat:0});
+  const trackPref = currentUser?.trackingPreference || 'no_not_interested';
+  const showFullTracking = trackPref === 'yes_both';
+  const showCalTracking  = trackPref === 'yes_both' || trackPref === 'only_calories' || trackPref === 'no_but_interested';
+  const calTarget = aiNutritionPlan?.daily_targets?.calories || currentUser?.dailyCalorieTarget || 2000;
 
   // Fetch paginated recipes from server whenever page or filter changes
   useEffect(()=>{
@@ -7962,68 +8032,303 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
 
         {subTab===1 && (
           <div>
-            {/* Day selector */}
-            <div style={{ display:"flex",gap:6,marginBottom:16,overflowX:"auto" }}>
-              {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((d,i)=>(
-                <div key={i} onClick={()=>setSelectedDay(i)}
-                  style={{ flexShrink:0,width:44,textAlign:"center",padding:"8px 4px",borderRadius:12,background:i===selectedDay?PRIMARY:"transparent",cursor:"pointer",transition:"background 0.2s" }}>
-                  <div style={{ fontFamily:FONT,fontSize:10,fontWeight:700,color:i===selectedDay?"#fff":"#888",marginBottom:4 }}>{d}</div>
-                  <div style={{ fontFamily:FONT,fontSize:13,fontWeight:800,color:i===selectedDay?"#fff":"#555" }}>{weekDates[i]}</div>
+            {/* Regeneration confirm modal */}
+            {confirmNutriRegen && (
+              <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 28px" }}>
+                <div style={{ background:CARD,borderRadius:20,padding:"24px 20px",border:`1px solid ${BORDER}`,width:"100%",maxWidth:340 }}>
+                  <div style={{ fontFamily:FONT,fontWeight:900,fontSize:16,color:"#fff",marginBottom:10 }}>Regenerate Your Plan?</div>
+                  <div style={{ fontFamily:FONT,fontSize:13,color:"#888",lineHeight:1.65,marginBottom:20 }}>This will create a new 7-day meal plan based on your current goals and dietary preferences.</div>
+                  <div style={{ display:"flex",gap:10 }}>
+                    <button onClick={()=>setConfirmNutriRegen(false)} style={{ flex:1,padding:"12px",borderRadius:12,background:"transparent",border:`1px solid ${BORDER}`,fontFamily:FONT,fontWeight:700,fontSize:13,color:"#888",cursor:"pointer" }}>Cancel</button>
+                    <button onClick={generateAiNutritionPlan} style={{ flex:1,padding:"12px",borderRadius:12,background:"#16A34A",border:"none",fontFamily:FONT,fontWeight:700,fontSize:13,color:"#fff",cursor:"pointer" }}>Regenerate</button>
+                  </div>
                 </div>
-              ))}
-            </div>
-            {/* Daily totals */}
-            <div style={{ background:CARD,borderRadius:14,padding:"14px 16px",marginBottom:14,border:`1px solid ${BORDER}`,display:"flex",justifyContent:"space-around" }}>
-              {(()=>{
-                const dayMeals = MEAL_SLOTS.map(s=>getMealForDay(selectedDay,s)).filter(Boolean);
-                const totCal  = dayMeals.reduce((s,m)=>s+(m.cal||0),0);
-                const totProt = dayMeals.reduce((s,m)=>s+(m.protein||0),0);
-                const totCarb = dayMeals.reduce((s,m)=>s+(m.carbs||0),0);
-                const totFat  = dayMeals.reduce((s,m)=>s+(m.fats||0),0);
-                return [{l:"Calories",v:totCal,c:"#EF4444"},{l:"Protein",v:`${Math.round(totProt)}g`,c:PRIMARY},{l:"Carbs",v:`${Math.round(totCarb)}g`,c:"#F97316"},{l:"Fat",v:`${Math.round(totFat)}g`,c:"#A78BFA"}];
-              })().map((item,i)=>(
-                <div key={i} style={{ textAlign:"center" }}>
-                  <div style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:item.c }}>{item.v}</div>
-                  <div style={{ fontFamily:FONT,fontSize:10,color:"#888" }}>{item.l}</div>
+              </div>
+            )}
+
+            {/* Generating spinner */}
+            {aiPlanGenerating && (
+              <div style={{ display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"60px 32px",gap:20 }}>
+                <div style={{ width:64,height:64,borderRadius:20,background:"#16A34A18",display:"flex",alignItems:"center",justifyContent:"center" }}>
+                  <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="1.5"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>
                 </div>
-              ))}
-            </div>
-            {/* Meal cards */}
-            {MEAL_SLOTS.map(slotLabel=>{
-              const meal = getMealForDay(selectedDay, slotLabel);
-              if (!meal) return null;
+                <div style={{ textAlign:"center" }}>
+                  <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#fff",marginBottom:6 }}>Building Your Nutrition Plan</div>
+                  <div style={{ fontFamily:FONT,fontSize:13,color:"#666",lineHeight:1.6 }}>Your AI nutrition coach is creating a personalised 7-day plan…</div>
+                </div>
+              </div>
+            )}
+
+            {/* Loading */}
+            {!aiPlanGenerating && aiPlanLoading && (
+              <div style={{ textAlign:"center",padding:"60px 20px",color:"#555",fontFamily:FONT,fontSize:13 }}>Loading your plan…</div>
+            )}
+
+            {/* No plan yet */}
+            {!aiPlanGenerating && !aiPlanLoading && !aiNutritionPlan && (
+              <div style={{ display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"40px 32px",gap:20 }}>
+                <div style={{ width:80,height:80,borderRadius:24,background:"#16A34A18",display:"flex",alignItems:"center",justifyContent:"center" }}>
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="1.4"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>
+                </div>
+                <div style={{ textAlign:"center" }}>
+                  <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff",marginBottom:8 }}>No Nutrition Plan Yet</div>
+                  <div style={{ fontFamily:FONT,fontSize:13,color:"#666",lineHeight:1.7 }}>Let your AI nutrition coach build a personalised 7-day meal plan based on your goals, dietary needs and calorie targets.</div>
+                </div>
+                {aiPlanError && <div style={{ fontFamily:FONT,fontSize:12,color:"#EF4444",textAlign:"center" }}>{aiPlanError}</div>}
+                <button onClick={generateAiNutritionPlan} style={{ background:"#16A34A",border:"none",borderRadius:16,padding:"15px 0",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",width:"100%",maxWidth:300,boxShadow:"0 4px 24px rgba(34,197,94,0.35)" }}>
+                  Generate My Nutrition Plan
+                </button>
+              </div>
+            )}
+
+            {/* AI Plan display */}
+            {!aiPlanGenerating && !aiPlanLoading && aiNutritionPlan && (()=>{
+              const dayKey  = AI_PLAN_DAYS[selectedDay] || 'monday';
+              const dayData = aiNutritionPlan.week?.[dayKey] || {};
+              const meals   = dayData.meals || [];
+              const targets = aiNutritionPlan.daily_targets || {};
+              const protTarget = targets.protein_g || currentUser?.dailyProteinTargetG || 150;
+              const carbTarget = targets.carbs_g   || currentUser?.dailyCarbTargetG    || 200;
+              const fatTarget  = targets.fat_g     || currentUser?.dailyFatTargetG     || 65;
+
               return (
-                <div key={slotLabel} style={{ background:"#fff",borderRadius:16,padding:"14px",marginBottom:12 }}>
-                  <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8 }}>
-                    <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888",letterSpacing:1 }}>{SLOT_LABELS[slotLabel]}</div>
-                    <button onClick={()=>swapMeal(selectedDay,slotLabel)}
-                      style={{ display:"flex",alignItems:"center",gap:4,background:"none",border:`1px solid ${PRIMARY}44`,borderRadius:20,padding:"4px 10px",cursor:"pointer" }}>
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.67"/></svg>
-                      <span style={{ fontFamily:FONT,fontSize:10,fontWeight:700,color:PRIMARY }}>Swap</span>
-                    </button>
-                  </div>
-                  <div onClick={()=>setSelectedRecipe(meal)} style={{ display:"flex",gap:10,alignItems:"center",cursor:"pointer" }}>
-                    {meal.img
-                      ? <img src={meal.img} alt="" style={{ width:60,height:60,borderRadius:10,objectFit:"cover",flexShrink:0 }}/>
-                      : <div style={{ width:60,height:60,borderRadius:10,background:"#f0f0f0",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center" }}>
-                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#aaa" strokeWidth="1.5"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>
+                <div>
+                  {/* Plan header */}
+                  <div style={{ background:"linear-gradient(135deg,#0a1a0f,#0d2218)",borderRadius:16,padding:"16px",marginBottom:14,border:"1px solid #22C55E33" }}>
+                    <div style={{ fontFamily:FONT,fontWeight:900,fontSize:16,color:"#fff",marginBottom:3 }}>{aiNutritionPlan.plan_name}</div>
+                    <div style={{ fontFamily:FONT,fontSize:12,color:"#aaa",lineHeight:1.5,marginBottom:12 }}>{aiNutritionPlan.plan_summary}</div>
+                    {/* Macro target chips */}
+                    <div style={{ display:"flex",gap:6,flexWrap:"wrap" }}>
+                      {[
+                        {l:"Calories",v:Math.round(calTarget),c:"#EF4444"},
+                        {l:"Protein",v:`${protTarget}g`,c:PRIMARY},
+                        {l:"Carbs",v:`${carbTarget}g`,c:"#F97316"},
+                        {l:"Fat",v:`${fatTarget}g`,c:"#A78BFA"},
+                      ].map((t,i)=>(
+                        <div key={i} style={{ background:`${t.c}14`,borderRadius:10,padding:"5px 10px",border:`1px solid ${t.c}30` }}>
+                          <span style={{ fontFamily:FONT,fontWeight:800,fontSize:12,color:t.c }}>{t.v}</span>
+                          <span style={{ fontFamily:FONT,fontSize:10,color:"#666",marginLeft:3 }}>{t.l}</span>
                         </div>
-                    }
-                    <div style={{ flex:1 }}>
-                      <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#111",marginBottom:3 }}>{meal.name}</div>
-                      <div style={{ fontFamily:FONT,fontSize:12,color:"#666",marginBottom:2 }}>{meal.cal} cal · {meal.protein}g protein</div>
-                      <div style={{ fontFamily:FONT,fontSize:11,color:"#aaa" }}>{meal.prep||meal.time} prep</div>
+                      ))}
                     </div>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#bbb" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
                   </div>
+
+                  {/* Macro tracking ring — only if tracking preference allows */}
+                  {showCalTracking && (
+                    <div style={{ background:CARD,borderRadius:16,padding:"16px",marginBottom:14,border:`1px solid ${BORDER}` }}>
+                      <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#555",letterSpacing:1.5,marginBottom:12 }}>TODAY'S PROGRESS</div>
+                      <div style={{ display:"flex",alignItems:"center",gap:16 }}>
+                        {/* Calorie ring */}
+                        {(()=>{
+                          const pct = Math.min(1, todayConsumed.cal / calTarget);
+                          const r=32,circ=2*Math.PI*r;
+                          return (
+                            <div style={{ position:"relative",width:80,height:80,flexShrink:0 }}>
+                              <svg width={80} height={80} style={{ transform:"rotate(-90deg)" }}>
+                                <circle cx={40} cy={40} r={r} fill="none" stroke="#1a1a1a" strokeWidth={6}/>
+                                <circle cx={40} cy={40} r={r} fill="none" stroke="#EF4444" strokeWidth={6}
+                                  strokeDasharray={circ} strokeDashoffset={circ*(1-pct)} strokeLinecap="round"/>
+                              </svg>
+                              <div style={{ position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center" }}>
+                                <div style={{ fontFamily:FONT,fontWeight:900,fontSize:13,color:"#fff" }}>{Math.round(todayConsumed.cal)}</div>
+                                <div style={{ fontFamily:FONT,fontSize:8,color:"#666" }}>cal</div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                        <div style={{ flex:1 }}>
+                          {trackPref==='no_but_interested' && (
+                            <div style={{ fontFamily:FONT,fontSize:11,color:"#888",marginBottom:8 }}>
+                              {Math.round(todayConsumed.cal)} / {Math.round(calTarget)} calories
+                              <span style={{ color:PRIMARY,marginLeft:6,cursor:"pointer" }} onClick={()=>{}}>Enable full tracking →</span>
+                            </div>
+                          )}
+                          {showFullTracking && (
+                            <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
+                              {[
+                                {l:"Protein",v:todayConsumed.protein,t:protTarget,c:PRIMARY},
+                                {l:"Carbs",  v:todayConsumed.carbs,  t:carbTarget,c:"#F97316"},
+                                {l:"Fat",    v:todayConsumed.fat,    t:fatTarget,  c:"#A78BFA"},
+                              ].map((m,i)=>(
+                                <div key={i}>
+                                  <div style={{ display:"flex",justifyContent:"space-between",marginBottom:3 }}>
+                                    <span style={{ fontFamily:FONT,fontSize:10,color:"#888" }}>{m.l}</span>
+                                    <span style={{ fontFamily:FONT,fontSize:10,color:m.c,fontWeight:700 }}>{Math.round(m.v)}g / {m.t}g</span>
+                                  </div>
+                                  <div style={{ height:5,borderRadius:3,background:"#1a1a1a",overflow:"hidden" }}>
+                                    <div style={{ height:"100%",width:`${Math.min(100,m.v/m.t*100)}%`,background:m.c,borderRadius:3,transition:"width 0.4s" }}/>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Day selector */}
+                  <div style={{ display:"flex",gap:6,marginBottom:14,overflowX:"auto" }}>
+                    {AI_PLAN_SHORT.map((d,i)=>(
+                      <div key={i} onClick={()=>{ setSelectedDay(i); setExpandedPlanMeal(null); }}
+                        style={{ flexShrink:0,width:44,textAlign:"center",padding:"8px 4px",borderRadius:12,background:i===selectedDay?PRIMARY:"transparent",cursor:"pointer",transition:"background 0.2s" }}>
+                        <div style={{ fontFamily:FONT,fontSize:10,fontWeight:700,color:i===selectedDay?"#fff":"#888",marginBottom:4 }}>{d}</div>
+                        <div style={{ fontFamily:FONT,fontSize:12,fontWeight:800,color:i===selectedDay?"#fff":"#555" }}>
+                          {aiNutritionPlan.week?.[AI_PLAN_DAYS[i]]?.day_total_calories ? `${Math.round(aiNutritionPlan.week[AI_PLAN_DAYS[i]].day_total_calories)}` : '—'}
+                        </div>
+                        {i===selectedDay&&<div style={{ fontFamily:FONT,fontSize:8,color:"rgba(255,255,255,0.7)" }}>cal</div>}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Meal cards */}
+                  {meals.length === 0 && (
+                    <div style={{ textAlign:"center",padding:"30px",fontFamily:FONT,fontSize:13,color:"#555" }}>No meals for this day</div>
+                  )}
+                  {meals.map((meal,i)=>{
+                    const mealId  = `${dayKey}-${meal.meal_name}-${meal.recipe_name}`;
+                    const isLogged= loggedMeals.has(mealId);
+                    const isOpen  = expandedPlanMeal === mealId;
+                    return (
+                      <div key={i} style={{ background:CARD,borderRadius:16,marginBottom:12,border:`1px solid ${isLogged?"#22C55E33":BORDER}`,overflow:"hidden" }}>
+                        <div style={{ padding:"14px 14px 0" }}>
+                          <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8 }}>
+                            <div>
+                              <div style={{ fontFamily:FONT,fontWeight:700,fontSize:9,color:"#22C55E",letterSpacing:1.5,marginBottom:2 }}>{meal.meal_name?.toUpperCase()} · {meal.meal_time_suggestion}</div>
+                              <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff" }}>{meal.recipe_name}</div>
+                            </div>
+                            {isLogged
+                              ? <div style={{ background:"#22C55E18",borderRadius:20,padding:"5px 10px",border:"1px solid #22C55E44",display:"flex",alignItems:"center",gap:4 }}>
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                                  <span style={{ fontFamily:FONT,fontSize:10,fontWeight:700,color:"#22C55E" }}>Logged</span>
+                                </div>
+                              : <button onClick={()=>logPlanMeal(meal,dayKey)} style={{ background:"#22C55E",border:"none",borderRadius:20,padding:"6px 12px",fontFamily:FONT,fontWeight:700,fontSize:10,color:"#fff",cursor:"pointer" }}>Log</button>
+                            }
+                          </div>
+                          <div style={{ display:"flex",gap:10,marginBottom:10 }}>
+                            {meal.ymove_image_url
+                              ? <img src={meal.ymove_image_url} alt="" style={{ width:72,height:72,borderRadius:12,objectFit:"cover",flexShrink:0 }}/>
+                              : <div style={{ width:72,height:72,borderRadius:12,background:"#1a1a1a",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center" }}>
+                                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#333" strokeWidth="1.5"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>
+                                </div>
+                            }
+                            <div style={{ flex:1 }}>
+                              <div style={{ display:"flex",gap:8,flexWrap:"wrap",marginBottom:4 }}>
+                                {[{v:meal.calories,l:"cal",c:"#EF4444"},{v:`${meal.protein_g}g`,l:"prot",c:PRIMARY},{v:`${meal.carbs_g}g`,l:"carb",c:"#F97316"},{v:`${meal.fat_g}g`,l:"fat",c:"#A78BFA"}].map((s,j)=>(
+                                  <div key={j} style={{ textAlign:"center" }}>
+                                    <div style={{ fontFamily:FONT,fontWeight:800,fontSize:12,color:s.c }}>{s.v}</div>
+                                    <div style={{ fontFamily:FONT,fontSize:8,color:"#555" }}>{s.l}</div>
+                                  </div>
+                                ))}
+                              </div>
+                              <div style={{ fontFamily:FONT,fontSize:11,color:"#666" }}>⏱ {meal.prep_time_mins} min prep</div>
+                              {meal.meal_prep_note && <div style={{ fontFamily:FONT,fontSize:10,color:"#555",marginTop:3,fontStyle:"italic" }}>{meal.meal_prep_note}</div>}
+                            </div>
+                          </div>
+                          {/* Expand toggle */}
+                          <button onClick={()=>setExpandedPlanMeal(isOpen?null:mealId)}
+                            style={{ width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,background:"none",border:`1px solid ${BORDER}`,borderRadius:10,padding:"8px",cursor:"pointer",marginBottom:12 }}>
+                            <span style={{ fontFamily:FONT,fontSize:11,color:"#666",fontWeight:600 }}>{isOpen?"Hide":"Show"} ingredients & instructions</span>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" style={{ transform:isOpen?"rotate(180deg)":"none",transition:"transform 0.2s" }}><polyline points="6 9 12 15 18 9"/></svg>
+                          </button>
+                        </div>
+                        {isOpen && (
+                          <div style={{ padding:"0 14px 14px",borderTop:`1px solid ${BORDER}` }}>
+                            <div style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:"#555",letterSpacing:1,marginBottom:8,marginTop:12 }}>INGREDIENTS</div>
+                            {(meal.ingredients||[]).map((ing,j)=>(
+                              <div key={j} style={{ display:"flex",gap:8,paddingBottom:6,borderBottom:j<meal.ingredients.length-1?`1px solid ${BORDER}`:"none",marginBottom:6 }}>
+                                <div style={{ width:5,height:5,borderRadius:"50%",background:"#22C55E",marginTop:5,flexShrink:0 }}/>
+                                <div style={{ fontFamily:FONT,fontSize:12,color:"#ccc" }}>{ing.amount} {ing.unit} {ing.item}</div>
+                              </div>
+                            ))}
+                            {meal.instructions && (
+                              <div>
+                                <div style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:"#555",letterSpacing:1,marginBottom:6,marginTop:12 }}>INSTRUCTIONS</div>
+                                <div style={{ fontFamily:FONT,fontSize:12,color:"#bbb",lineHeight:1.65 }}>{meal.instructions}</div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Supplement suggestions */}
+                  {aiNutritionPlan.supplement_suggestions?.length>0 && (
+                    <div style={{ background:CARD,borderRadius:14,padding:"14px 16px",marginBottom:14,border:`1px solid ${BORDER}` }}>
+                      <div style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:"#555",letterSpacing:1.5,marginBottom:10 }}>SUPPLEMENT SUGGESTIONS</div>
+                      {aiNutritionPlan.supplement_suggestions.map((s,i)=>(
+                        <div key={i} style={{ marginBottom:i<aiNutritionPlan.supplement_suggestions.length-1?10:0,paddingBottom:i<aiNutritionPlan.supplement_suggestions.length-1?10:0,borderBottom:i<aiNutritionPlan.supplement_suggestions.length-1?`1px solid ${BORDER}`:"none" }}>
+                          <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#fff",marginBottom:2 }}>{s.supplement}</div>
+                          <div style={{ fontFamily:FONT,fontSize:11,color:"#888" }}>{s.reason} · {s.timing}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Regenerate + coach message */}
+                  {aiNutritionPlan.nutrition_coach_message && (
+                    <div style={{ background:CARD,borderRadius:14,padding:"14px 16px",marginBottom:10,border:`1px solid ${BORDER}`,display:"flex",gap:12,alignItems:"flex-start" }}>
+                      <div style={{ width:30,height:30,borderRadius:9,background:"#16A34A",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="white"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                      </div>
+                      <div style={{ fontFamily:FONT,fontSize:12,color:"#bbb",lineHeight:1.6,fontStyle:"italic",flex:1 }}>"{aiNutritionPlan.nutrition_coach_message}"</div>
+                    </div>
+                  )}
+                  <button onClick={()=>setConfirmNutriRegen(true)}
+                    style={{ width:"100%",padding:"12px",borderRadius:14,background:"transparent",border:`1px solid ${BORDER}`,fontFamily:FONT,fontWeight:700,fontSize:13,color:"#555",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:6 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+                    Regenerate Plan
+                  </button>
                 </div>
               );
-            })}
+            })()}
           </div>
         )}
 
         {subTab===2 && (
-          <GroceryTab checkedGrocery={checkedGrocery} setCheckedGrocery={setCheckedGrocery} groceryList={computedGroceryList}/>
+          aiNutritionPlan?.shopping_list ? (
+            <div>
+              <div style={{ fontFamily:FONT,fontWeight:900,fontSize:16,color:"#fff",marginBottom:4 }}>Shopping List</div>
+              <div style={{ fontFamily:FONT,fontSize:12,color:"#666",marginBottom:16 }}>From your AI nutrition plan · tap to check off items</div>
+              {Object.entries(aiNutritionPlan.shopping_list).map(([cat,items])=>{
+                if (!items?.length) return null;
+                const catLabel = { proteins:"Proteins",carbs:"Carbs",vegetables:"Vegetables",healthy_fats:"Healthy Fats",pantry:"Pantry",snacks:"Snacks" }[cat] || cat;
+                const catColor = { proteins:PRIMARY,carbs:"#F97316",vegetables:"#22C55E",healthy_fats:"#A78BFA",pantry:"#F59E0B",snacks:"#EC4899" }[cat] || "#888";
+                return (
+                  <div key={cat} style={{ background:CARD,borderRadius:14,padding:"14px 16px",marginBottom:12,border:`1px solid ${BORDER}` }}>
+                    <div style={{ fontFamily:FONT,fontWeight:800,fontSize:11,color:catColor,letterSpacing:1.5,marginBottom:10 }}>{catLabel.toUpperCase()}</div>
+                    {items.map((item,i)=>{
+                      const key = `${cat}-${item}`;
+                      const checked = aiShoppingChecked.has(key);
+                      return (
+                        <div key={i} onClick={()=>setAiShoppingChecked(prev=>{ const n=new Set(prev); checked?n.delete(key):n.add(key); return n; })}
+                          style={{ display:"flex",alignItems:"center",gap:12,padding:"9px 0",borderBottom:i<items.length-1?`1px solid ${BORDER}`:"none",cursor:"pointer" }}>
+                          <div style={{ width:20,height:20,borderRadius:6,border:`2px solid ${checked?catColor:"#333"}`,background:checked?catColor:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all 0.15s" }}>
+                            {checked&&<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+                          </div>
+                          <span style={{ fontFamily:FONT,fontSize:13,color:checked?"#555":"#ccc",textDecoration:checked?"line-through":"none",transition:"all 0.15s" }}>{item}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+              {aiNutritionPlan.meal_prep_tips?.length>0 && (
+                <div style={{ background:"#081408",borderRadius:14,padding:"14px 16px",border:"1px solid #22C55E22" }}>
+                  <div style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:"#22C55E",letterSpacing:1.5,marginBottom:10 }}>MEAL PREP TIPS</div>
+                  {aiNutritionPlan.meal_prep_tips.map((tip,i)=>(
+                    <div key={i} style={{ display:"flex",gap:10,marginBottom:i<aiNutritionPlan.meal_prep_tips.length-1?10:0 }}>
+                      <span style={{ fontFamily:FONT,fontSize:12,color:"#22C55E",fontWeight:700 }}>{i+1}.</span>
+                      <span style={{ fontFamily:FONT,fontSize:12,color:"#aaa",lineHeight:1.6 }}>{tip}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <GroceryTab checkedGrocery={checkedGrocery} setCheckedGrocery={setCheckedGrocery} groceryList={computedGroceryList}/>
+          )
         )}
 
         {subTab===3 && (
@@ -8217,6 +8522,51 @@ function getTailoredMealOptions(user) {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ── Nutrition Plan Regen Page (shown from ProfilePage subPage) ───────────────
+function NutriRegenPage({ onBack, onNavigate }) {
+  const [generating, setGenerating] = useState(false);
+  const [done,       setDone]       = useState(false);
+  const [error,      setError]      = useState(null);
+
+  const go = async () => {
+    setGenerating(true); setError(null);
+    try {
+      await apiCall('/nutrition/generate-plan', { method:'POST' });
+      setDone(true);
+    } catch(_) { setError('Generation failed — please try again.'); setGenerating(false); }
+  };
+
+  return (
+    <div style={{ position:"absolute",inset:0,zIndex:60,background:"rgba(0,0,0,0.9)",display:"flex",alignItems:"center",justifyContent:"center",padding:"0 28px",animation:"fadeIn 0.2s ease" }}>
+      <div style={{ background:CARD,borderRadius:22,padding:"28px 22px",border:`1px solid ${BORDER}`,width:"100%",maxWidth:340 }}>
+        {done ? (
+          <>
+            <div style={{ width:56,height:56,borderRadius:16,background:"#16A34A18",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px" }}>
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:"#fff",textAlign:"center",marginBottom:8 }}>Plan Ready!</div>
+            <div style={{ fontFamily:FONT,fontSize:13,color:"#888",textAlign:"center",lineHeight:1.6,marginBottom:22 }}>Your new 7-day nutrition plan has been generated.</div>
+            <button onClick={onBack} style={{ width:"100%",padding:"13px",borderRadius:12,background:"#16A34A",border:"none",fontFamily:FONT,fontWeight:700,fontSize:13,color:"#fff",cursor:"pointer" }}>Done</button>
+          </>
+        ) : (
+          <>
+            <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:"#fff",marginBottom:10 }}>Regenerate Nutrition Plan?</div>
+            <div style={{ fontFamily:FONT,fontSize:13,color:"#888",lineHeight:1.65,marginBottom:20 }}>This will create a new personalised 7-day meal plan based on your current goals and dietary preferences.</div>
+            {error && <div style={{ fontFamily:FONT,fontSize:12,color:"#EF4444",marginBottom:12,textAlign:"center" }}>{error}</div>}
+            <div style={{ display:"flex",gap:10 }}>
+              <button onClick={onBack} style={{ flex:1,padding:"13px",borderRadius:12,background:"transparent",border:`1px solid ${BORDER}`,fontFamily:FONT,fontWeight:700,fontSize:13,color:"#888",cursor:"pointer" }}>Cancel</button>
+              <button onClick={go} disabled={generating}
+                style={{ flex:1,padding:"13px",borderRadius:12,background:"#16A34A",border:"none",fontFamily:FONT,fontWeight:700,fontSize:13,color:"#fff",cursor:"pointer",opacity:generating?0.7:1 }}>
+                {generating ? "Generating…" : "Regenerate"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // MY PLAN PAGE — AI-generated 4-week personalised workout programme
 // ─────────────────────────────────────────────────────────────────────────────
 function MyPlanPage({ onBack }) {
@@ -8656,6 +9006,22 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
           <div style={{ display:"flex",alignItems:"center",gap:4 }}>
             <span style={{ fontFamily:FONT,fontSize:11,color:PRIMARY,fontWeight:700 }}>View report</span>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+          </div>
+        </div>
+
+        {/* MY NUTRITION PLAN CARD */}
+        <div onClick={()=>{ onNavigate("nutritionPlan"); }}
+          style={{ background:"linear-gradient(135deg,#0f1a08,#162410)",borderRadius:18,border:`1.5px solid #A3E63533`,padding:"14px 18px",marginBottom:13,animation:"fadeUp 0.5s ease 0.085s both",cursor:"pointer",display:"flex",alignItems:"center",gap:14 }}>
+          <div style={{ width:42,height:42,borderRadius:12,background:"linear-gradient(135deg,#65A30D,#4D7C0F)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:"0 0 14px rgba(101,163,13,0.4)" }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>
+          </div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:"#A3E635",letterSpacing:2,marginBottom:2 }}>AI NUTRITION COACH</div>
+            <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff" }}>My 7-Day Meal Plan</div>
+          </div>
+          <div style={{ display:"flex",alignItems:"center",gap:4 }}>
+            <span style={{ fontFamily:FONT,fontSize:11,color:"#A3E635",fontWeight:700 }}>View plan</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#A3E635" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
           </div>
         </div>
 
@@ -9452,7 +9818,7 @@ function VTRXAppInner({ setPaymentPlan }) {
                 apiCall("/users/mood", { method:"POST", body:JSON.stringify({ mood:key }) }).catch(()=>{});
               }
             }}
-            onNavigate={(page)=>{ if(page==="workoutDetail"){ setWorkoutDone(false); setWorkoutStarted(false); setWorkoutElapsed(0); setSelectedScheduleWorkout(null); } navigate(page); }}
+            onNavigate={(page)=>{ if(page==="workoutDetail"){ setWorkoutDone(false); setWorkoutStarted(false); setWorkoutElapsed(0); setSelectedScheduleWorkout(null); } if(page==="nutritionPlan"){setActiveTab(1);return;} navigate(page); }}
             onLogout={handleLogout}
           />
         )}

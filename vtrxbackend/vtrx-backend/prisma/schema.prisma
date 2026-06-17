@@ -37,8 +37,24 @@ model User {
   daysPerWeek     Int?      @default(3)
   equipment       String[]  // ["Dumbbells", "Barbell"] etc
   location        String?   // "Full Gym", "Home" etc
-  sessionDuration String?   // "15-30 min", "30-45 min", "45-60 min", "60+ min"
-  preferredStyles String[]  // ["Strength Training", "HIIT", etc.]
+  sessionDuration      String?   // "15-30 min", "30-45 min", "45-60 min", "60+ min"
+  preferredStyles      String[]  // ["Strength Training", "HIIT", etc.]
+
+  // ── Nutrition profile ──
+  wantsMealSuggestions  Boolean?
+  nutritionGoal         String?   // lose_fat / build_muscle / maintain / eat_clean / improve_energy
+  trackingPreference    String?   // yes_both / only_calories / no_but_interested / no_not_interested
+  dietaryRestrictions   String[]  // vegan / vegetarian / gluten_free / dairy_free / no_peanuts / other
+  mealsPerDay           String?   // 2 / 3 / 4_plus / varies
+  bodyFatPercentage     Float?
+  goalWeightLbs         Float?
+  calculatedBmr         Float?
+  calculatedTdee        Float?
+  dailyCalorieTarget    Float?
+  dailyProteinTargetG   Float?
+  dailyCarbTargetG      Float?
+  dailyFatTargetG       Float?
+
   isPremium       Boolean   @default(false)
   streakDays      Int       @default(0)
   lastActiveAt    DateTime?
@@ -63,6 +79,8 @@ model User {
   notificationPrefs     NotificationPreference?
   workoutPlans          WorkoutPlan[]
   exerciseLogs          ExerciseLog[]
+  nutritionPlans        NutritionPlan[]
+  foodLogs              FoodLog[]
 
   @@map("users")
 }
@@ -490,6 +508,44 @@ model ExerciseLog {
 
   @@index([userId, exerciseName])
   @@map("exercise_logs")
+}
+
+// ── NUTRITION_PLANS ───────────────────────────────────────────────────────────
+// AI-generated 7-day personalised meal plans
+model NutritionPlan {
+  id             String   @id @default(uuid())
+  userId         String
+  planJson       Json
+  calorieTarget  Float
+  proteinTargetG Float
+  isActive       Boolean  @default(true)
+  weekNumber     Int      @default(1)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("nutrition_plans")
+}
+
+// ── FOOD_LOGS ─────────────────────────────────────────────────────────────────
+// Individual meal log entries for daily tracking
+model FoodLog {
+  id          String   @id @default(uuid())
+  userId      String
+  loggedAt    DateTime @default(now())
+  mealName    String
+  recipeName  String
+  calories    Float    @default(0)
+  proteinG    Float    @default(0)
+  carbsG      Float    @default(0)
+  fatG        Float    @default(0)
+  fromPlan    Boolean  @default(false)
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, loggedAt])
+  @@map("food_logs")
 }
 
 // ── NOTIFICATION_LOG ──────────────────────────────────────────────────────────

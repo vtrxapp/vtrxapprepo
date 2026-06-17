@@ -1,5 +1,6 @@
 const express   = require('express');
 const nutrition = require('../controllers/nutritionController');
+const plan      = require('../controllers/nutritionPlanController');
 const { protect } = require('../middleware/auth');
 
 const router = express.Router();
@@ -19,8 +20,14 @@ router.get('/saved',                     nutrition.getSavedRecipes);
 router.post('/saved',                    nutrition.saveRecipe);
 router.delete('/saved/:recipeId',        nutrition.unsaveRecipe);
 
-// ── Meal plans ────────────────────────────────────────────────────────────────
-router.get('/meal-plan',                 nutrition.getMealPlan);           // AI-generated (Claude)
+// ── AI Nutrition Plan (Claude-powered) ───────────────────────────────────────
+router.post('/generate-plan',            plan.generateNutritionPlan);      // POST — generate + save 7-day plan
+router.get('/active-plan',               plan.getActiveNutritionPlan);     // GET  — fetch current active plan
+router.post('/food-log',                 plan.logFood);                    // POST — log a meal
+router.get('/food-log/today',            plan.getTodayFoodLogs);           // GET  — today's logged meals
+
+// ── Legacy meal plans ─────────────────────────────────────────────────────────
+router.get('/meal-plan',                 nutrition.getMealPlan);           // AI-generated (legacy)
 router.get('/mealplans/generate',        nutrition.generateYmoveMealPlan); // ymove recipe-based
 
 // ── Food database ─────────────────────────────────────────────────────────────
