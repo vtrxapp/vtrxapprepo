@@ -242,12 +242,12 @@ const normalizeRecipe = (r) => ({
   name:        r.name || r.title || 'Recipe',
   img:         r.image_url || r.imageUrl || r.thumbnail_url || r.thumbnailUrl || r.image || r.img || '',
   cal:         Math.round((r.calories || r.cal || 0) / 10) * 10,
-  protein:     r.protein  || 0,
+  protein:     Math.round(r.protein  || 0),
   fats:        r.fat      || r.fats  || 0,
   carbs:       r.carbs    || r.carbohydrates || 0,
-  mins:        r.prepTimeMinutes || r.prep_time || r.prepTime || r.mins || null,
-  time:        (r.prepTimeMinutes || r.prep_time || r.prepTime || r.mins) ? `${r.prepTimeMinutes || r.prep_time || r.prepTime || r.mins} min` : null,
-  prep:        (r.prepTimeMinutes || r.prep_time || r.prepTime || r.mins) ? `${r.prepTimeMinutes || r.prep_time || r.prepTime || r.mins} min` : null,
+  mins:        r.prepTimeMinutes || r.prep_time || r.prepTime || r.mins || 0,
+  time:        `${r.prepTimeMinutes || r.prep_time || r.prepTime || r.mins || 0} min`,
+  prep:        `${r.prepTimeMinutes || r.prep_time || r.prepTime || r.mins || 0} min`,
   servings:    r.servings  || 1,
   desc:        cleanRecipeDesc(r.description || r.summary || r.desc || r.shortDescription || ''),
   ingredients: (r.ingredients || []).map(ing => {
@@ -786,12 +786,10 @@ function RecipeFullPage({ recipe, r, isSaved, saved, onSave, onToggleSave, onBac
           <div style={{ position:"absolute",bottom:16,left:18 }}>
             <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff",lineHeight:1.2,marginBottom:6 }}>{meal.name}</div>
             <div style={{ display:"flex",gap:16 }}>
-              {meal.mins && (
               <div style={{ display:"flex",alignItems:"center",gap:5 }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                 <span style={{ fontFamily:FONT,fontSize:12,color:"rgba(255,255,255,0.9)",fontWeight:600 }}>{meal.mins} min</span>
               </div>
-              )}
               {meal.servings&&<div style={{ display:"flex",alignItems:"center",gap:5 }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
                 <span style={{ fontFamily:FONT,fontSize:12,color:"rgba(255,255,255,0.9)",fontWeight:600 }}>{meal.servings} servings</span>
