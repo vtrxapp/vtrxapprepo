@@ -37,6 +37,8 @@ model User {
   daysPerWeek     Int?      @default(3)
   equipment       String[]  // ["Dumbbells", "Barbell"] etc
   location        String?   // "Full Gym", "Home" etc
+  sessionDuration String?   // "15-30 min", "30-45 min", "45-60 min", "60+ min"
+  preferredStyles String[]  // ["Strength Training", "HIIT", etc.]
   isPremium       Boolean   @default(false)
   streakDays      Int       @default(0)
   lastActiveAt    DateTime?
@@ -59,6 +61,8 @@ model User {
   videoProgress         VideoProgress[]
   schedules             WorkoutSchedule[]
   notificationPrefs     NotificationPreference?
+  workoutPlans          WorkoutPlan[]
+  exerciseLogs          ExerciseLog[]
 
   @@map("users")
 }
@@ -448,6 +452,44 @@ model NotificationPreference {
   user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("notification_preferences")
+}
+
+// ── WORKOUT_PLANS ─────────────────────────────────────────────────────────────
+// AI-generated 4-week personalised plans
+model WorkoutPlan {
+  id          String   @id @default(uuid())
+  userId      String
+  planJson    Json
+  weekNumber  Int      @default(1)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exerciseLogs ExerciseLog[]
+
+  @@map("workout_plans")
+}
+
+// ── EXERCISE_LOGS ─────────────────────────────────────────────────────────────
+// Per-exercise weight/rep records for progressive overload tracking
+model ExerciseLog {
+  id             String      @id @default(uuid())
+  userId         String
+  planId         String?
+  sessionDate    DateTime    @default(now())
+  exerciseName   String
+  setsCompleted  Int
+  repsCompleted  String
+  weightUsedLbs  Float?
+  durationSecs   Int?
+  createdAt      DateTime    @default(now())
+
+  user  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan  WorkoutPlan? @relation(fields: [planId], references: [id])
+
+  @@index([userId, exerciseName])
+  @@map("exercise_logs")
 }
 
 // ── NOTIFICATION_LOG ──────────────────────────────────────────────────────────

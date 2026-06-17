@@ -34,23 +34,26 @@ const updateProfile = async (req, res) => {
   const {
     name, username, gender, age, weight, height,
     goal, fitnessLevel, daysPerWeek, equipment, location,
+    sessionDuration, preferredStyles,
   } = req.body;
 
   try {
     const updated = await prisma.user.update({
       where: { id: req.user.id },
       data: {
-        ...(name         !== undefined && { name }),
-        ...(username     !== undefined && { username: username.toLowerCase() }),
-        ...(gender       !== undefined && { gender }),
-        ...(age          !== undefined && { age: parseInt(age) }),
-        ...(weight       !== undefined && { weight: parseFloat(weight) }),
-        ...(height       !== undefined && { height }),
-        ...(goal         !== undefined && { goal }),
-        ...(fitnessLevel !== undefined && { fitnessLevel }),
-        ...(daysPerWeek  !== undefined && { daysPerWeek: parseInt(daysPerWeek) }),
-        ...(equipment    !== undefined && { equipment }),
-        ...(location     !== undefined && { location }),
+        ...(name             !== undefined && { name }),
+        ...(username         !== undefined && { username: username.toLowerCase() }),
+        ...(gender           !== undefined && { gender }),
+        ...(age              !== undefined && { age: parseInt(age) }),
+        ...(weight           !== undefined && { weight: parseFloat(weight) }),
+        ...(height           !== undefined && { height }),
+        ...(goal             !== undefined && { goal }),
+        ...(fitnessLevel     !== undefined && { fitnessLevel }),
+        ...(daysPerWeek      !== undefined && { daysPerWeek: parseInt(daysPerWeek) }),
+        ...(equipment        !== undefined && { equipment }),
+        ...(location         !== undefined && { location }),
+        ...(sessionDuration  !== undefined && { sessionDuration }),
+        ...(preferredStyles  !== undefined && { preferredStyles }),
       },
     });
 

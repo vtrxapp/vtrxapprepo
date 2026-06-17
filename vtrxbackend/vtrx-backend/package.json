@@ -12,6 +12,7 @@
     "seed:recipes": "node scripts/seedRecipes.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.104.2",
     "@aws-sdk/client-cognito-identity-provider": "^3.600.0",
     "@aws-sdk/client-s3": "^3.600.0",
     "@aws-sdk/client-secrets-manager": "^3.600.0",

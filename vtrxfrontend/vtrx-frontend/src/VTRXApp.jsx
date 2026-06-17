@@ -3627,7 +3627,7 @@ function WorkoutTypeIcon({ type }) {
 function WorkoutScreen({ onContinue, onBack }) {
   const { user, setUser } = useUser();
   const[goal,setGoal]=useState("");const[level,setLevel]=useState("");const[style,setStyle]=useState([]);const[days,setDays]=useState("");const[time,setTime]=useState("");const[location,setLocation]=useState("");const[equip,setEquip]=useState([]);
-  return <Shell bg="https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=800&q=80" overlay="linear-gradient(180deg,rgba(0,0,0,0.55) 0%,rgba(0,0,0,0.55) 30%,rgba(0,0,0,0.85) 100%)"><NavBar title="Customize Workout" step={2} total={4} onBack={onBack} onSkip={onContinue}/><div style={{ flex:1,overflowY:"auto",padding:"0 24px 24px" }}><Q n="1" text="What is your primary goal?" sub="(Select one)"/><ChipGroup options={["Build Muscle","Lose Weight","Stay Active","Improve Endurance","Get Toned"]} value={goal} onChange={setGoal}/><Q n="2" text="What is your experience level?" sub="(Select one)"/><ChipGroup options={["Beginner","Intermediate","Advanced","Professional"]} value={level} onChange={setLevel}/><Q n="3" text="What is your preferred workout style?" sub="(Pick 1–3)"/><ChipGroup options={["Strength Training","Cardio","HIIT","Bodyweight","Functional Fitness"]} value={style} onChange={setStyle} multi/><Q n="4" text="How many times do you want to work out each week?"/><ChipGroup options={["1–2 Days/Week","3–4 Days/Week","5+ Days/Week"]} value={days} onChange={setDays}/><Q n="5" text="Where do you usually work out?" sub="(Select one)"/><ChipGroup options={["Full Gym","Home","Outdoors","Mix of both"]} value={location} onChange={setLocation}/><Q n="6" text="What equipment do you have access to?" sub="(Select all that apply)"/><ChipGroup options={["Dumbbells","Barbell & Plates","Pull-up Bar","Resistance Bands","Kettlebells","Bench","Cable Machine","No Equipment"]} value={equip} onChange={setEquip} multi/><Q n="7" text="How much time can you dedicate to fitness daily?"/><ChipGroup options={["15–30 minutes","30–45 minutes","45–60 minutes","60+ minutes"]} value={time} onChange={setTime}/><div style={{marginTop:28}}><CTA label="CONTINUE" onClick={()=>{ setUser(u=>({...u, goal:goal||u.goal, fitnessLevel:level||u.fitnessLevel, workoutTime:time, workoutLocation:location, location:location, workoutStyle:style, equipment:equip, daysPerWeek:parseInt(days)||u.daysPerWeek })); onContinue(); }}/></div></div></Shell>;
+  return <Shell bg="https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=800&q=80" overlay="linear-gradient(180deg,rgba(0,0,0,0.55) 0%,rgba(0,0,0,0.55) 30%,rgba(0,0,0,0.85) 100%)"><NavBar title="Customize Workout" step={2} total={4} onBack={onBack} onSkip={onContinue}/><div style={{ flex:1,overflowY:"auto",padding:"0 24px 24px" }}><Q n="1" text="What is your primary goal?" sub="(Select one)"/><ChipGroup options={["Build Muscle","Lose Weight","Stay Active","Improve Endurance","Get Toned"]} value={goal} onChange={setGoal}/><Q n="2" text="What is your experience level?" sub="(Select one)"/><ChipGroup options={["Beginner","Intermediate","Advanced","Professional"]} value={level} onChange={setLevel}/><Q n="3" text="What is your preferred workout style?" sub="(Pick 1–3)"/><ChipGroup options={["Strength Training","Cardio","HIIT","Bodyweight","Functional Fitness"]} value={style} onChange={setStyle} multi/><Q n="4" text="How many times do you want to work out each week?"/><ChipGroup options={["1–2 Days/Week","3–4 Days/Week","5+ Days/Week"]} value={days} onChange={setDays}/><Q n="5" text="Where do you usually work out?" sub="(Select one)"/><ChipGroup options={["Full Gym","Home","Outdoors","Mix of both"]} value={location} onChange={setLocation}/><Q n="6" text="What equipment do you have access to?" sub="(Select all that apply)"/><ChipGroup options={["Dumbbells","Barbell & Plates","Pull-up Bar","Resistance Bands","Kettlebells","Bench","Cable Machine","No Equipment"]} value={equip} onChange={setEquip} multi/><Q n="7" text="How much time can you dedicate to fitness daily?"/><ChipGroup options={["15–30 minutes","30–45 minutes","45–60 minutes","60+ minutes"]} value={time} onChange={setTime}/><div style={{marginTop:28}}><CTA label="CONTINUE" onClick={()=>{ const newPrefs={goal:goal||user.goal, fitnessLevel:level||user.fitnessLevel, workoutTime:time, workoutLocation:location, location:location, workoutStyle:style, equipment:equip, daysPerWeek:parseInt(days)||user.daysPerWeek}; setUser(u=>({...u,...newPrefs})); if(getAuthToken()){apiCall('/users/profile',{method:'PUT',body:JSON.stringify({goal:newPrefs.goal,fitnessLevel:newPrefs.fitnessLevel,daysPerWeek:newPrefs.daysPerWeek,equipment:newPrefs.equipment,location:newPrefs.location,sessionDuration:time,preferredStyles:Array.isArray(style)?style:[style].filter(Boolean)})}).catch(()=>{}); } onContinue(); }}/></div></div></Shell>;
 }
 function NutritionScreen({ onContinue, onBack }) {
   const[want,setWant]=useState("");const[nutGoal,setNutGoal]=useState("");const[track,setTrack]=useState("");const[diet,setDiet]=useState([]);const[meals,setMeals]=useState("");
@@ -7267,7 +7267,7 @@ function useAchievements(stats) {
 }
 
 
-function ProfilePage({ onBack, onLogout, streakDay=1, workoutsTotal=0 }) {
+function ProfilePage({ onBack, onLogout, onNavigate, streakDay=1, workoutsTotal=0 }) {
   const profileScrollRef = useScrollPos("profile-page");
   const { user, profileImg, setProfileImg } = useUser();
   const { dark } = useTheme();
@@ -7400,6 +7400,8 @@ function ProfilePage({ onBack, onLogout, streakDay=1, workoutsTotal=0 }) {
           icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.8"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>}/>
         <ProfileRow label="Privacy & Security"   sub="Data protection and account security"      onPress={()=>setSubPage("privacy")}
           icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.8"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>}/>
+        <ProfileRow label="My AI Workout Plan"    sub="View or regenerate your 4-week programme"  onPress={()=>onNavigate&&onNavigate("myPlan")}
+          icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>}/>
         <ProfileRow label="Support"              sub="Help center and contact support"            onPress={()=>setSubPage("support")}
           icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.8"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>}/>
 
@@ -8214,6 +8216,291 @@ function getTailoredMealOptions(user) {
 }
 
 
+// ─────────────────────────────────────────────────────────────────────────────
+// MY PLAN PAGE — AI-generated 4-week personalised workout programme
+// ─────────────────────────────────────────────────────────────────────────────
+function MyPlanPage({ onBack }) {
+  const [plan,            setPlan]            = useState(null);
+  const [weekNumber,      setWeekNumber]      = useState(1);
+  const [selectedSession, setSelectedSession] = useState(null);
+  const [loading,         setLoading]         = useState(true);
+  const [generating,      setGenerating]      = useState(false);
+  const [error,           setError]           = useState(null);
+  const [confirmRegen,    setConfirmRegen]     = useState(false);
+  const [exVideos,        setExVideos]         = useState({});
+  const [expandedEx,      setExpandedEx]       = useState(null);
+
+  useEffect(() => { loadPlan(); }, []);
+
+  const applyPlan = (data) => {
+    setPlan(data.plan);
+    const wk   = data.weekNumber || 1;
+    setWeekNumber(wk);
+    const week = data.plan?.weekly_structure?.[`week_${wk}`];
+    setSelectedSession(week?.sessions?.[0] || null);
+    setExpandedEx(null);
+  };
+
+  const loadPlan = async () => {
+    setLoading(true); setError(null);
+    try {
+      const res = await apiCall('/workouts/active-plan');
+      if (res?.data?.plan) applyPlan(res.data);
+    } catch(_) { setError('Could not load your plan.'); }
+    setLoading(false);
+  };
+
+  const generatePlan = async () => {
+    setGenerating(true); setError(null); setConfirmRegen(false);
+    try {
+      const res = await apiCall('/workouts/generate-plan', { method: 'POST' });
+      if (res?.data?.plan) applyPlan(res.data);
+    } catch(_) { setError('Generation failed — please try again.'); }
+    setGenerating(false);
+  };
+
+  const fetchExVideo = async (term) => {
+    if (!term || exVideos[term] !== undefined) return;
+    setExVideos(p => ({ ...p, [term]: null }));
+    try {
+      const res = await apiCall(`/workouts/exercise-video?name=${encodeURIComponent(term)}`);
+      if (res?.data?.videoUrl) setExVideos(p => ({ ...p, [term]: res.data.videoUrl }));
+    } catch(_) {}
+  };
+
+  const currentWeek = plan?.weekly_structure?.[`week_${weekNumber}`];
+  const sessions    = currentWeek?.sessions || [];
+
+  if (generating) return (
+    <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:24,padding:"0 32px" }}>
+      <div style={{ width:80,height:80,borderRadius:24,background:`${PRIMARY}14`,display:"flex",alignItems:"center",justifyContent:"center" }}>
+        <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+      </div>
+      <div style={{ textAlign:"center" }}>
+        <div style={{ fontFamily:FONT,fontWeight:900,fontSize:19,color:"#fff",marginBottom:8 }}>Building Your Plan</div>
+        <div style={{ fontFamily:FONT,fontSize:13,color:"#888",lineHeight:1.7 }}>Your AI coach is designing a personalised 4-week programme based on your goals, equipment and experience level. This takes about 30 seconds…</div>
+      </div>
+    </div>
+  );
+
+  if (loading) return (
+    <div style={{ position:"absolute",inset:0,background:BG,display:"flex",alignItems:"center",justifyContent:"center" }}>
+      <div style={{ fontFamily:FONT,fontSize:13,color:"#555" }}>Loading your plan…</div>
+    </div>
+  );
+
+  if (!plan) return (
+    <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column" }}>
+      <BackHeader title="MY PLAN" onBack={onBack}/>
+      <div style={{ flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"0 32px",gap:22 }}>
+        <div style={{ width:90,height:90,borderRadius:24,background:`${PRIMARY}12`,display:"flex",alignItems:"center",justifyContent:"center" }}>
+          <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.4"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        </div>
+        <div style={{ textAlign:"center" }}>
+          <div style={{ fontFamily:FONT,fontWeight:900,fontSize:21,color:"#fff",marginBottom:8 }}>No Plan Yet</div>
+          <div style={{ fontFamily:FONT,fontSize:13,color:"#666",lineHeight:1.7 }}>Let your AI coach build a personalised 4-week programme based on your goals, experience and available equipment.</div>
+        </div>
+        {error && <div style={{ fontFamily:FONT,fontSize:12,color:"#EF4444",textAlign:"center" }}>{error}</div>}
+        <button onClick={generatePlan}
+          style={{ background:PRIMARY,border:"none",borderRadius:16,padding:"15px 0",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",width:"100%",maxWidth:300,boxShadow:`0 4px 24px ${PRIMARY}44` }}>
+          Generate My Plan
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column" }}>
+      <BackHeader title="MY PLAN" onBack={onBack}
+        right={
+          <button onClick={()=>setConfirmRegen(true)}
+            style={{ width:36,height:36,borderRadius:10,background:CARD,border:`1px solid ${BORDER}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+          </button>
+        }/>
+
+      {confirmRegen && (
+        <div style={{ position:"absolute",inset:0,background:"rgba(0,0,0,0.8)",zIndex:90,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 28px" }}>
+          <div style={{ background:CARD,borderRadius:20,padding:"24px 20px",border:`1px solid ${BORDER}`,width:"100%",maxWidth:340 }}>
+            <div style={{ fontFamily:FONT,fontWeight:900,fontSize:16,color:"#fff",marginBottom:10 }}>Regenerate Your Plan?</div>
+            <div style={{ fontFamily:FONT,fontSize:13,color:"#888",lineHeight:1.65,marginBottom:20 }}>This will create a new 4-week programme based on your current goals. Your workout history is kept.</div>
+            <div style={{ display:"flex",gap:10 }}>
+              <button onClick={()=>setConfirmRegen(false)} style={{ flex:1,padding:"12px",borderRadius:12,background:"transparent",border:`1px solid ${BORDER}`,fontFamily:FONT,fontWeight:700,fontSize:13,color:"#888",cursor:"pointer" }}>Cancel</button>
+              <button onClick={generatePlan} style={{ flex:1,padding:"12px",borderRadius:12,background:PRIMARY,border:"none",fontFamily:FONT,fontWeight:700,fontSize:13,color:"#fff",cursor:"pointer" }}>Regenerate</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ flex:1,overflowY:"auto",paddingBottom:100 }}>
+
+        {/* ── Plan header ────────────────────────────────────────────────── */}
+        <div style={{ background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,margin:"0 14px 14px",borderRadius:18,padding:"20px 18px" }}>
+          <div style={{ fontFamily:FONT,fontWeight:900,fontSize:18,color:"#fff",marginBottom:4 }}>{plan.plan_name}</div>
+          <div style={{ fontFamily:FONT,fontSize:12,color:"rgba(255,255,255,0.82)",lineHeight:1.55,marginBottom:14 }}>{plan.plan_summary}</div>
+          <div style={{ display:"flex",gap:6 }}>
+            {[1,2,3,4].map(w=>(
+              <button key={w} onClick={()=>{
+                const wk = plan?.weekly_structure?.[`week_${w}`];
+                setWeekNumber(w);
+                setSelectedSession(wk?.sessions?.[0]||null);
+                setExpandedEx(null);
+              }} style={{ flex:1,padding:"7px 0",borderRadius:10,border:`2px solid rgba(255,255,255,${w===weekNumber?0.9:0.25})`,background:w===weekNumber?"rgba(255,255,255,0.2)":"transparent",fontFamily:FONT,fontWeight:800,fontSize:12,color:w===weekNumber?"#fff":"rgba(255,255,255,0.55)",cursor:"pointer",transition:"all 0.2s" }}>
+                Wk {w}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ── AI coach message ──────────────────────────────────────────── */}
+        {plan.ai_coach_message && (
+          <div style={{ margin:"0 14px 14px",background:CARD,borderRadius:14,padding:"14px 16px",border:`1px solid ${BORDER}`,display:"flex",gap:12,alignItems:"flex-start" }}>
+            <div style={{ width:32,height:32,borderRadius:10,background:"linear-gradient(135deg,#6D28D9,#4C1D95)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            </div>
+            <div style={{ fontFamily:FONT,fontSize:12.5,color:"#bbb",lineHeight:1.6,fontStyle:"italic" }}>"{plan.ai_coach_message}"</div>
+          </div>
+        )}
+
+        {/* ── Week theme ────────────────────────────────────────────────── */}
+        {currentWeek?.theme && (
+          <div style={{ margin:"0 14px 14px",padding:"10px 14px",background:`${PRIMARY}10`,borderRadius:12,border:`1px solid ${PRIMARY}30` }}>
+            <div style={{ fontFamily:FONT,fontSize:9,color:PRIMARY,fontWeight:800,letterSpacing:1.5,marginBottom:2 }}>WEEK {weekNumber} THEME</div>
+            <div style={{ fontFamily:FONT,fontSize:13,color:"#ccc",fontWeight:700 }}>{currentWeek.theme}</div>
+          </div>
+        )}
+
+        {/* ── Session selector ──────────────────────────────────────────── */}
+        <div style={{ padding:"0 14px 14px" }}>
+          <div style={{ fontFamily:FONT,fontWeight:800,fontSize:11,color:"#555",letterSpacing:1.5,marginBottom:10 }}>THIS WEEK'S SESSIONS</div>
+          <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
+            {sessions.map((sess,i)=>{
+              const sel = selectedSession?.day===sess.day && selectedSession?.session_name===sess.session_name;
+              return (
+                <button key={i} onClick={()=>{ setSelectedSession(sess); setExpandedEx(null); }}
+                  style={{ width:"100%",padding:"13px 15px",borderRadius:14,background:sel?`${PRIMARY}14`:CARD,border:`1.5px solid ${sel?PRIMARY:BORDER}`,display:"flex",alignItems:"center",gap:12,cursor:"pointer",textAlign:"left",transition:"all 0.18s" }}>
+                  <div style={{ width:38,height:38,borderRadius:10,background:sel?PRIMARY:CARD2,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"background 0.18s" }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={sel?"#fff":"#555"} strokeWidth="1.8"><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>
+                  </div>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontFamily:FONT,fontWeight:800,fontSize:13,color:sel?PRIMARY:"#fff",marginBottom:2 }}>{sess.day}</div>
+                    <div style={{ fontFamily:FONT,fontSize:11,color:"#555" }}>{sess.session_name} · {sess.duration_mins}min · {sess.exercises?.length||0} exercises</div>
+                  </div>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={sel?PRIMARY:"#444"} strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ── Session detail ────────────────────────────────────────────── */}
+        {selectedSession && (
+          <div style={{ padding:"0 14px" }}>
+            <div style={{ fontFamily:FONT,fontWeight:800,fontSize:11,color:"#555",letterSpacing:1.5,marginBottom:10 }}>SESSION DETAIL</div>
+
+            {selectedSession.warm_up?.length>0 && (
+              <div style={{ background:CARD,borderRadius:14,padding:"14px 16px",marginBottom:10,border:`1px solid ${BORDER}` }}>
+                <div style={{ fontFamily:FONT,fontWeight:800,fontSize:10,color:"#F59E0B",letterSpacing:1.5,marginBottom:10 }}>WARM-UP</div>
+                {selectedSession.warm_up.map((w,i)=>(
+                  <div key={i} style={{ display:"flex",gap:10,paddingBottom:i<selectedSession.warm_up.length-1?9:0,marginBottom:i<selectedSession.warm_up.length-1?9:0,borderBottom:i<selectedSession.warm_up.length-1?`1px solid ${BORDER}`:"none" }}>
+                    <div style={{ width:6,height:6,borderRadius:"50%",background:"#F59E0B",marginTop:5,flexShrink:0 }}/>
+                    <div>
+                      <div style={{ fontFamily:FONT,fontSize:13,color:"#ddd",fontWeight:600 }}>{w.exercise}</div>
+                      <div style={{ fontFamily:FONT,fontSize:11,color:"#555" }}>{w.duration_secs}s{w.notes?` · ${w.notes}`:''}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {(selectedSession.exercises||[]).map((ex,i)=>{
+              const isEx   = expandedEx===i;
+              const vUrl   = exVideos[ex.ymove_search_term||ex.name];
+              return (
+                <div key={i} style={{ background:CARD,borderRadius:14,marginBottom:8,border:`1.5px solid ${isEx?PRIMARY:BORDER}`,overflow:"hidden",transition:"border-color 0.18s" }}>
+                  <div onClick={()=>{ const next=isEx?null:i; setExpandedEx(next); if(next!==null) fetchExVideo(ex.ymove_search_term||ex.name); }}
+                    style={{ padding:"13px 15px",display:"flex",alignItems:"center",gap:12,cursor:"pointer" }}>
+                    <div style={{ width:36,height:36,borderRadius:10,background:`${PRIMARY}14`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+                      <span style={{ fontFamily:FONT,fontWeight:900,fontSize:13,color:PRIMARY }}>{i+1}</span>
+                    </div>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontFamily:FONT,fontWeight:800,fontSize:13,color:"#fff",marginBottom:2 }}>{ex.name}</div>
+                      <div style={{ fontFamily:FONT,fontSize:11,color:"#555" }}>{ex.sets} sets × {ex.reps} · {ex.rest_secs}s rest</div>
+                    </div>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={isEx?PRIMARY:"#444"} strokeWidth="2"
+                      style={{ transform:isEx?"rotate(90deg)":"rotate(0)",transition:"transform 0.18s" }}>
+                      <polyline points="9 18 15 12 9 6"/>
+                    </svg>
+                  </div>
+                  {isEx&&(
+                    <div style={{ padding:"0 15px 14px",borderTop:`1px solid ${BORDER}` }}>
+                      <div style={{ display:"flex",gap:7,marginTop:12,marginBottom:12 }}>
+                        {[{l:"SETS",v:ex.sets},{l:"REPS",v:ex.reps},{l:"REST",v:`${ex.rest_secs}s`},...(ex.tempo?[{l:"TEMPO",v:ex.tempo}]:[])].map(s=>(
+                          <div key={s.l} style={{ flex:1,background:CARD2,borderRadius:10,padding:"8px 4px",textAlign:"center" }}>
+                            <div style={{ fontFamily:FONT,fontSize:9,color:"#444",letterSpacing:1.2,marginBottom:3 }}>{s.l}</div>
+                            <div style={{ fontFamily:FONT,fontWeight:800,fontSize:13,color:PRIMARY }}>{s.v}</div>
+                          </div>
+                        ))}
+                      </div>
+                      {ex.form_cue&&(
+                        <div style={{ background:`${PRIMARY}0d`,borderRadius:10,padding:"10px 12px",marginBottom:10,borderLeft:`3px solid ${PRIMARY}` }}>
+                          <div style={{ fontFamily:FONT,fontSize:9,color:PRIMARY,fontWeight:800,letterSpacing:1.5,marginBottom:3 }}>FORM CUE</div>
+                          <div style={{ fontFamily:FONT,fontSize:12,color:"#bbb",lineHeight:1.55 }}>{ex.form_cue}</div>
+                        </div>
+                      )}
+                      {ex.equipment_needed&&(
+                        <div style={{ fontFamily:FONT,fontSize:11,color:"#444",marginBottom:10 }}>Equipment: {ex.equipment_needed}</div>
+                      )}
+                      {vUrl&&(
+                        <div style={{ borderRadius:12,overflow:"hidden",marginTop:4 }}>
+                          <video src={vUrl} controls playsInline style={{ width:"100%",maxHeight:190,objectFit:"cover",borderRadius:12 }}/>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {selectedSession.cool_down?.length>0&&(
+              <div style={{ background:CARD,borderRadius:14,padding:"14px 16px",marginBottom:12,border:`1px solid ${BORDER}` }}>
+                <div style={{ fontFamily:FONT,fontWeight:800,fontSize:10,color:"#22C55E",letterSpacing:1.5,marginBottom:10 }}>COOL-DOWN</div>
+                {selectedSession.cool_down.map((c,i)=>(
+                  <div key={i} style={{ display:"flex",gap:10,paddingBottom:i<selectedSession.cool_down.length-1?9:0,marginBottom:i<selectedSession.cool_down.length-1?9:0,borderBottom:i<selectedSession.cool_down.length-1?`1px solid ${BORDER}`:"none" }}>
+                    <div style={{ width:6,height:6,borderRadius:"50%",background:"#22C55E",marginTop:5,flexShrink:0 }}/>
+                    <div style={{ fontFamily:FONT,fontSize:13,color:"#ddd",fontWeight:600 }}>{c.exercise} · {c.duration_secs}s</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {plan.nutrition_note&&(
+              <div style={{ background:"#081408",borderRadius:14,padding:"14px 16px",marginBottom:12,border:"1px solid #22C55E22" }}>
+                <div style={{ fontFamily:FONT,fontSize:9,color:"#22C55E",fontWeight:800,letterSpacing:1.5,marginBottom:4 }}>NUTRITION TIP</div>
+                <div style={{ fontFamily:FONT,fontSize:12,color:"#aaa",lineHeight:1.6 }}>{plan.nutrition_note}</div>
+              </div>
+            )}
+
+            {selectedSession.session_notes&&(
+              <div style={{ background:CARD,borderRadius:12,padding:"12px 14px",marginBottom:14,border:`1px solid ${BORDER}` }}>
+                <div style={{ fontFamily:FONT,fontSize:11,color:"#666",lineHeight:1.6 }}>{selectedSession.session_notes}</div>
+              </div>
+            )}
+
+            <button style={{ width:"100%",padding:"15px",borderRadius:16,background:PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",letterSpacing:0.3,boxShadow:`0 4px 20px ${PRIMARY}40`,marginBottom:14 }}>
+              Start Session
+            </button>
+
+            {plan.progression_note&&(
+              <div style={{ fontFamily:FONT,fontSize:11,color:"#333",textAlign:"center",lineHeight:1.6,paddingBottom:20 }}>{plan.progression_note}</div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, streakDay=1, energyKey, onMoodSelect, weeklyWorkoutDays=0, weeklyAvgCal=null, weeklyAvgMin=null, apiWorkout=null, notifCount=0, onNotifReset, onLogout }) {
   const { dark } = useTheme();
   const { user, profileImg, isPremium } = useUser();
@@ -8369,6 +8656,21 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
           <div style={{ display:"flex",alignItems:"center",gap:4 }}>
             <span style={{ fontFamily:FONT,fontSize:11,color:PRIMARY,fontWeight:700 }}>View report</span>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+          </div>
+        </div>
+
+        {/* MY PLAN CARD */}
+        <div onClick={()=>onNavigate("myPlan")} style={{ background:"linear-gradient(135deg,#0a1a0f,#0d2218)",borderRadius:18,border:`1.5px solid #22C55E33`,padding:"14px 18px",marginBottom:13,animation:"fadeUp 0.5s ease 0.09s both",cursor:"pointer",display:"flex",alignItems:"center",gap:14 }}>
+          <div style={{ width:42,height:42,borderRadius:12,background:"linear-gradient(135deg,#16A34A,#15803D)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:"0 0 14px rgba(34,197,94,0.4)" }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          </div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:"#22C55E",letterSpacing:2,marginBottom:2 }}>AI PERSONAL TRAINER</div>
+            <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff" }}>My 4-Week Plan</div>
+          </div>
+          <div style={{ display:"flex",alignItems:"center",gap:4 }}>
+            <span style={{ fontFamily:FONT,fontSize:11,color:"#22C55E",fontWeight:700 }}>View plan</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
           </div>
         </div>
 
@@ -8931,12 +9233,13 @@ function VTRXAppInner({ setPaymentPlan }) {
   if (phase !== "dashboard") return null;
 
   // Inner pages
+  if (innerPage==="myPlan")        return <MyPlanPage onBack={goBack}/>;
   if (innerPage==="upgrade")       return <UpgradePlanPage onBack={goBack}/>;
   if (innerPage==="aiSummary")     return <AISummaryPage energyKey={energyKey} workoutDone={workoutDone} logId={lastWorkoutLogId} onBack={goBack}/>;
   if (innerPage==="nutrition")     return <NutritionPage meal={MEALS[mealIdx % MEALS.length]} onBack={goBack}/>;
   if (innerPage==="fitnessStats")  return <FitnessStatsPage onBack={goBack} loggedWorkouts={loggedWorkouts}/>;
   if (innerPage==="notifications") return <NotificationsPage onBack={goBack}/>;
-  if (innerPage==="profile") return <ProfilePage onBack={goBack} onLogout={handleLogout} streakDay={streakDay} workoutsTotal={workoutsTotal}/>;
+  if (innerPage==="profile") return <ProfilePage onBack={goBack} onLogout={handleLogout} onNavigate={navigate} streakDay={streakDay} workoutsTotal={workoutsTotal}/>;
   if (innerPage==="workoutDetail") {
     const fallbackW = WEEKLY_WORKOUTS[TODAY_IDX % WEEKLY_WORKOUTS.length];
     const activeW   = selectedScheduleWorkout || apiWorkout || fallbackW;
