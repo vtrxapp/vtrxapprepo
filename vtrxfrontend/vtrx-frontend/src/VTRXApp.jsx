@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, createContext, useContext } from "react";
+import React, { useState, useEffect, useRef, createContext, useContext, useImperativeHandle, forwardRef } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, PaymentRequestButtonElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { getNotificationToken, onForegroundMessage, isPushSupported } from "./firebase";
@@ -1328,7 +1328,7 @@ function SwipeableSet({ set:s, index:i, activeSet, onUpdate, onComplete, onDelet
 // ─────────────────────────────────────────────────────────────────────────────
 const PLAYBACK_SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
-function VideoPlayer({ videoUrl, hlsUrl = null, thumbnailUrl, exerciseName, onProgress, onVideoComplete, initialPositionSecs = 0, fillContainer = false, onPortraitDetected, videoUrlLoading = false }) {
+const VideoPlayer = forwardRef(function VideoPlayer({ videoUrl, hlsUrl = null, thumbnailUrl, exerciseName, onProgress, onVideoComplete, initialPositionSecs = 0, fillContainer = false, onPortraitDetected, videoUrlLoading = false, portraitMode = false }, ref) {
   const videoRef    = useRef(null);
   const containerRef = useRef(null);
   const seekBarRef  = useRef(null);
@@ -1473,6 +1473,9 @@ function VideoPlayer({ videoUrl, hlsUrl = null, thumbnailUrl, exerciseName, onPr
     else          v.pause();
   };
 
+  // Expose togglePlay + isPlaying to portrait layout via ref
+  useImperativeHandle(ref, () => ({ togglePlay, isPlaying: () => !videoRef.current?.paused }), []);
+
   const seekBy = (secs) => {
     const v = videoRef.current;
     if (!v || !duration) return;
@@ -1600,8 +1603,8 @@ function VideoPlayer({ videoUrl, hlsUrl = null, thumbnailUrl, exerciseName, onPr
         </div>
       )}
 
-      {/* ─ Controls overlay (auto-hides) ─ */}
-      {showControls && !hasError && (
+      {/* ─ Controls overlay (auto-hides) — suppressed in portrait mode (controls rendered externally) ─ */}
+      {showControls && !hasError && !portraitMode && (
         <>
           {/* Gradient overlay */}
           <div style={{ position:'absolute', inset:0, background:'linear-gradient(180deg, rgba(0,0,0,0.55) 0%, transparent 30%, transparent 60%, rgba(0,0,0,0.75) 100%)', pointerEvents:'none' }}/>
@@ -1689,7 +1692,7 @@ function VideoPlayer({ videoUrl, hlsUrl = null, thumbnailUrl, exerciseName, onPr
       )}
     </div>
   );
-}
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ── EXERCISE INSTRUCTIONS LOOKUP ─────────────────────────────────────────────
@@ -1915,12 +1918,14 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
   const [restCount, setRestCount] = useState(0);
   const timerRef = useRef(null);
 
-  const [isPortrait, setIsPortrait]   = useState(false);
-  const [panelOpen,  setPanelOpen]    = useState(true);
-  const dragRef       = useRef({ startY: 0, isDismissing: false, decided: false });
-  const panelDragYRef = useRef(0);
-  const panelRef      = useRef(null);
-  const swipeUpStartY = useRef(0);
+  const [isPortrait,      setIsPortrait]      = useState(false);
+  const [panelOpen,       setPanelOpen]       = useState(true);
+  const [portraitPlaying, setPortraitPlaying] = useState(false);
+  const dragRef        = useRef({ startY: 0, isDismissing: false, decided: false });
+  const panelDragYRef  = useRef(0);
+  const panelRef       = useRef(null);
+  const swipeUpStartY  = useRef(0);
+  const videoPlayerRef = useRef(null);
 
   // Attach native (non-passive) touch listeners to the panel so we can call
   // preventDefault() when we've decided the gesture is a dismiss swipe.
@@ -2034,14 +2039,14 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
     thumbnailUrl: ex.thumbnailUrl || ex.img || "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=400&q=70",
     exerciseName: ex.name,
     initialPositionSecs: resumePos,
-    onPortraitDetected: setIsPortrait,
+    onPortraitDetected: (portrait) => { setIsPortrait(portrait); setPortraitPlaying(false); },
     onProgress: (pos, dur) => {
       if (ex.ymoveId || ex.id) {
         const KEY = 'vtrx_vidprog_' + (ex.ymoveId || ex.id);
         try { localStorage.setItem(KEY, JSON.stringify({ pos: Math.floor(pos), dur: Math.floor(dur) })); } catch(_e){}
       }
     },
-    onVideoComplete: () => { if (onAutoStartWorkout) onAutoStartWorkout(); },
+    onVideoComplete: () => { if (onAutoStartWorkout) onAutoStartWorkout(); setPortraitPlaying(false); },
   };
 
   // Shared panel body used in both portrait and landscape layouts
@@ -2202,7 +2207,26 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
       <div style={{ position:"absolute",inset:0,background:"#000",overflow:"hidden" }}>
 
         {/* Full-screen portrait video behind everything */}
-        <VideoPlayer {...videoProps} fillContainer />
+        <VideoPlayer ref={videoPlayerRef} {...videoProps} fillContainer portraitMode />
+
+        {/* Portrait play/pause tap zone — sits in the visible area above the panel */}
+        {panelOpen && (
+          <div
+            style={{ position:"absolute",top:0,left:0,right:0,height:"32%",zIndex:16,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}
+            onClick={() => {
+              videoPlayerRef.current?.togglePlay();
+              setPortraitPlaying(videoPlayerRef.current?.isPlaying() ?? false);
+              // Update icon state after tiny delay (play() is async)
+              setTimeout(() => setPortraitPlaying(!(videoPlayerRef.current?.isPlaying() ?? true)), 80);
+            }}
+          >
+            <div style={{ width:56,height:56,borderRadius:"50%",background:"rgba(0,0,0,0.45)",backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)",border:"1px solid rgba(255,255,255,0.2)",display:"flex",alignItems:"center",justifyContent:"center" }}>
+              {portraitPlaying
+                ? <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                : <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21"/></svg>}
+            </div>
+          </div>
+        )}
 
         {/* Back button + title — always visible at top */}
         <div style={{ position:"absolute",top:0,left:0,right:0,zIndex:20,padding:"50px 18px 24px",background:"linear-gradient(180deg,rgba(0,0,0,0.75) 0%,transparent 100%)",pointerEvents:"none" }}>
