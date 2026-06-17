@@ -222,7 +222,8 @@ const syncYmoveRecipes = async (req, res) => {
       if (fetchedTotal === null) fetchedTotal = t > 0 ? t : null;
 
       for (const r of recipes) {
-        const rawId   = r.id != null ? r.id : r.ymoveId;
+        // Prefer slug (human-readable, matches GET /recipes/:slug) over numeric id
+        const rawId   = r.slug || (r.id != null ? r.id : r.ymoveId);
         const ymoveId = rawId != null ? String(rawId) : '';
         if (!ymoveId) { skipped++; continue; }
 

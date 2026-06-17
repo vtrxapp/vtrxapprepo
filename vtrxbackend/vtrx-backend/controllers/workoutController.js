@@ -808,17 +808,85 @@ const getUpcomingWorkouts = async (req, res) => {
 };
 
 // ── GET /api/workouts/exercise-video/:ymoveId — Fresh video URL proxy ─────────
+// Also handles GET /api/workouts/exercise-video?name=Squats for exercises that
+// have no ymoveId yet: searches ymove by name, returns video URL, and
+// back-fills the ymoveId on the DB exercise so the next call hits the fast path.
 const getExerciseVideoUrl = async (req, res) => {
   const { ymoveId } = req.params;
+  const { name }    = req.query;
+
   try {
-    const { videoUrl, hlsUrl } = await ymove.getExerciseVideoUrl(ymoveId);
+    let videoUrl = null;
+    let hlsUrl   = null;
+    let foundId  = ymoveId || null;
+
+    if (ymoveId) {
+      ({ videoUrl, hlsUrl } = await ymove.getExerciseVideoUrl(ymoveId));
+    }
+
+    // Name-based fallback: exercise has no ymoveId — search ymove to find it
+    if (!videoUrl && !hlsUrl && name) {
+      const { exercises } = await ymove.getExercises({ search: name, limit: 5 });
+      const match = exercises.find(e =>
+        (e.title || e.name || '').toLowerCase() === name.toLowerCase()
+      ) || exercises[0];
+
+      if (match) {
+        foundId = match.id != null ? String(match.id) : null;
+        if (foundId) {
+          ({ videoUrl, hlsUrl } = await ymove.getExerciseVideoUrl(foundId));
+          // Back-fill ymoveId on the DB record so future requests skip this search
+          if (videoUrl || hlsUrl) {
+            const thumbUrl = match.thumbnailUrl || match.thumbnail_url || match.gifUrl || null;
+            prisma.exercise.updateMany({
+              where: { name: { equals: name, mode: 'insensitive' }, ymoveId: null },
+              data:  { ymoveId: foundId, ...(thumbUrl && { thumbnailUrl: thumbUrl }) },
+            }).catch(() => {});
+          }
+        }
+      }
+    }
+
     if (!videoUrl && !hlsUrl) {
       return res.status(404).json({ success: false, message: 'Video not available' });
     }
-    res.json({ success: true, data: { videoUrl, hlsUrl, expiresIn: 48 * 3600 } });
+    res.json({ success: true, data: { videoUrl, hlsUrl, ymoveId: foundId, expiresIn: 48 * 3600 } });
   } catch (error) {
     logger.error('getExerciseVideoUrl error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch video URL' });
+  }
+};
+
+// ── GET /api/workouts/ymove/ping — Verify ymove API is working ───────────────
+// Returns a sample exercise with its video URL to confirm the API key is valid.
+const ymovePing = async (req, res) => {
+  if (!ymove.isConfigured()) {
+    return res.status(503).json({ success: false, message: 'YMOVE_API_KEY not set in Railway' });
+  }
+  try {
+    const { exercises } = await ymove.getExercises({ limit: 1, page: 1 });
+    if (!exercises.length) {
+      return res.json({ success: true, data: { connected: true, note: 'API reachable but returned no exercises' } });
+    }
+    const ex      = exercises[0];
+    const foundId = ex.id != null ? String(ex.id) : null;
+    let videoUrl = null, hlsUrl = null;
+    if (foundId) {
+      ({ videoUrl, hlsUrl } = await ymove.getExerciseVideoUrl(foundId));
+    }
+    res.json({
+      success: true,
+      data: {
+        connected:  true,
+        ymoveId:    foundId,
+        name:       ex.title || ex.name,
+        videoUrl,
+        hlsUrl,
+        hasVideo:   !!(videoUrl || hlsUrl),
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -1305,4 +1373,5 @@ module.exports = {
   getYmoveUsage,
   debugYmoveExercise,
   syncYmoveExercises,
+  ymovePing,
 };

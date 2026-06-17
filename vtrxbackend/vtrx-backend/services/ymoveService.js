@@ -253,7 +253,7 @@ const getUsage = async () => {
 const checkConnection = async () => {
   if (!isConfigured()) return false;
   try {
-    await ymoveApi.get('/exercises', { params: { limit: 1 } });
+    await ymoveApi.get('/exercises', { params: { pageSize: 1 } });
     return true;
   } catch {
     return false;
@@ -268,7 +268,7 @@ const checkConnection = async () => {
 const getRecipes = async ({ query, diet, cuisine, mealType, maxCalories, minProtein, limit = 20, page = 1 } = {}) => {
   if (!isConfigured()) return { recipes: [] };
   try {
-    const { data } = await ymoveApi.get('/recipes', {
+    const { data } = await ymoveApi.get('/recipes/search', {
       params: {
         ...(query       && { query }),
         ...(diet        && { diet }),

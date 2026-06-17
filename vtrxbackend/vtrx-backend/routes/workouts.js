@@ -14,13 +14,15 @@ router.get('/muscle-groups',           workout.getMuscleGroups);        // GET /
 router.get('/exercise-types',          workout.getExerciseTypes);       // GET /workouts/exercise-types
 router.post('/posture/analyze',        workout.analyzePosture);         // POST /workouts/posture/analyze
 router.get('/ymove/usage',             workout.getYmoveUsage);          // GET /workouts/ymove/usage
+router.get('/ymove/ping',              workout.ymovePing);              // GET /workouts/ymove/ping — verify API + sample video URL
 router.get('/ymove/debug/:id',         workout.debugYmoveExercise);     // GET /workouts/ymove/debug/:id — raw ymove response
 router.post('/ymove/sync-exercises',   workout.syncYmoveExercises);     // POST /workouts/ymove/sync-exercises
 router.get('/history',                 workout.getWorkoutHistory);
 router.get('/stats',                   workout.getWeeklyStats);
 router.get('/video-progress',          workout.getVideoProgress);
 router.get('/ai-summary/:logId',       workout.getAISummary);
-router.get('/exercise-video/:ymoveId', workout.getExerciseVideoUrl);
+router.get('/exercise-video',          workout.getExerciseVideoUrl);    // GET /workouts/exercise-video?name=Squats (name-based fallback)
+router.get('/exercise-video/:ymoveId', workout.getExerciseVideoUrl);    // GET /workouts/exercise-video/:id (fast path)
 router.get('/upcoming',                workout.getUpcomingWorkouts);
 router.get('/schedule',                workout.getSchedule);
 router.patch('/schedule/:id/move',     workout.moveScheduleEntry);

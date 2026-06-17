@@ -1814,32 +1814,38 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
 
   const [resolvedVideoUrl, setResolvedVideoUrl] = useState(ex.videoUrl || null);
   const [resolvedHlsUrl,   setResolvedHlsUrl]   = useState(null);
-  const [videoLoading, setVideoLoading] = useState(!!ex.ymoveId);
+  const [videoLoading, setVideoLoading] = useState(!!(ex.ymoveId || ex.name));
   const [resumePos, setResumePos] = useState(0);
   useEffect(()=>{
     setResolvedVideoUrl(ex.videoUrl || null); // show stored URL immediately while fresh one loads
     setResolvedHlsUrl(null);
-    if (!ex.ymoveId) { setVideoLoading(false); return; }
+    // Need either a ymoveId (fast path) or a name (name-search fallback) to fetch a video
+    if (!ex.ymoveId && !ex.name) { setVideoLoading(false); return; }
     const token = getAuthToken();
     if (!token) { setVideoLoading(false); return; }
     setVideoLoading(true);
-    // Restore resume position
+    // Restore resume position — use ymoveId if available, otherwise DB id
+    const progressKey = ex.ymoveId || ex.id;
     try {
-      const saved = JSON.parse(localStorage.getItem('vtrx_vidprog_' + ex.ymoveId) || 'null');
+      const saved = JSON.parse(localStorage.getItem('vtrx_vidprog_' + progressKey) || 'null');
       if (saved?.pos > 5) setResumePos(saved.pos);
     } catch(_e){}
-    // Always fetch fresh URLs — ymove CDN links expire after 48 h, so stored URLs go stale
-    apiCall(`/workouts/exercise-video/${ex.ymoveId}`)
+    // Fast path: ymoveId is known — fetch directly
+    // Slow path: ymoveId is null — search ymove by name; backend back-fills ymoveId for next time
+    const endpoint = ex.ymoveId
+      ? `/workouts/exercise-video/${ex.ymoveId}`
+      : `/workouts/exercise-video?name=${encodeURIComponent(ex.name)}`;
+    apiCall(endpoint)
       .then(d => {
         const { videoUrl: vUrl, hlsUrl: hUrl } = d?.data || {};
-        console.log(`[video] ymoveId=${ex.ymoveId} videoUrl=${vUrl||'null'} hlsUrl=${hUrl||'null'}`);
+        console.log(`[video] ymoveId=${ex.ymoveId||'null'} name="${ex.name}" videoUrl=${vUrl||'null'} hlsUrl=${hUrl||'null'}`);
         if (vUrl) setResolvedVideoUrl(vUrl);
         if (hUrl) setResolvedHlsUrl(hUrl);
-        if (!vUrl && !hUrl) console.warn(`[video] No URL returned for ymoveId=${ex.ymoveId} — check YMOVE_API_KEY in Railway`);
+        if (!vUrl && !hUrl) console.warn(`[video] No URL for "${ex.name}" — check YMOVE_API_KEY in Railway`);
       })
-      .catch(err => console.error(`[video] fetch failed for ymoveId=${ex.ymoveId}:`, err))
+      .catch(err => console.error(`[video] fetch failed for "${ex.name}":`, err))
       .finally(()=>{ setVideoLoading(false); });
-  }, [ex.ymoveId, ex.videoUrl]);
+  }, [ex.ymoveId, ex.name, ex.videoUrl]);
 
   const [sets, setSets] = useState([{reps:"",weight:"",done:false},{reps:"",weight:"",done:false}]);
   const MIN_SETS = 2; // first 2 sets cannot be deleted
