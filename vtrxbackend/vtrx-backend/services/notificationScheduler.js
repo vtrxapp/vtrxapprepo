@@ -68,7 +68,23 @@ const startOfTodayInTz = (timezone) => {
   }
 };
 
-// Check if a notification type was already sent to this user within the last `hours` hours
+// Atomically claim a notification slot. Returns true if this caller "won" the slot
+// (should send), false if another instance already claimed it (skip send).
+// Uses a unique DB constraint on (userId, type, date) to prevent races across
+// multiple Railway instances that each run their own cron.
+const claimSend = async (userId, type) => {
+  const date = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD" UTC
+  try {
+    await prisma.notificationLog.create({ data: { userId, type, date } });
+    return true; // We claimed it — go ahead and send
+  } catch (e) {
+    if (e.code === 'P2002') return false; // Another instance already claimed this slot
+    logger.error(`claimSend unexpected error (userId=${userId} type=${type}):`, e.message);
+    return false;
+  }
+};
+
+// Keep for backward compat (milestones use yearly windows, not daily)
 const alreadySentWithin = async (userId, type, hours) => {
   const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
   const found = await prisma.notificationLog.findFirst({
@@ -77,9 +93,10 @@ const alreadySentWithin = async (userId, type, hours) => {
   return !!found;
 };
 
-// Log a sent notification for dedup
-const logSent = async (userId, type) => {
-  await prisma.notificationLog.create({ data: { userId, type } }).catch(() => {});
+// Log a sent notification (used by milestone checker which manages its own date key)
+const logSent = async (userId, type, date) => {
+  const d = date || new Date().toISOString().slice(0, 10);
+  await prisma.notificationLog.create({ data: { userId, type, date: d } }).catch(() => {});
 };
 
 // ── Comeback workout generator ────────────────────────────────────────────────
@@ -107,7 +124,6 @@ const runWorkoutReminder = async (user, prefs) => {
   if (!prefs.workoutReminderOn) return;
   const hour = localHour(prefs.timezone);
   if (hour !== prefs.workoutReminderHour) return;
-  if (await alreadySentWithin(user.id, 'workout_reminder', 20)) return;
 
   // Only send if user hasn't logged a workout today
   const todayStart = startOfTodayInTz(prefs.timezone);
@@ -116,6 +132,9 @@ const runWorkoutReminder = async (user, prefs) => {
   });
   if (todayLog) return;
 
+  // Atomic claim — if another instance already claimed this slot, skip
+  if (!(await claimSend(user.id, 'workout_reminder'))) return;
+
   const name = user.name?.split(' ')[0] || 'there';
   await notif.sendToUser({
     userId: user.id,
@@ -123,7 +142,6 @@ const runWorkoutReminder = async (user, prefs) => {
     body: `Hey ${name}, your workout window is open. Even 15 minutes counts.`,
     data: { type: 'workout_reminder', screen: 'Workouts' },
   });
-  await logSent(user.id, 'workout_reminder');
 };
 
 const runStreakAlert = async (user, prefs) => {
@@ -131,13 +149,14 @@ const runStreakAlert = async (user, prefs) => {
   if ((user.streakDays || 0) < 3) return;
   const hour = localHour(prefs.timezone);
   if (hour !== 18) return; // 6pm check
-  if (await alreadySentWithin(user.id, 'streak_alert', 20)) return;
 
   const todayStart = startOfTodayInTz(prefs.timezone);
   const todayLog = await prisma.workoutLog.findFirst({
     where: { userId: user.id, completedAt: { gte: todayStart } },
   });
   if (todayLog) return;
+
+  if (!(await claimSend(user.id, 'streak_alert'))) return;
 
   const streak = user.streakDays;
   await notif.sendToUser({
@@ -146,22 +165,22 @@ const runStreakAlert = async (user, prefs) => {
     body: `You've been consistent for ${streak} days. One quick session keeps it alive.`,
     data: { type: 'streak_alert', streakDays: String(streak), screen: 'Workouts' },
   });
-  await logSent(user.id, 'streak_alert');
 };
 
 const runReengagement = async (user, prefs) => {
   if (!prefs.reengagementOn) return;
   if (await alreadySentWithin(user.id, 'reengagement', 7 * 24)) return;
 
-  const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+  const fiveDaysAgo  = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const lastLog = await prisma.workoutLog.findFirst({
     where: { userId: user.id },
     orderBy: { completedAt: 'desc' },
   });
   if (!lastLog) return;
-  // Active 5+ days ago but less than 7 (comeback handles 7+)
   if (lastLog.completedAt > fiveDaysAgo || lastLog.completedAt <= sevenDaysAgo) return;
+
+  if (!(await claimSend(user.id, 'reengagement'))) return;
 
   const name = user.name?.split(' ')[0] || 'there';
   await notif.sendToUser({
@@ -170,7 +189,6 @@ const runReengagement = async (user, prefs) => {
     body: "Life happens — no judgement. Your progress is still here whenever you're ready.",
     data: { type: 'reengagement', screen: 'Home' },
   });
-  await logSent(user.id, 'reengagement');
 };
 
 const runComeback = async (user, prefs) => {
@@ -182,8 +200,9 @@ const runComeback = async (user, prefs) => {
     where: { userId: user.id },
     orderBy: { completedAt: 'desc' },
   });
-  // No logs ever, or last log was ≤7 days ago
   if (!lastLog || lastLog.completedAt > sevenDaysAgo) return;
+
+  if (!(await claimSend(user.id, 'comeback'))) return;
 
   const totalWorkouts = await prisma.workoutLog.count({ where: { userId: user.id } });
   const totalCalories = await prisma.workoutLog.aggregate({
@@ -197,13 +216,8 @@ const runComeback = async (user, prefs) => {
     userId: user.id,
     title: "🏃 Your comeback starts today",
     body: `${totalWorkouts} sessions, ${totalKcal} kcal burned — that's real. We saved a 15-min session for you.`,
-    data: {
-      type: 'comeback',
-      workoutJson: JSON.stringify(workout),
-      screen: 'Workouts',
-    },
+    data: { type: 'comeback', workoutJson: JSON.stringify(workout), screen: 'Workouts' },
   });
-  await logSent(user.id, 'comeback');
 };
 
 const runWeeklyRecap = async (user, prefs) => {
@@ -211,7 +225,6 @@ const runWeeklyRecap = async (user, prefs) => {
   const dow  = localDayOfWeek(prefs.timezone);
   const hour = localHour(prefs.timezone);
   if (dow !== 0 || hour !== 10) return; // Sunday 10am only
-  if (await alreadySentWithin(user.id, 'weekly_recap', 6 * 24)) return;
 
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const logs = await prisma.workoutLog.findMany({
@@ -219,6 +232,8 @@ const runWeeklyRecap = async (user, prefs) => {
     select: { caloriesBurned: true, duration: true },
   });
   if (logs.length === 0) return;
+
+  if (!(await claimSend(user.id, 'weekly_recap'))) return;
 
   const totalKcal = logs.reduce((s, l) => s + (l.caloriesBurned || 0), 0);
   const totalMins = logs.reduce((s, l) => s + (l.duration || 0), 0);
@@ -229,7 +244,6 @@ const runWeeklyRecap = async (user, prefs) => {
     body: `${logs.length} workout${logs.length === 1 ? '' : 's'}, ${totalMins} min, ${totalKcal} kcal — solid week.`,
     data: { type: 'weekly_recap', screen: 'Progress' },
   });
-  await logSent(user.id, 'weekly_recap');
 };
 
 const runTrialWarning = async (user, prefs) => {

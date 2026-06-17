@@ -551,11 +551,13 @@ model FoodLog {
 // ── NOTIFICATION_LOG ──────────────────────────────────────────────────────────
 // Dedup log to avoid sending the same notification type more than once per window
 model NotificationLog {
-  id           String   @id @default(uuid())
-  userId       String
-  type         String
-  sentAt       DateTime @default(now())
+  id      String   @id @default(uuid())
+  userId  String
+  type    String
+  date    String   // YYYY-MM-DD in UTC — used for unique-per-day constraint
+  sentAt  DateTime @default(now())
 
+  @@unique([userId, type, date])
   @@index([userId, type, sentAt])
   @@map("notification_log")
 }
