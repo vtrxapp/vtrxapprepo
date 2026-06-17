@@ -2369,9 +2369,41 @@ function PerfIcon({ type, color }) {
 
 function AISummaryPage({ energyKey, logId, onBack }) {
   const { dark } = useTheme();
-  const { isPremium } = useUser();
+  const { isPremium, user: currentUser } = useUser();
   const aiScrollRef = useScrollPos("ai-summary");
   const scrollRef = useRef(null);
+
+  // ── Onboarding analysis state (when no logId) ──
+  const [onboardingData, setOnboardingData] = useState(null);
+  const [onboardingLoading, setOnboardingLoading] = useState(!logId);
+  const [onboardingTwText, setOnboardingTwText] = useState("");
+  const [onboardingTwDone, setOnboardingTwDone] = useState(false);
+
+  useEffect(() => {
+    if (logId) return;
+    setOnboardingLoading(true);
+    apiCall('/ai/onboarding-analysis')
+      .then(res => {
+        if (res?.data) setOnboardingData(res.data);
+      })
+      .catch(() => {})
+      .finally(() => setOnboardingLoading(false));
+  }, [logId]);
+
+  // Typewriter for onboarding summary
+  useEffect(() => {
+    if (logId || onboardingLoading) return;
+    const text = onboardingData?.workoutSummary || '';
+    if (!text) return;
+    setOnboardingTwText(''); setOnboardingTwDone(false);
+    let i = 0;
+    const iv = setInterval(() => {
+      i++;
+      setOnboardingTwText(text.slice(0, i));
+      if (i >= text.length) { clearInterval(iv); setOnboardingTwDone(true); }
+    }, 16);
+    return () => clearInterval(iv);
+  }, [logId, onboardingLoading, onboardingData]);
 
   // ── Polling state ──
   const [summaryData, setSummaryData] = useState(null);
@@ -2484,6 +2516,100 @@ function AISummaryPage({ energyKey, logId, onBack }) {
       <button onClick={()=>openPaymentSheet("monthly")} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:"linear-gradient(135deg,#F59E0B,#D97706)",border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",letterSpacing:1,boxShadow:"0 4px 20px rgba(245,158,11,0.35)",transition:"all 0.2s" }}>UPGRADE TO PRO</button>
     </div>
   );
+
+  // ── Onboarding analysis view (no logId = accessed from home, not post-workout) ──
+  if (!logId) {
+    const firstName = currentUser?.name?.split(' ')[0] || 'there';
+    const hasAnalysis = onboardingData?.workoutSummary;
+    return (
+      <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column" }}>
+        {/* Header */}
+        <div style={{ padding:"50px 18px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0 }}>
+          <button onClick={onBack} style={{ width:38,height:38,borderRadius:"50%",background:CARD,border:`1px solid ${BORDER}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <div style={{ textAlign:"center" }}>
+            <div style={{ fontFamily:FONT,fontWeight:900,fontSize:16,color:"#fff" }}>VTRXAI Analysis</div>
+            <div style={{ fontFamily:FONT,fontSize:12,color:"#888",marginTop:2 }}>Your Personalised Coaching Plan</div>
+          </div>
+          <div style={{ width:38 }}/>
+        </div>
+
+        <div ref={scrollRef} style={{ flex:1,overflowY:"auto",padding:"0 16px 40px" }}>
+          {onboardingLoading ? (
+            <div style={{ display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",paddingTop:80,gap:16 }}>
+              <div style={{ width:64,height:64,borderRadius:"50%",background:"linear-gradient(135deg,#7C3AED,#4C1D95)",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 0 32px rgba(124,58,237,0.5)",animation:"glow 2s ease infinite" }}>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              </div>
+              <div style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff" }}>Preparing your analysis{".".repeat(dotCount)}</div>
+              <div style={{ fontFamily:FONT,fontSize:13,color:"#666",textAlign:"center",lineHeight:1.6,maxWidth:260 }}>Your AI coaching plan is being generated based on your profile. This only takes a moment.</div>
+            </div>
+          ) : hasAnalysis ? (
+            <>
+              {/* AI Coach Card */}
+              <div style={{ background:"linear-gradient(145deg,#0a0f1e,#141b35)",borderRadius:22,border:`1.5px solid ${PRIMARY}33`,padding:"22px 20px",marginBottom:14,boxShadow:"0 0 40px rgba(109,40,217,0.15)" }}>
+                <div style={{ display:"flex",gap:12,alignItems:"center",marginBottom:16 }}>
+                  <div style={{ width:48,height:48,borderRadius:"50%",background:"linear-gradient(135deg,#7C3AED,#4C1D95)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:"0 0 20px rgba(124,58,237,0.5)",animation:"glow 3s ease infinite" }}>
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                  </div>
+                  <div>
+                    <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff" }}>VTRX AI Coach</div>
+                    <div style={{ fontFamily:FONT,fontSize:11,color:"#8B5CF6",marginTop:2 }}>Personalised for {firstName}</div>
+                  </div>
+                  <div style={{ marginLeft:"auto",background:`${PRIMARY}22`,border:`1.5px solid ${PRIMARY}55`,borderRadius:20,padding:"5px 12px" }}>
+                    <span style={{ fontFamily:FONT,fontWeight:800,fontSize:10,color:PRIMARY,letterSpacing:1 }}>FREE</span>
+                  </div>
+                </div>
+                <div style={{ fontFamily:FONT,fontSize:13.5,color:"#ccc",lineHeight:1.75 }}>{onboardingTwText}{!onboardingTwDone && <span style={{ opacity:0.6 }}>▋</span>}</div>
+              </div>
+
+              {/* Goal summary chips */}
+              {currentUser?.goal && (
+                <div style={{ display:"flex",gap:8,flexWrap:"wrap",marginBottom:14 }}>
+                  {[
+                    { label: currentUser.goal, color: PRIMARY },
+                    currentUser.fitnessLevel && { label: currentUser.fitnessLevel, color: "#8B5CF6" },
+                    currentUser.daysPerWeek  && { label: `${currentUser.daysPerWeek} days/week`, color: "#22C55E" },
+                  ].filter(Boolean).map((chip, i) => (
+                    <div key={i} style={{ background:`${chip.color}18`,border:`1px solid ${chip.color}44`,borderRadius:20,padding:"5px 12px" }}>
+                      <span style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:chip.color }}>{chip.label}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Upgrade CTA */}
+              {!isPremium && (
+                <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"22px 20px",textAlign:"center",marginBottom:14 }}>
+                  <div style={{ width:52,height:52,borderRadius:"50%",background:"rgba(245,158,11,0.12)",border:"1.5px solid rgba(245,158,11,0.3)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px" }}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                  </div>
+                  <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:"#fff",marginBottom:8 }}>Get Per-Workout AI Coaching</div>
+                  <div style={{ fontFamily:FONT,fontSize:13,color:"#888",lineHeight:1.6,marginBottom:20 }}>
+                    Upgrade to Pro and get a detailed AI analysis after every single workout — form feedback, intensity score, and personalised next-session recommendations.
+                  </div>
+                  <button onClick={()=>openPaymentSheet("monthly")} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:"linear-gradient(135deg,#F59E0B,#D97706)",border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",letterSpacing:1,boxShadow:"0 4px 20px rgba(245,158,11,0.35)" }}>
+                    UPGRADE TO PRO
+                  </button>
+                </div>
+              )}
+            </>
+          ) : (
+            /* Analysis not ready yet */
+            <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"40px 24px",textAlign:"center",marginTop:20 }}>
+              <div style={{ width:64,height:64,borderRadius:"50%",background:"linear-gradient(135deg,#7C3AED,#4C1D95)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",boxShadow:"0 0 24px rgba(124,58,237,0.4)" }}>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              </div>
+              <div style={{ fontFamily:FONT,fontWeight:900,fontSize:18,color:"#fff",marginBottom:10 }}>Analysis Being Prepared</div>
+              <div style={{ fontFamily:FONT,fontSize:13,color:"#888",lineHeight:1.7 }}>
+                Your personalised AI coaching plan is being generated. You'll get a notification when it's ready — usually within a few minutes of signing up.
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   // ── Loading screen ──
   if (loading) {
@@ -7661,6 +7787,34 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
   const [confirmNutriRegen,  setConfirmNutriRegen]   = useState(false);
   const [aiShoppingChecked,  setAiShoppingChecked]   = useState(new Set());
 
+  // ── Onboarding nutrition summary ──────────────────────────────────────────────
+  const [onboardingNutrition, setOnboardingNutrition] = useState(null);
+  const [onboardingNutritionLoading, setOnboardingNutritionLoading] = useState(false);
+  const [onboardingNutritionTwText, setOnboardingNutritionTwText] = useState("");
+  const [onboardingNutritionTwDone, setOnboardingNutritionTwDone] = useState(false);
+  const [nutritionSummaryExpanded, setNutritionSummaryExpanded] = useState(true);
+
+  useEffect(() => {
+    if (!getAuthToken()) return;
+    setOnboardingNutritionLoading(true);
+    apiCall('/ai/onboarding-analysis')
+      .then(res => { if (res?.data?.nutritionSummary) setOnboardingNutrition(res.data.nutritionSummary); })
+      .catch(() => {})
+      .finally(() => setOnboardingNutritionLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (!onboardingNutrition || onboardingNutritionLoading) return;
+    setOnboardingNutritionTwText(''); setOnboardingNutritionTwDone(false);
+    let i = 0;
+    const iv = setInterval(() => {
+      i++;
+      setOnboardingNutritionTwText(onboardingNutrition.slice(0, i));
+      if (i >= onboardingNutrition.length) { clearInterval(iv); setOnboardingNutritionTwDone(true); }
+    }, 14);
+    return () => clearInterval(iv);
+  }, [onboardingNutrition, onboardingNutritionLoading]);
+
   const AI_PLAN_DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
   const AI_PLAN_SHORT = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
@@ -7866,6 +8020,101 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
       <div ref={scrollRef} style={{ flex:1,overflowY:"auto",padding:"0 16px 80px" }}>
         {subTab===0 && (
           <div>
+
+            {/* ── RECOMMENDED FOR YOU ─────────────────────────────────────── */}
+            {(() => {
+              const goal = currentUser?.nutritionGoal || '';
+              // Pick recipes relevant to the user's nutrition goal
+              const recommended = (() => {
+                if (!displayRecipes.length) return [];
+                let pool = [...displayRecipes];
+                if (goal === 'lose_fat') pool = pool.filter(r => (r.cal||999) < 450 || (r.tags||[]).some(t => /low.cal|salad|light|lean/i.test(t)));
+                else if (goal === 'build_muscle') pool = pool.filter(r => (r.protein||0) >= 25 || (r.tags||[]).some(t => /protein|chicken|beef|egg|meat/i.test(t)));
+                else if (goal === 'eat_clean') pool = pool.filter(r => (r.tags||[]).some(t => /clean|whole|natural|veg/i.test(t)));
+                return (pool.length >= 3 ? pool : displayRecipes).slice(0, 6);
+              })();
+              if (!recommended.length) return null;
+              return (
+                <div style={{ marginBottom:16 }}>
+                  <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10 }}>
+                    <div>
+                      <div style={{ fontFamily:FONT,fontWeight:900,fontSize:15,color:"#fff" }}>Recommended For You</div>
+                      <div style={{ fontFamily:FONT,fontSize:11,color:"#555",marginTop:2 }}>
+                        {goal === 'lose_fat' ? 'Low-calorie picks for fat loss' : goal === 'build_muscle' ? 'High-protein picks for muscle gain' : goal === 'eat_clean' ? 'Clean eating choices' : 'Personalised to your goals'}
+                      </div>
+                    </div>
+                    <div style={{ background:`${PRIMARY}18`,borderRadius:20,padding:"4px 10px" }}>
+                      <span style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:PRIMARY }}>AI Picks</span>
+                    </div>
+                  </div>
+                  <div style={{ display:"flex",gap:10,overflowX:"auto",paddingBottom:4,scrollbarWidth:"none" }}>
+                    {recommended.map((r,i) => (
+                      <div key={i} onClick={()=>setSelectedRecipe(r)}
+                        style={{ minWidth:148,borderRadius:16,overflow:"hidden",background:CARD,border:`1px solid ${BORDER}`,cursor:"pointer",flexShrink:0 }}>
+                        <div style={{ height:90,overflow:"hidden",position:"relative" }}>
+                          <img src={r.img} alt={r.name} style={{ width:"100%",height:"100%",objectFit:"cover" }} onError={e=>e.target.style.display="none"}/>
+                          <div style={{ position:"absolute",inset:0,background:"linear-gradient(to top,rgba(0,0,0,0.6),transparent)" }}/>
+                          <div style={{ position:"absolute",bottom:6,left:8,display:"flex",gap:6 }}>
+                            <span style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:"#fff" }}>{r.cal} cal</span>
+                            {r.protein > 0 && <span style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:PRIMARY }}>{r.protein}g P</span>}
+                          </div>
+                        </div>
+                        <div style={{ padding:"8px 10px" }}>
+                          <div style={{ fontFamily:FONT,fontWeight:700,fontSize:12,color:"#fff",lineHeight:1.3,marginBottom:3 }}>{r.name}</div>
+                          <div style={{ fontFamily:FONT,fontSize:10,color:"#666" }}>{r.time || '—'}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* ── FREE AI NUTRITION SUMMARY ────────────────────────────────── */}
+            {(onboardingNutrition || onboardingNutritionLoading) && (
+              <div style={{ background:`linear-gradient(135deg,#0a1a0e,#0d2015)`,border:`1px solid #22C55E33`,borderRadius:18,marginBottom:14,overflow:"hidden" }}>
+                <div onClick={()=>setNutritionSummaryExpanded(e=>!e)}
+                  style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 14px",cursor:"pointer" }}>
+                  <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+                    <div style={{ width:30,height:30,borderRadius:10,background:"linear-gradient(135deg,#16A34A,#15803D)",display:"flex",alignItems:"center",justifyContent:"center" }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                    </div>
+                    <div>
+                      <div style={{ fontFamily:FONT,fontWeight:800,fontSize:13,color:"#fff" }}>Your AI Nutrition Summary</div>
+                      <div style={{ fontFamily:FONT,fontSize:10,color:"#22C55E" }}>Personalised to your goals</div>
+                    </div>
+                  </div>
+                  <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+                    <div style={{ background:"rgba(34,197,94,0.15)",borderRadius:6,padding:"2px 8px" }}>
+                      <span style={{ fontFamily:FONT,fontWeight:800,fontSize:9,color:"#22C55E" }}>FREE</span>
+                    </div>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2"
+                      style={{ transform:nutritionSummaryExpanded?"rotate(180deg)":"rotate(0deg)",transition:"transform 0.3s" }}>
+                      <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                  </div>
+                </div>
+                {nutritionSummaryExpanded && (
+                  <div style={{ padding:"0 14px 14px" }}>
+                    {onboardingNutritionLoading ? (
+                      <div style={{ fontFamily:FONT,fontSize:13,color:"#555",textAlign:"center",padding:"12px 0" }}>Preparing your nutrition analysis…</div>
+                    ) : (
+                      <>
+                        <div style={{ fontFamily:FONT,fontSize:13,color:"#ccc",lineHeight:1.75,borderLeft:"2px solid #22C55E44",paddingLeft:12,marginBottom:14 }}>
+                          {onboardingNutritionTwText}{!onboardingNutritionTwDone && <span style={{ opacity:0.5 }}>▋</span>}
+                        </div>
+                        {!isPremium && (
+                          <button onClick={()=>openPaymentSheet("monthly")} style={{ width:"100%",padding:"12px 0",borderRadius:50,background:"linear-gradient(135deg,#16A34A,#15803D)",border:"none",fontFamily:FONT,fontWeight:800,fontSize:13,color:"#fff",cursor:"pointer",letterSpacing:0.5,boxShadow:"0 4px 16px rgba(34,197,94,0.3)" }}>
+                            Upgrade for Daily Nutrition Coaching
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* VTRX Smart Nutrition */}
             {(() => {
               const nFact = DAILY_NUTRITION_FACTS[selectedDay] || DAILY_NUTRITION_FACTS[0];
@@ -9046,29 +9295,13 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
           </div>
         </div>
 
-        {/* MY NUTRITION PLAN CARD */}
-        <div onClick={()=>{ onNavigate("nutritionPlan"); }}
-          style={{ background:"linear-gradient(135deg,#0f1a08,#162410)",borderRadius:18,border:`1.5px solid #A3E63533`,padding:"14px 18px",marginBottom:13,animation:"fadeUp 0.5s ease 0.085s both",cursor:"pointer",display:"flex",alignItems:"center",gap:14 }}>
-          <div style={{ width:42,height:42,borderRadius:12,background:"linear-gradient(135deg,#65A30D,#4D7C0F)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:"0 0 14px rgba(101,163,13,0.4)" }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>
-          </div>
-          <div style={{ flex:1 }}>
-            <div style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:"#A3E635",letterSpacing:2,marginBottom:2 }}>AI NUTRITION COACH</div>
-            <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff" }}>My 7-Day Meal Plan</div>
-          </div>
-          <div style={{ display:"flex",alignItems:"center",gap:4 }}>
-            <span style={{ fontFamily:FONT,fontSize:11,color:"#A3E635",fontWeight:700 }}>View plan</span>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#A3E635" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-          </div>
-        </div>
-
-        {/* MY PLAN CARD */}
-        <div onClick={()=>onNavigate("myPlan")} style={{ background:"linear-gradient(135deg,#0a1a0f,#0d2218)",borderRadius:18,border:`1.5px solid #22C55E33`,padding:"14px 18px",marginBottom:13,animation:"fadeUp 0.5s ease 0.09s both",cursor:"pointer",display:"flex",alignItems:"center",gap:14 }}>
+        {/* MY PLAN CARD — removed AI Nutrition Coach and AI Personal Trainer quick-links (now surfaced in their own tabs) */}
+        <div onClick={()=>onNavigate("myPlan")} style={{ background:"linear-gradient(135deg,#0a1a0f,#0d2218)",borderRadius:18,border:`1.5px solid #22C55E33`,padding:"14px 18px",marginBottom:13,animation:"fadeUp 0.5s ease 0.085s both",cursor:"pointer",display:"flex",alignItems:"center",gap:14 }}>
           <div style={{ width:42,height:42,borderRadius:12,background:"linear-gradient(135deg,#16A34A,#15803D)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:"0 0 14px rgba(34,197,94,0.4)" }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
           </div>
           <div style={{ flex:1 }}>
-            <div style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:"#22C55E",letterSpacing:2,marginBottom:2 }}>AI PERSONAL TRAINER</div>
+            <div style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:"#22C55E",letterSpacing:2,marginBottom:2 }}>MY WORKOUT PLAN</div>
             <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff" }}>My 4-Week Plan</div>
           </div>
           <div style={{ display:"flex",alignItems:"center",gap:4 }}>
@@ -9284,6 +9517,8 @@ function VTRXAppInner({ setPaymentPlan }) {
           }),
         });
       } catch(_e){}
+      // Fire-and-forget: generate free AI onboarding analysis + schedule 5-min notification
+      apiCall("/ai/onboarding-analysis", { method: "POST" }).catch(() => {});
     }
     setPhase("dashboard");
   };

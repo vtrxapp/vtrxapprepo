@@ -55,6 +55,12 @@ model User {
   dailyCarbTargetG      Float?
   dailyFatTargetG       Float?
 
+  aiWorkoutSummary        String?
+  aiNutritionSummary      String?
+  onboardingAnalysisReady Boolean   @default(false)
+  onboardingNotifyAt      DateTime?
+  onboardingNotifySent    Boolean   @default(false)
+
   isPremium       Boolean   @default(false)
   streakDays      Int       @default(0)
   lastActiveAt    DateTime?

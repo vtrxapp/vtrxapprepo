@@ -12,6 +12,7 @@
 //   5. milestone          — 1st/5th/10th workout; 7/30-day streak; 30-day member
 //   6. weekly_recap       — Sunday at 10am if ≥ 1 workout this week
 //   7. trial_expiry       — 3 days and 24 hours before trial ends
+//   8. onboarding         — 5 min after signup: "Your AI analysis is ready"
 // ─────────────────────────────────────────────────────────────────────────────
 
 const cron   = require('node-cron');
@@ -347,6 +348,52 @@ const getOrCreatePrefs = async (userId, timezone) => {
   });
 };
 
+// ── Onboarding notification runner ───────────────────────────────────────────
+
+const runOnboardingNotification = async () => {
+  try {
+    const now = new Date();
+    const pending = await prisma.user.findMany({
+      where: {
+        onboardingNotifyAt: { lte: now },
+        onboardingNotifySent: false,
+        onboardingAnalysisReady: true,
+      },
+      select: {
+        id: true, name: true,
+        deviceTokens: { where: { active: true }, take: 1 },
+      },
+    });
+
+    for (const user of pending) {
+      if (!user.deviceTokens.length) continue;
+      // Mark sent first to prevent double-send across instances
+      const updated = await prisma.user.updateMany({
+        where: { id: user.id, onboardingNotifySent: false },
+        data:  { onboardingNotifySent: true },
+      });
+      if (updated.count === 0) continue; // Another instance already claimed it
+
+      const firstName = user.name?.split(' ')[0] || 'there';
+      await notif.sendToUser({
+        userId: user.id,
+        title:  '🤖 Your AI Coaching analysis is ready',
+        body:   `${firstName}, your personalised fitness plan is ready. Tap to view it.`,
+        data:   { type: 'onboarding_workout', screen: 'aiSummary' },
+      });
+      await notif.sendToUser({
+        userId: user.id,
+        title:  '🥗 Your AI Nutrition analysis is ready',
+        body:   'Your personalised nutrition plan based on your goals is ready to view.',
+        data:   { type: 'onboarding_nutrition', screen: 'nutritionPlan' },
+      });
+      logger.info(`Onboarding notifications sent for user ${user.id}`);
+    }
+  } catch (err) {
+    logger.error('runOnboardingNotification error:', err.message);
+  }
+};
+
 // ── Main scheduler tick ───────────────────────────────────────────────────────
 
 const tick = async () => {
@@ -386,7 +433,13 @@ const start = () => {
     logger.info('Notification scheduler tick');
     tick();
   });
+
+  // Onboarding notifications — check every 5 minutes
+  cron.schedule('*/5 * * * *', () => {
+    runOnboardingNotification();
+  });
+
   logger.info('Notification scheduler started (every 15 min)');
 };
 
-module.exports = { start, tick, checkMilestones, getOrCreatePrefs, buildComebackWorkout };
+module.exports = { start, tick, checkMilestones, getOrCreatePrefs, buildComebackWorkout, runOnboardingNotification };

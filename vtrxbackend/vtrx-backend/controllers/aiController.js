@@ -192,10 +192,169 @@ const getRecoveryAdvice = async (req, res) => {
   }
 };
 
+// ── GET /api/ai/onboarding-analysis ──────────────────────────────────────────
+const getOnboardingAnalysis = async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: {
+        aiWorkoutSummary: true,
+        aiNutritionSummary: true,
+        onboardingAnalysisReady: true,
+      },
+    });
+    res.json({
+      success: true,
+      data: {
+        workoutSummary:   user?.aiWorkoutSummary   || null,
+        nutritionSummary: user?.aiNutritionSummary || null,
+        ready:            user?.onboardingAnalysisReady || false,
+      },
+    });
+  } catch (err) {
+    logger.error('getOnboardingAnalysis error:', err);
+    res.status(500).json({ success: false, message: 'Failed to fetch analysis' });
+  }
+};
+
+// ── POST /api/ai/onboarding-analysis ─────────────────────────────────────────
+const generateOnboardingAnalysis = async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: {
+        name: true, goal: true, fitnessLevel: true, daysPerWeek: true,
+        equipment: true, location: true, sessionDuration: true,
+        preferredStyles: true, weight: true, height: true, gender: true, age: true,
+        nutritionGoal: true, dietaryRestrictions: true, mealsPerDay: true,
+        dailyCalorieTarget: true, goalWeightLbs: true,
+        onboardingAnalysisReady: true,
+      },
+    });
+
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+    if (user.onboardingAnalysisReady) {
+      return res.json({ success: true, data: { cached: true } });
+    }
+
+    // Schedule the notification for 5 min from now (persisted before generation)
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: { onboardingNotifyAt: new Date(Date.now() + 5 * 60 * 1000) },
+    });
+
+    // Acknowledge immediately so frontend isn't blocked
+    res.json({ success: true, data: { generating: true } });
+
+    // Generate both summaries in background
+    setImmediate(async () => {
+      try {
+        const { getOpenAIClient } = require('../services/openaiClient');
+        const client = getOpenAIClient();
+        if (!client) return;
+
+        const name        = user.name?.split(' ')[0] || 'there';
+        const equipment   = (user.equipment || []).join(', ') || 'bodyweight';
+        const styles      = (user.preferredStyles || []).join(', ') || 'general fitness';
+        const restrictions= (user.dietaryRestrictions || []).join(', ') || 'none';
+        const goalLabel   = {
+          lose_fat:       'lose fat',
+          build_muscle:   'build muscle',
+          maintain:       'maintain weight',
+          eat_clean:      'eat clean',
+          improve_energy: 'improve energy',
+        }[user.nutritionGoal] || user.nutritionGoal || 'improve fitness';
+
+        const [workoutRes, nutritionRes] = await Promise.all([
+          client.chat.completions.create({
+            model: 'gpt-4o-mini',
+            max_tokens: 400,
+            messages: [{
+              role: 'system',
+              content: 'You are VTRX AI Coach — a world-class personal trainer. Write in a warm, direct, motivating tone. Be specific to the user\'s profile. Avoid generic clichés.',
+            }, {
+              role: 'user',
+              content: `Write a personalised onboarding fitness analysis for ${name}.
+
+Profile:
+- Goal: ${user.goal || 'General fitness'}
+- Fitness level: ${user.fitnessLevel || 'Beginner'}
+- Training days/week: ${user.daysPerWeek || 3}
+- Equipment: ${equipment}
+- Location: ${user.location || 'Home'}
+- Session duration: ${user.sessionDuration || '30-45 min'}
+- Preferred styles: ${styles}
+${user.weight ? `- Current weight: ${user.weight} lbs` : ''}
+${user.height ? `- Height: ${user.height}` : ''}
+${user.gender ? `- Gender: ${user.gender}` : ''}
+${user.age ? `- Age: ${user.age}` : ''}
+
+Write 2-3 paragraphs (max 220 words) that:
+1. Greet ${name} by name and summarise their training approach based on their goal and level
+2. Describe what their weekly plan will look like (days, intensity, style)
+3. End with one specific, motivating insight about their chosen goal
+
+Be specific, not generic. Don't say "great choice" or "you've got this". Address them as ${name}.`,
+            }],
+          }),
+          client.chat.completions.create({
+            model: 'gpt-4o-mini',
+            max_tokens: 300,
+            messages: [{
+              role: 'system',
+              content: 'You are VTRX Nutrition Coach. Write practical, specific nutrition guidance. No generic advice.',
+            }, {
+              role: 'user',
+              content: `Write a personalised nutrition overview for ${name}.
+
+Profile:
+- Nutrition goal: ${goalLabel}
+- Dietary restrictions: ${restrictions}
+- Meals per day: ${user.mealsPerDay || '3'}
+${user.weight ? `- Current weight: ${user.weight} lbs` : ''}
+${user.goalWeightLbs ? `- Goal weight: ${user.goalWeightLbs} lbs` : ''}
+${user.dailyCalorieTarget ? `- Daily calorie target: ${Math.round(user.dailyCalorieTarget)} kcal` : ''}
+
+Write 2 paragraphs (max 160 words):
+1. Explain their personalised nutrition approach for ${goalLabel}
+2. Give 2-3 specific, actionable food tips for their goal and restrictions
+
+Be practical. Use real foods, not abstractions. Address them as ${name}.`,
+            }],
+          }),
+        ]);
+
+        const workoutSummary   = workoutRes.choices[0].message.content?.trim() || '';
+        const nutritionSummary = nutritionRes.choices[0].message.content?.trim() || '';
+
+        await prisma.user.update({
+          where: { id: req.user.id },
+          data: {
+            aiWorkoutSummary:        workoutSummary,
+            aiNutritionSummary:      nutritionSummary,
+            onboardingAnalysisReady: true,
+          },
+        });
+
+        logger.info(`Onboarding analysis generated for user ${req.user.id}`);
+      } catch (genErr) {
+        logger.error('Onboarding analysis generation error:', genErr.message);
+      }
+    });
+
+  } catch (err) {
+    logger.error('generateOnboardingAnalysis error:', err);
+    if (!res.headersSent) res.status(500).json({ success: false, message: 'Failed' });
+  }
+};
+
 module.exports = {
   getMoodRecommendation,
   getWeeklyInsight,
   getNutritionAdvice,
   generatePlan,
   getRecoveryAdvice,
+  getOnboardingAnalysis,
+  generateOnboardingAnalysis,
 };
