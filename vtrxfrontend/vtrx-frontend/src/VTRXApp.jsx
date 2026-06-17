@@ -2962,12 +2962,16 @@ function ForgotPasswordPage({ onBack }) {
   const [confirmPass, setConfirmPass] = useState("");
   const [err, setErr]             = useState("");
   const [loading, setLoading]     = useState(false);
+  const [verificationId, setVerificationId] = useState("");
+  const [emailAddressId, setEmailAddressId] = useState("");
 
   const sendCode = async () => {
     if (!email.trim()) { setErr("Please enter your email."); return; }
     setErr(""); setLoading(true);
     try {
-      await apiCall("/auth/forgot-password", { method:"POST", body:JSON.stringify({ email:email.trim().toLowerCase() }) });
+      const res = await apiCall("/auth/forgot-password", { method:"POST", body:JSON.stringify({ email:email.trim().toLowerCase() }) });
+      if (res?.data?.verificationId) setVerificationId(res.data.verificationId);
+      if (res?.data?.emailAddressId) setEmailAddressId(res.data.emailAddressId);
       setStep("code");
     } catch (e) { setErr(e.message || "Failed to send code."); }
     finally { setLoading(false); }
@@ -2984,7 +2988,7 @@ function ForgotPasswordPage({ onBack }) {
     if (newPass !== confirmPass) { setErr("Passwords do not match."); return; }
     setErr(""); setLoading(true);
     try {
-      await apiCall("/auth/reset-password", { method:"POST", body:JSON.stringify({ email:email.trim().toLowerCase(), code:code.trim(), newPassword:newPass }) });
+      await apiCall("/auth/reset-password", { method:"POST", body:JSON.stringify({ email:email.trim().toLowerCase(), code:code.trim(), newPassword:newPass, verificationId, emailAddressId }) });
       setStep("done");
     } catch (e) { setErr(e.message || "Failed to reset password."); }
     finally { setLoading(false); }
@@ -3355,7 +3359,9 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
   const [code, setCode] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState("");
-  const [resent, setResent] = React.useState(false);
+  const [resent,    setResent]    = React.useState(false);
+  const [resending, setResending] = React.useState(false);
+  const [cooldown,  setCooldown]  = React.useState(0);
   // Keep both IDs in state — updated atomically on resend so verify() always has the fresh pair
   const [verificationId, setVerificationId] = React.useState(
     typeof localStorage !== "undefined" ? localStorage.getItem("vtrx_verification_id") || "" : ""
@@ -3367,10 +3373,6 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
   const verify = async () => {
     if (code.length !== 6) {
       setError("Please enter the full 6-digit code");
-      return;
-    }
-    if (!verificationId) {
-      setError("Session expired. Please sign up again.");
       return;
     }
 
@@ -3399,7 +3401,16 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
     }
   };
 
+  React.useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setInterval(() => setCooldown(c => Math.max(0, c - 1)), 1000);
+    return () => clearInterval(t);
+  }, [cooldown]);
+
   const resend = async () => {
+    if (cooldown > 0 || resending) return;
+    setResending(true);
+    setError("");
     try {
       const res = await apiCall("/auth/resend-code", { method:"POST", body:JSON.stringify({ email, emailAddressId }) });
       const newVerId  = res?.data?.verificationId  || "";
@@ -3412,10 +3423,13 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
         if (newAddrId) localStorage.setItem("vtrx_email_address_id", newAddrId);
       }
       setResent(true);
-      setError("New code has been sent to your email.");
-      setTimeout(() => { setResent(false); setError(""); }, 4000);
+      setError("New code sent — check your inbox (and spam folder).");
+      setCooldown(60);
+      setTimeout(() => { setResent(false); setError(""); }, 5000);
     } catch (e) {
       setError(e.message || "Failed to resend code. Please try again.");
+    } finally {
+      setResending(false);
     }
   };
 
@@ -3447,8 +3461,9 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
         {loading ? "VERIFYING..." : "VERIFY EMAIL"}
       </button>
 
-      <button onClick={resend} style={{ background:"none",border:"none",fontFamily:FONT,fontSize:13,color:resent?"#22C55E":PRIMARY,cursor:"pointer",marginBottom:12 }}>
-        {resent ? "Code resent!" : "Resend code"}
+      <button onClick={resend} disabled={cooldown > 0 || resending}
+        style={{ background:"none",border:"none",fontFamily:FONT,fontSize:13,color:resent?"#22C55E":cooldown>0?"#555":PRIMARY,cursor:cooldown>0||resending?"default":"pointer",marginBottom:12,opacity:cooldown>0?0.6:1 }}>
+        {resending ? "Sending..." : resent ? "Code sent!" : cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}
       </button>
       <button onClick={onBack} style={{ background:"none",border:"none",fontFamily:FONT,fontSize:13,color:"#555",cursor:"pointer" }}>
         Back to Sign Up
@@ -6001,13 +6016,34 @@ function ChangePasswordPage({ onBack }) {
   const [current, setCurrent]   = useState("");
   const [newPass, setNewPass]   = useState("");
   const [confirm, setConfirm]   = useState("");
-  const [saved, setSaved]       = useState(false);
+  const [saved,   setSaved]     = useState(false);
+  const [loading, setLoading]   = useState(false);
+  const [error,   setError]     = useState("");
   const strong = newPass.length >= 8;
   const match  = newPass && newPass===confirm;
 
   const strength = newPass.length === 0 ? 0 : newPass.length < 6 ? 1 : newPass.length < 10 ? 2 : 3;
   const strengthColors = ["#EF4444","#F97316","#EAB308","#22C55E"];
   const strengthLabels = ["","Weak","Fair","Strong"];
+
+  const handleSave = async () => {
+    if (!match || !strong || !current) return;
+    setLoading(true);
+    setError("");
+    try {
+      await apiCall("/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify({ currentPassword: current, newPassword: newPass }),
+      });
+      setSaved(true);
+      setCurrent(""); setNewPass(""); setConfirm("");
+      setTimeout(() => setSaved(false), 2200);
+    } catch (e) {
+      setError(e.message || "Failed to update password. Check your current password.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <SubShell title="CHANGE PASSWORD" onBack={onBack}>
@@ -6024,8 +6060,9 @@ function ChangePasswordPage({ onBack }) {
         )}
         <DarkInput label="CONFIRM NEW PASSWORD" value={confirm} onChange={setConfirm} type="password" placeholder="Repeat new password"/>
         {confirm&&<div style={{ fontFamily:FONT,fontSize:12,color:match?"#22C55E":"#EF4444",marginTop:-10,marginBottom:8 }}>{match?"Passwords match":"Passwords do not match"}</div>}
+        {error&&<div style={{ fontFamily:FONT,fontSize:13,color:"#EF4444",marginTop:8,textAlign:"center",padding:"10px",background:"rgba(239,68,68,0.08)",borderRadius:10 }}>{error}</div>}
       </div>
-      <SaveBtn onClick={()=>{if(match&&strong&&current){setSaved(true);setCurrent("");setNewPass("");setConfirm("");setTimeout(()=>setSaved(false),2200);}}} saved={saved} label="UPDATE PASSWORD"/>
+      <SaveBtn onClick={handleSave} saved={saved} label={loading?"UPDATING...":"UPDATE PASSWORD"}/>
     </SubShell>
   );
 }
@@ -9325,19 +9362,30 @@ function VTRXAppInner({ setPaymentPlan }) {
       if (res?.data?.user) {
         const u = res.data.user;
         setUser(prev=>({...prev,
-          name:         u.name         || prev.name,
-          email:        u.email        || prev.email,
-          goal:         u.goal         || prev.goal,
-          fitnessLevel: u.fitnessLevel || prev.fitnessLevel,
-          level:        u.fitnessLevel || prev.level,
-          daysPerWeek:  u.daysPerWeek  || prev.daysPerWeek,
-          days:         u.daysPerWeek  || prev.days,
-          weight:       u.weight       || prev.weight,
-          height:       u.height       || prev.height,
-          gender:       u.gender       || prev.gender,
-          age:          u.age          || prev.age,
-          equipment:    u.equipment    || prev.equipment,
-          location:     u.location     || prev.location,
+          name:                u.name                || prev.name,
+          email:               u.email               || prev.email,
+          username:            u.username            || prev.username,
+          avatarUrl:           u.avatarUrl           || prev.avatarUrl,
+          goal:                u.goal                || prev.goal,
+          fitnessLevel:        u.fitnessLevel        || prev.fitnessLevel,
+          level:               u.fitnessLevel        || prev.level,
+          daysPerWeek:         u.daysPerWeek         || prev.daysPerWeek,
+          days:                u.daysPerWeek         || prev.days,
+          weight:              u.weight              || prev.weight,
+          height:              u.height              || prev.height,
+          gender:              u.gender              || prev.gender,
+          age:                 u.age                 || prev.age,
+          equipment:           u.equipment           || prev.equipment,
+          location:            u.location            || prev.location,
+          sessionDuration:     u.sessionDuration     || prev.sessionDuration,
+          preferredStyles:     u.preferredStyles     || prev.preferredStyles || [],
+          wantsMealSuggestions: u.wantsMealSuggestions ?? prev.wantsMealSuggestions,
+          nutritionGoal:       u.nutritionGoal       || prev.nutritionGoal,
+          trackingPreference:  u.trackingPreference  || prev.trackingPreference,
+          dietaryRestrictions: u.dietaryRestrictions || prev.dietaryRestrictions || [],
+          mealsPerDay:         u.mealsPerDay         || prev.mealsPerDay,
+          bodyFatPercentage:   u.bodyFatPercentage   ?? prev.bodyFatPercentage,
+          goalWeightLbs:       u.goalWeightLbs       ?? prev.goalWeightLbs,
         }));
         if (u.streakDays)           setStreakDay(u.streakDays);
         if (u._count?.workoutLogs)  setWorkoutsTotal(u._count.workoutLogs);

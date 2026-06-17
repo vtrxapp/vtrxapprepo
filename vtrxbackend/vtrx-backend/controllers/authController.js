@@ -197,11 +197,15 @@ const forgotPassword = async (req, res) => {
   const { email } = req.body;
 
   try {
-    await clerk.forgotPassword({ email });
-    res.json({ success: true, message: 'If an account exists with this email, you will receive a password reset code.' });
+    const result = await clerk.forgotPassword({ email });
+    res.json({
+      success: true,
+      message: 'If an account exists with this email, you will receive a password reset code.',
+      data: { verificationId: result.verificationId || null, emailAddressId: result.emailAddressId || null },
+    });
   } catch (error) {
     logger.error('Forgot password error:', error);
-    res.json({ success: true, message: 'If an account exists with this email, you will receive a password reset code.' });
+    res.json({ success: true, message: 'If an account exists with this email, you will receive a password reset code.', data: {} });
   }
 };
 
@@ -227,14 +231,14 @@ const resendVerificationCode = async (req, res) => {
 
 // ── POST /api/auth/reset-password ─────────────────────────────────────────────
 const resetPassword = async (req, res) => {
-  const { email, code, newPassword } = req.body;
+  const { email, code, newPassword, verificationId, emailAddressId } = req.body;
 
   if (!email || !code || !newPassword) {
     return res.status(400).json({ success: false, message: 'Email, code, and new password are required.' });
   }
 
   try {
-    await clerk.confirmForgotPassword({ email, code, newPassword });
+    await clerk.confirmForgotPassword({ email, code, newPassword, verificationId: verificationId || null, emailAddressId: emailAddressId || null });
     res.json({ success: true, message: 'Password reset successful. You can now log in.' });
   } catch (error) {
     if (error.name === 'CodeMismatchException')    return res.status(400).json({ success: false, message: 'Invalid verification code.' });
@@ -248,14 +252,45 @@ const resetPassword = async (req, res) => {
 
 // ── GET /api/auth/me ──────────────────────────────────────────────────────────
 const getMe = async (req, res) => {
-  const user = await prisma.user.findUnique({
-    where: { id: req.user.id },
-    include: {
-      subscription: true,
-      _count: { select: { workoutLogs: true, savedWorkouts: true, savedMeals: true } },
-    },
-  });
-  res.json({ success: true, data: { user } });
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      include: {
+        subscription: true,
+        _count: { select: { workoutLogs: true, savedWorkouts: true, savedMeals: true } },
+      },
+    });
+    res.json({ success: true, data: { user } });
+  } catch (error) {
+    logger.error('getMe error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch user' });
+  }
 };
 
-module.exports = { signup, confirmEmail, login, logout, forgotPassword, resetPassword, getMe, resendVerificationCode };
+// ── POST /api/auth/change-password (protected) ────────────────────────────────
+const changePassword = async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ success: false, message: 'Current and new password are required.' });
+  }
+
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
+
+    await clerk.changePassword({ userId: user.cognitoId, currentPassword, newPassword });
+    res.json({ success: true, message: 'Password updated successfully.' });
+  } catch (error) {
+    if (error.name === 'NotAuthorizedException') {
+      return res.status(401).json({ success: false, message: 'Current password is incorrect.' });
+    }
+    if (error.name === 'InvalidPasswordException') {
+      return res.status(400).json({ success: false, message: error.message || 'Password does not meet requirements.' });
+    }
+    logger.error('changePassword error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update password.' });
+  }
+};
+
+module.exports = { signup, confirmEmail, login, logout, forgotPassword, resetPassword, getMe, resendVerificationCode, changePassword };

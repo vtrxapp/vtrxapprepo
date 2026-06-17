@@ -335,24 +335,25 @@ const forgotPassword = async ({ email }) => {
     const user = await findByEmail(email);
     if (!user) {
       logger.info(`Password reset requested for unregistered email: ${email}`);
-      return { success: true };
+      return { success: true, verificationId: null, emailAddressId: null };
     }
 
     const emailAddr = user.emailAddresses?.find(a => a.emailAddress === email);
-    if (!emailAddr) return { success: true };
+    if (!emailAddr) return { success: true, verificationId: null, emailAddressId: null };
 
-    await clerkAPI('POST', `/email_addresses/${emailAddr.id}/prepare_verification`, { strategy: 'email_code' });
-    logger.info(`Password reset code sent to ${email} via Clerk`);
-    return { success: true };
+    const prepared = await clerkAPI('POST', `/email_addresses/${emailAddr.id}/prepare_verification`, { strategy: 'email_code' });
+    const verificationId = prepared?.verification?.id ?? null;
+    logger.info(`Password reset code sent to ${email} via Clerk | verificationId: ${verificationId} | emailAddressId: ${emailAddr.id}`);
+    return { success: true, verificationId, emailAddressId: emailAddr.id };
   } catch (err) {
     logger.error(`forgotPassword error for ${email}: ${JSON.stringify(err)}`);
-    return { success: true };
+    return { success: true, verificationId: null, emailAddressId: null };
   }
 };
 
 
 // ==================== CONFIRM FORGOT PASSWORD ====================
-const confirmForgotPassword = async ({ email, code, newPassword }) => {
+const confirmForgotPassword = async ({ email, code, newPassword, verificationId = null, emailAddressId: clientEmailAddressId = null }) => {
   try {
     const user = await findByEmail(email);
     if (!user) {
@@ -368,7 +369,9 @@ const confirmForgotPassword = async ({ email, code, newPassword }) => {
       throw e;
     }
 
-    const result = await attemptEmailVerification(emailAddr.id, code, null);
+    // Use live ID from Clerk (verified), but prefer the verificationId passed from forgot-password
+    const liveEmailAddressId = emailAddr.id;
+    const result = await attemptEmailVerification(liveEmailAddressId, code, verificationId);
 
     if (result?.verification?.status !== 'verified') {
       const e = new Error('Invalid verification code.');
@@ -409,6 +412,31 @@ const confirmForgotPassword = async ({ email, code, newPassword }) => {
 };
 
 
+// ==================== CHANGE PASSWORD (authenticated user) ====================
+const changePassword = async ({ userId, currentPassword, newPassword }) => {
+  try {
+    await clerk.users.verifyPassword({ userId, password: currentPassword });
+    await clerk.users.updateUser(userId, { password: newPassword, skipPasswordChecks: false });
+    logger.info(`Password changed for Clerk user: ${userId}`);
+    return { success: true };
+  } catch (err) {
+    const firstError = err?.errors?.[0] || {};
+    if (firstError.code === 'form_password_incorrect' || firstError.code === 'not_found') {
+      const e = new Error('Current password is incorrect.');
+      e.name  = 'NotAuthorizedException';
+      throw e;
+    }
+    if (firstError.code?.includes('password') || (firstError.longMessage || firstError.message || '').toLowerCase().includes('password')) {
+      const e = new Error(firstError.longMessage || firstError.message || 'Password does not meet requirements.');
+      e.name  = 'InvalidPasswordException';
+      throw e;
+    }
+    logger.error('changePassword error:', JSON.stringify(err));
+    throw new Error('Failed to change password. Please try again.');
+  }
+};
+
+
 // ==================== SIGN OUT ====================
 const signOut = async () => {
   logger.info('signOut called — JWT cleared by client');
@@ -423,5 +451,6 @@ module.exports = {
   resendConfirmationCode,
   forgotPassword,
   confirmForgotPassword,
+  changePassword,
   signOut,
 };
