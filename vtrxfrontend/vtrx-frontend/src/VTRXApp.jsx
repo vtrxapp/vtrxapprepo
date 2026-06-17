@@ -241,13 +241,13 @@ const normalizeRecipe = (r) => ({
   ymoveId:     r.ymoveId || null,
   name:        r.name || r.title || 'Recipe',
   img:         r.image_url || r.imageUrl || r.thumbnail_url || r.thumbnailUrl || r.image || r.img || '',
-  cal:         r.calories || r.cal || 0,
+  cal:         Math.round((r.calories || r.cal || 0) / 10) * 10,
   protein:     r.protein  || 0,
   fats:        r.fat      || r.fats  || 0,
   carbs:       r.carbs    || r.carbohydrates || 0,
-  mins:        r.prep_time || r.prepTime || r.mins || 0,
-  time:        `${r.prep_time || r.prepTime || r.mins || '?'} min`,
-  prep:        `${r.prep_time || r.prepTime || r.mins || '?'} min`,
+  mins:        r.prepTimeMinutes || r.prep_time || r.prepTime || r.mins || null,
+  time:        (r.prepTimeMinutes || r.prep_time || r.prepTime || r.mins) ? `${r.prepTimeMinutes || r.prep_time || r.prepTime || r.mins} min` : null,
+  prep:        (r.prepTimeMinutes || r.prep_time || r.prepTime || r.mins) ? `${r.prepTimeMinutes || r.prep_time || r.prepTime || r.mins} min` : null,
   servings:    r.servings  || 1,
   desc:        cleanRecipeDesc(r.description || r.summary || r.desc || r.shortDescription || ''),
   ingredients: (r.ingredients || []).map(ing => {
@@ -786,10 +786,12 @@ function RecipeFullPage({ recipe, r, isSaved, saved, onSave, onToggleSave, onBac
           <div style={{ position:"absolute",bottom:16,left:18 }}>
             <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff",lineHeight:1.2,marginBottom:6 }}>{meal.name}</div>
             <div style={{ display:"flex",gap:16 }}>
+              {meal.mins && (
               <div style={{ display:"flex",alignItems:"center",gap:5 }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                 <span style={{ fontFamily:FONT,fontSize:12,color:"rgba(255,255,255,0.9)",fontWeight:600 }}>{meal.mins} min</span>
               </div>
+              )}
               {meal.servings&&<div style={{ display:"flex",alignItems:"center",gap:5 }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
                 <span style={{ fontFamily:FONT,fontSize:12,color:"rgba(255,255,255,0.9)",fontWeight:600 }}>{meal.servings} servings</span>
@@ -1928,7 +1930,7 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
   const timerRef = useRef(null);
 
   const [isPortrait,      setIsPortrait]      = useState(false);
-  const [panelOpen,       setPanelOpen]       = useState(true);
+  const [panelOpen,       setPanelOpen]       = useState(false);
   const [portraitPlaying, setPortraitPlaying] = useState(false);
   const dragRef        = useRef({ startY: 0, isDismissing: false, decided: false });
   const panelDragYRef  = useRef(0);
@@ -2218,28 +2220,22 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
         {/* Full-screen portrait video behind everything */}
         <VideoPlayer ref={videoPlayerRef} {...videoProps} fillContainer portraitMode />
 
-        {/* Play button — centered in visible area ABOVE the panel (top 32%).
-            Tapping play also dismisses the panel so the full portrait video is revealed. */}
+        {/* Play button — true screen center, only when video not yet playing */}
         {!portraitPlaying && (
           <div
-            style={{ position:"absolute", top:0, left:0, right:0, height:"32%",
-                     zIndex:16, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer" }}
+            style={{ position:"absolute", top:"50%", left:"50%",
+                     transform:"translate(-50%,-50%)",
+                     zIndex:16, cursor:"pointer" }}
             onClick={() => {
               videoPlayerRef.current?.togglePlay();
               setPortraitPlaying(true);
-              // Auto-dismiss panel so the full portrait video fills the screen
-              if (panelRef.current) {
-                panelRef.current.style.transition = 'transform 0.38s cubic-bezier(0.32,0.72,0,1)';
-                panelRef.current.style.transform  = 'translateY(100%)';
-              }
-              setTimeout(() => setPanelOpen(false), 380);
             }}
           >
-            <div style={{ width:64, height:64, borderRadius:"50%", background:PRIMARY,
+            <div style={{ width:72, height:72, borderRadius:"50%", background:PRIMARY,
                           border:"2px solid rgba(255,255,255,0.3)", display:"flex",
                           alignItems:"center", justifyContent:"center",
-                          boxShadow:`0 0 36px ${PRIMARY}99` }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21"/></svg>
+                          boxShadow:`0 0 40px ${PRIMARY}99` }}>
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21"/></svg>
             </div>
           </div>
         )}
