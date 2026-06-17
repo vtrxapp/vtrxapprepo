@@ -59,6 +59,11 @@ initFirebase();
 // ── Register Device Token ─────────────────────────────────────────────────────
 // Called when a user opens the app and grants notification permission
 const registerToken = async ({ userId, token, platform }) => {
+  // Deactivate any stale tokens for this user+platform so they only receive one notification per push
+  await prisma.deviceToken.updateMany({
+    where: { userId, platform, active: true, NOT: { token } },
+    data:  { active: false },
+  }).catch(() => {});
   await prisma.deviceToken.upsert({
     where:  { token },
     create: { userId, token, platform, active: true },

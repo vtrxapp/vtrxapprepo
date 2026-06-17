@@ -1469,12 +1469,21 @@ const VideoPlayer = forwardRef(function VideoPlayer({ videoUrl, hlsUrl = null, t
   const togglePlay = () => {
     const v = videoRef.current;
     if (!v) return;
-    if (v.paused) v.play().catch(() => {});
-    else          v.pause();
+    if (v.paused) {
+      if (v.readyState >= 2) {
+        v.play().catch(() => {});
+      } else {
+        // Not buffered yet — queue play on canplay
+        const onReady = () => { v.play().catch(() => {}); v.removeEventListener('canplay', onReady); };
+        v.addEventListener('canplay', onReady);
+      }
+    } else {
+      v.pause();
+    }
   };
 
-  // Expose togglePlay + isPlaying to portrait layout via ref
-  useImperativeHandle(ref, () => ({ togglePlay, isPlaying: () => !videoRef.current?.paused }), []);
+  // Expose togglePlay to portrait layout via forwardRef
+  useImperativeHandle(ref, () => ({ togglePlay }), []);
 
   const seekBy = (secs) => {
     const v = videoRef.current;
@@ -2039,7 +2048,7 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
     thumbnailUrl: ex.thumbnailUrl || ex.img || "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=400&q=70",
     exerciseName: ex.name,
     initialPositionSecs: resumePos,
-    onPortraitDetected: (portrait) => { setIsPortrait(portrait); setPortraitPlaying(false); },
+    onPortraitDetected: (portrait) => { setIsPortrait(portrait); setPortraitPlaying(false); }, // reset on layout switch
     onProgress: (pos, dur) => {
       if (ex.ymoveId || ex.id) {
         const KEY = 'vtrx_vidprog_' + (ex.ymoveId || ex.id);
@@ -2209,23 +2218,24 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
         {/* Full-screen portrait video behind everything */}
         <VideoPlayer ref={videoPlayerRef} {...videoProps} fillContainer portraitMode />
 
-        {/* Portrait play/pause tap zone — sits in the visible area above the panel */}
-        {panelOpen && (
+        {/* Centered play button — floats above panel, only shown when paused */}
+        {!portraitPlaying && (
           <div
-            style={{ position:"absolute",top:0,left:0,right:0,height:"32%",zIndex:16,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}
-            onClick={() => {
-              videoPlayerRef.current?.togglePlay();
-              setPortraitPlaying(videoPlayerRef.current?.isPlaying() ?? false);
-              // Update icon state after tiny delay (play() is async)
-              setTimeout(() => setPortraitPlaying(!(videoPlayerRef.current?.isPlaying() ?? true)), 80);
-            }}
+            style={{ position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",zIndex:17,cursor:"pointer" }}
+            onClick={() => { videoPlayerRef.current?.togglePlay(); setPortraitPlaying(true); }}
           >
-            <div style={{ width:56,height:56,borderRadius:"50%",background:"rgba(0,0,0,0.45)",backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)",border:"1px solid rgba(255,255,255,0.2)",display:"flex",alignItems:"center",justifyContent:"center" }}>
-              {portraitPlaying
-                ? <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-                : <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21"/></svg>}
+            <div style={{ width:64,height:64,borderRadius:"50%",background:PRIMARY,border:"2px solid rgba(255,255,255,0.25)",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 0 32px ${PRIMARY}88` }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21"/></svg>
             </div>
           </div>
+        )}
+
+        {/* Transparent tap zone in visible area (above panel) — tap to pause while playing */}
+        {panelOpen && portraitPlaying && (
+          <div
+            style={{ position:"absolute",top:0,left:0,right:0,height:"32%",zIndex:16 }}
+            onClick={() => { videoPlayerRef.current?.togglePlay(); setPortraitPlaying(false); }}
+          />
         )}
 
         {/* Back button + title — always visible at top */}
