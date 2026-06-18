@@ -34,6 +34,7 @@ export default defineConfig({
   build: {
     outDir:    'dist',
     sourcemap: "hidden", // generated but not referenced in output — upload to Sentry for readable traces
+    chunkSizeWarningLimit: 2000, // main bundle is ~1.5 MB (single-file app); suppress false-positive warning
     rollupOptions: {
       output: {
         // Split code into chunks for faster loading
