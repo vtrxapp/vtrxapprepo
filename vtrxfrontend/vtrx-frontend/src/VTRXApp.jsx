@@ -1216,14 +1216,14 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onStop, onExercise, co
                   </div>
                   <div onClick={()=>onExercise&&onExercise(ex)} style={{ flex:1,padding:"12px 10px",cursor:"pointer" }}>
                     <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:"#111",marginBottom:2 }}>{ex.name}</div>
-                    <div style={{ fontFamily:FONT,fontSize:12,color:"#888888",marginBottom:3 }}>{ex.sets} sets × {parseReps(ex.reps)} reps</div>
+                    {(()=>{const r=parseReps(ex.reps);const lbl=/^\d+s$/.test(r)?`${ex.sets} sets × ${r.replace(/s$/,' sec')}`:`${ex.sets} sets × ${r} reps`;return<div style={{fontFamily:FONT,fontSize:12,color:"#888888",marginBottom:3}}>{lbl}</div>;})()
                     <div style={{ fontFamily:FONT,fontSize:11,color:PRIMARY }}>{ex.muscles}</div>
                     {skipped && <div style={{ fontFamily:FONT,fontSize:10,color:"#F97316",marginTop:2,fontWeight:600 }}>Skipped</div>}
                   </div>
                   <div style={{ padding:"0 12px 0 4px",display:"flex",flexDirection:"column",gap:6,alignItems:"center" }}>
-                    <button onClick={(e)=>{e.stopPropagation(); if(!skipped) toggleEx(i);}}
-                      style={{ width:34,height:34,borderRadius:"50%",background:done?"#22C55E":PRIMARY,border:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"background 0.2s",opacity:skipped?0.3:1 }}>
-                      <svg width="14" height="11" viewBox="0 0 14 11" fill="none" stroke="#fff" strokeWidth="2.5"><polyline points="1,5.5 5,9.5 13,1"/></svg>
+                    <button onClick={(e)=>{e.stopPropagation(); if(started && !skipped) toggleEx(i);}}
+                      style={{ width:34,height:34,borderRadius:"50%",background:done?"#22C55E":started?"#2a2a2a":"#1e1e1e",border:done?`2px solid #22C55E`:started?`2px solid ${PRIMARY}`:`2px solid #333`,display:"flex",alignItems:"center",justifyContent:"center",cursor:started&&!skipped?"pointer":"default",transition:"all 0.2s",opacity:skipped?0.3:1 }}>
+                      <svg width="14" height="11" viewBox="0 0 14 11" fill="none" stroke={done?"#fff":started?"#555":"#333"} strokeWidth="2.5"><polyline points="1,5.5 5,9.5 13,1"/></svg>
                     </button>
                     {!done && (
                       <button onClick={(e)=>{e.stopPropagation(); setCompletedEx(p => p.includes(`skip_${i}`) ? p.filter(x=>x!==`skip_${i}`) : [...p,`skip_${i}`]);}}
@@ -5160,7 +5160,7 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
                           <div style={{ width:28,height:28,borderRadius:8,background:nc,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:FONT,fontWeight:800,fontSize:11,color:"#fff" }}>{j+1}</div>
                           <div style={{ flex:1,minWidth:0 }}>
                             <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{ex.name}</div>
-                            <div style={{ fontFamily:FONT,fontSize:11,color:"#666" }}>{ex.sets} sets × {parseReps(ex.reps)} reps</div>
+                            {(()=>{const r=parseReps(ex.reps);const lbl=/^\d+s$/.test(r)?`${ex.sets} sets × ${r.replace(/s$/,' sec')}`:`${ex.sets} sets × ${r} reps`;return<div style={{fontFamily:FONT,fontSize:11,color:"#666"}}>{lbl}</div>;})()
                           </div>
                           {ex.muscleGroup && <div style={{ fontFamily:FONT,fontSize:10,color:"#444",flexShrink:0 }}>{ex.muscleGroup}</div>}
                         </div>
@@ -5324,10 +5324,11 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
       </div>
       {/* Sub-page overlays — WeightsHub stays mounted preserving scroll + state */}
       {subPage === "calendar"  && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><CalendarPage        onBack={goBack} loggedWorkouts={loggedWorkouts}/></div>}
-      {subPage === "history"   && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><WorkoutHistoryPage  onBack={goBack} onUpgrade={()=>{ setSubPage(null); setShowUpgrade(true); }}/></div>}
+      {subPage === "history"   && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><WorkoutHistoryPage  onBack={goBack} onUpgrade={()=>setSubPage('upgrade')}/></div>}
       {subPage === "records"   && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><PersonalRecordsPage onBack={goBack}/></div>}
       {subPage === "customize" && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><CustomizePage       onBack={goBack}/></div>}
       {subPage === "profile"   && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><ProfilePage         onBack={goBack} onLogout={()=>{ setSubPage(null); onLogout&&onLogout(); }}/></div>}
+      {subPage === "upgrade"   && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><UpgradePlanPage     onBack={goBack}/></div>}
     </div>
 
 
@@ -9632,15 +9633,20 @@ function VTRXAppInner({ setPaymentPlan }) {
   const mouseStart     = useRef(null);
   const touchStart     = useRef(null);
 
-  // Fetch personalised workout recommendation whenever energy level or user changes
+  // Fetch today's AI-generated daily workout (ymove-first)
   useEffect(()=>{
     const token = getAuthToken();
     if (!token) return;
-    apiCall(`/workouts/recommend?energyLevel=${energyKey || 'okay'}`)
-      .then(d => { if (d?.data?.recommendation) setApiWorkout(d.data.recommendation); })
-      .catch(()=>{});
+    apiCall('/workouts/generate-daily', { method: 'POST' })
+      .then(d => { if (d?.data?.workout) setApiWorkout(d.data.workout); })
+      .catch(()=>{
+        // Fallback: use recommend endpoint if generate-daily fails
+        apiCall(`/workouts/recommend?energyLevel=${energyKey || 'okay'}`)
+          .then(d => { if (d?.data?.recommendation) setApiWorkout(d.data.recommendation); })
+          .catch(()=>{});
+      });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [energyKey, liveUser?.id]);
+  }, [liveUser?.id]);
 
   // Load real data on mount — also drives splash → onboarding/dashboard transition
   useEffect(()=>{

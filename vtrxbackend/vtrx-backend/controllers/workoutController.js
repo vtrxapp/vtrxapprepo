@@ -1432,6 +1432,261 @@ const syncYmoveExercises = async (req, res) => {
   }
 };
 
+// ── YMOVE EXERCISE LIBRARY CACHE (24hr) ──────────────────────────────────────
+const _exerciseLibraryCache = new Map();
+const EXERCISE_CACHE_TTL    = 24 * 60 * 60 * 1000;
+
+const getYmoveExerciseLibrary = async (muscleGroups = []) => {
+  const cacheKey = [...muscleGroups].sort().join(',') || 'all';
+  const hit = _exerciseLibraryCache.get(cacheKey);
+  if (hit && Date.now() < hit.expiresAt) return hit.data;
+
+  try {
+    const allExercises = [];
+    if (muscleGroups.length === 0) {
+      const { exercises } = await ymove.getExercises({ limit: 50 });
+      allExercises.push(...exercises);
+    } else {
+      for (const mg of muscleGroups) {
+        const { exercises } = await ymove.getExercises({ muscleGroup: mg, limit: 20 });
+        allExercises.push(...exercises);
+      }
+    }
+
+    const seen       = new Set();
+    const normalized = allExercises
+      .filter(ex => {
+        const id = String(ex.id ?? ex.ymoveId ?? '');
+        if (!id || seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      })
+      .map(ex => ({
+        ymoveId:      String(ex.id ?? ex.ymoveId ?? ''),
+        name:         ex.title || ex.name || 'Exercise',
+        muscleGroup:  ex.muscleGroup || ex.muscle_group || ex.primaryMuscle || 'Full Body',
+        equipment:    ex.equipment || null,
+        difficulty:   ex.difficulty || null,
+        thumbnailUrl: ex.thumbnailUrl || ex.thumbnail_url || ex.gifUrl || null,
+        instructions: Array.isArray(ex.instructions)
+          ? ex.instructions.join('\n')
+          : (ex.instructions || null),
+      }));
+
+    _exerciseLibraryCache.set(cacheKey, { data: normalized, expiresAt: Date.now() + EXERCISE_CACHE_TTL });
+    return normalized;
+  } catch (err) {
+    logger.error('getYmoveExerciseLibrary error:', err.message);
+    return [];
+  }
+};
+
+// Muscle group sets by day index within the cycle
+const _MG_4DAY = [
+  ['Chest', 'Triceps'],
+  ['Back', 'Biceps'],
+  ['Legs', 'Glutes'],
+  ['Shoulders', 'Core'],
+];
+const _MG_7DAY = [
+  ['Chest'],
+  ['Back'],
+  ['Legs'],
+  ['Shoulders'],
+  ['Biceps', 'Triceps'],
+  ['Core'],
+  [], // rest — shouldn't normally reach here
+];
+
+const _getMuscleGroupsForDay = (dayNumber, daysPerWeek) => {
+  if (daysPerWeek <= 2) return [];          // Full Body
+  const pool = daysPerWeek <= 4 ? _MG_4DAY : _MG_7DAY;
+  return pool[(dayNumber - 1) % pool.length];
+};
+
+const _parseDurationMins = (sessionDuration) => {
+  if (!sessionDuration) return 45;
+  const s = String(sessionDuration);
+  const rangeMatch = s.match(/(\d+)\s*[-–]\s*(\d+)/);
+  if (rangeMatch) return Math.round((parseInt(rangeMatch[1]) + parseInt(rangeMatch[2])) / 2);
+  const singleMatch = s.match(/(\d+)/);
+  return singleMatch ? parseInt(singleMatch[1]) : 45;
+};
+
+const _getExerciseCount = (durationMins) => {
+  if (durationMins < 30) return 3;
+  if (durationMins < 45) return 4;
+  if (durationMins < 60) return 5;
+  return 6;
+};
+
+const _getRepScheme = (nutritionGoal, goal) => {
+  const g = (nutritionGoal || goal || '').toLowerCase();
+  if (g.includes('build_muscle') || g.includes('build muscle') || g.includes('muscle')) return { sets: 4, reps: '6-12' };
+  if (g.includes('lose') || g.includes('fat') || g.includes('weight')) return { sets: 3, reps: '12-20' };
+  return { sets: 3, reps: '8-15' };
+};
+
+const _buildDailyWorkoutName = (muscleGroups, dayNumber) => {
+  if (!muscleGroups.length) return `Day ${dayNumber} — Full Body`;
+  return `Day ${dayNumber} — ${muscleGroups.join(' & ')}`;
+};
+
+// ── POST /api/workouts/generate-daily — Ymove-first AI workout generator ──────
+const generateDailyWorkout = async (req, res) => {
+  const userId = req.user.id;
+
+  try {
+    // 1. Fetch user profile
+    const user = await prisma.user.findUnique({
+      where:  { id: userId },
+      select: {
+        goal:            true,
+        nutritionGoal:   true,
+        fitnessLevel:    true,
+        weight:          true,
+        daysPerWeek:     true,
+        equipment:       true,
+        sessionDuration: true,
+      },
+    });
+
+    const goal          = user?.goal           || 'general fitness';
+    const nutritionGoal = user?.nutritionGoal   || '';
+    const level         = user?.fitnessLevel    || 'Intermediate';
+    const weightLbs     = user?.weight          || 154;   // default ~70 kg
+    const weightKg      = weightLbs / 2.2046;
+    const daysPerWeek   = user?.daysPerWeek     || 3;
+    const equipment     = user?.equipment       || [];
+    const durationMins  = _parseDurationMins(user?.sessionDuration);
+
+    // 2. Count completed workouts to determine day position in cycle
+    const totalCompleted = await prisma.workoutLog.count({ where: { userId } });
+    const cycleLen       = Math.max(daysPerWeek, 1);
+    const dayNumber      = (totalCompleted % cycleLen) + 1;
+
+    // 3. Determine muscle groups + exercise parameters
+    const targetMuscleGroups = _getMuscleGroupsForDay(dayNumber, daysPerWeek);
+    const exerciseCount      = _getExerciseCount(durationMins);
+    const repScheme          = _getRepScheme(nutritionGoal, goal);
+
+    // Workout type from goal
+    const gLower = goal.toLowerCase();
+    const workoutType = gLower.includes('hiit') || gLower.includes('fat') || gLower.includes('weight loss')
+      ? 'HIIT'
+      : gLower.includes('cardio') || gLower.includes('endurance')
+        ? 'CARDIO'
+        : 'STRENGTH';
+
+    // 4. Fetch ymove exercise library (cached 24hr)
+    let library = await getYmoveExerciseLibrary(targetMuscleGroups);
+    if (library.length < exerciseCount) {
+      const extra   = await getYmoveExerciseLibrary([]);
+      const extraIds = new Set(library.map(e => e.ymoveId));
+      library = [...library, ...extra.filter(e => !extraIds.has(e.ymoveId))];
+    }
+
+    // 5. Filter by user equipment if specified
+    let filtered = library;
+    if (equipment.length > 0) {
+      const equip    = equipment.map(e => e.toLowerCase());
+      const withEquip = library.filter(ex =>
+        !ex.equipment || equip.some(e => (ex.equipment || '').toLowerCase().includes(e))
+      );
+      if (withEquip.length >= exerciseCount) filtered = withEquip;
+    }
+
+    // 6. AI selects exercises from the library
+    const librarySlice = filtered.slice(0, 40);
+    const aiPrompt = `You are VTRX Coach selecting exercises for today's workout.
+
+User:
+- Goal: ${goal}
+- Fitness level: ${level}
+- Target: ${targetMuscleGroups.length ? targetMuscleGroups.join(', ') : 'Full Body'}
+- Equipment: ${equipment.length ? equipment.join(', ') : 'Full Gym'}
+- Day ${dayNumber} of a ${daysPerWeek}-day programme
+
+Select exactly ${exerciseCount} exercises from this library. Vary movement patterns (compound + isolation).
+
+Library:
+${JSON.stringify(librarySlice.map(e => ({ ymoveId: e.ymoveId, name: e.name, muscleGroup: e.muscleGroup, equipment: e.equipment })))}
+
+Return ONLY a JSON array of exactly ${exerciseCount} objects, each with:
+{ "ymoveId": "<exact id from library>", "name": "<name>", "muscleGroup": "<muscleGroup>", "sets": ${repScheme.sets}, "reps": "${repScheme.reps}", "restSecs": 60 }
+
+No markdown, no extra text.`;
+
+    let selectedExercises = [];
+    try {
+      const { text } = await aiService.callGPT(aiPrompt, 900, 0.3);
+      const raw = text.replace(/```json\n?|\n?```/g, '').trim();
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) selectedExercises = parsed;
+    } catch (aiErr) {
+      logger.warn('generateDailyWorkout: AI selection failed, using random from library:', aiErr.message);
+    }
+
+    // 7. Validate ymove_ids — replace any not in library with a real library entry
+    const libraryMap = new Map(filtered.map(e => [e.ymoveId, e]));
+    const usedIds    = new Set();
+
+    const validated = selectedExercises
+      .map(ex => {
+        const libEx = libraryMap.get(String(ex.ymoveId || ''));
+        if (libEx && !usedIds.has(libEx.ymoveId)) {
+          usedIds.add(libEx.ymoveId);
+          return { ...libEx, sets: ex.sets || repScheme.sets, reps: ex.reps || repScheme.reps, restSecs: ex.restSecs || 60 };
+        }
+        // Replace with unused library entry
+        const fallback = filtered.find(e => !usedIds.has(e.ymoveId));
+        if (fallback) {
+          usedIds.add(fallback.ymoveId);
+          return { ...fallback, sets: repScheme.sets, reps: repScheme.reps, restSecs: 60 };
+        }
+        return null;
+      })
+      .filter(Boolean);
+
+    // Pad if AI returned too few
+    for (const ex of filtered) {
+      if (validated.length >= exerciseCount) break;
+      if (!usedIds.has(ex.ymoveId)) {
+        validated.push({ ...ex, sets: repScheme.sets, reps: repScheme.reps, restSecs: 60 });
+        usedIds.add(ex.ymoveId);
+      }
+    }
+
+    // 8. MET-based calorie calculation (server-side, stable)
+    const MET = { STRENGTH: 4.0, HIIT: 8.0, CARDIO: 6.0 };
+    const met      = MET[workoutType] || 4.0;
+    const calories = Math.round(met * weightKg * (durationMins / 60));
+
+    logger.info(`generateDailyWorkout: user=${userId} day=${dayNumber} type=${workoutType} exercises=${validated.length} calories=${calories}`);
+
+    res.json({
+      success: true,
+      data: {
+        workout: {
+          name:         _buildDailyWorkoutName(targetMuscleGroups, dayNumber),
+          type:         workoutType,
+          duration:     durationMins,
+          calories,
+          difficulty:   level,
+          day:          dayNumber,
+          daysPerWeek,
+          muscleGroups: targetMuscleGroups,
+          exercises:    validated,
+        },
+      },
+    });
+
+  } catch (error) {
+    logger.error('generateDailyWorkout error:', error);
+    res.status(500).json({ success: false, message: 'Failed to generate daily workout' });
+  }
+};
+
 module.exports = {
   getWorkouts,
   getWorkoutById,
@@ -1456,4 +1711,5 @@ module.exports = {
   debugYmoveExercise,
   syncYmoveExercises,
   ymovePing,
+  generateDailyWorkout,
 };

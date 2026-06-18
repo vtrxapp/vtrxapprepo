@@ -15,6 +15,7 @@ router.patch('/active-plan/advance-week',plan.advancePlanWeek);        // PATCH 
 router.post('/exercise-log',             plan.logExercise);            // POST  — log exercise performance
 router.get('/exercise-history/:exerciseName', plan.getExerciseHistory);// GET   — history for progressive overload
 
+router.post('/generate-daily',         workout.generateDailyWorkout);          // POST — ymove-first AI daily workout
 router.get('/recommend',               getRecommendations);
 router.get('/generate',                workout.generateWorkout);        // GET /workouts/generate?muscleGroup=chest&difficulty=intermediate
 router.get('/program/generate',        workout.generateProgram);        // GET /workouts/program/generate?goal=muscle_building&weeks=4
