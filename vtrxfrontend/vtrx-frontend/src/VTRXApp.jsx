@@ -8047,21 +8047,24 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
                       <span style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:PRIMARY }}>AI Picks</span>
                     </div>
                   </div>
-                  <div style={{ display:"flex",gap:10,overflowX:"auto",paddingBottom:4,scrollbarWidth:"none" }}>
+                  <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12 }}>
                     {recommended.map((r,i) => (
                       <div key={i} onClick={()=>setSelectedRecipe(r)}
-                        style={{ minWidth:148,borderRadius:16,overflow:"hidden",background:CARD,border:`1px solid ${BORDER}`,cursor:"pointer",flexShrink:0 }}>
-                        <div style={{ height:90,overflow:"hidden",position:"relative" }}>
-                          <img src={r.img} alt={r.name} style={{ width:"100%",height:"100%",objectFit:"cover" }} onError={e=>e.target.style.display="none"}/>
-                          <div style={{ position:"absolute",inset:0,background:"linear-gradient(to top,rgba(0,0,0,0.6),transparent)" }}/>
-                          <div style={{ position:"absolute",bottom:6,left:8,display:"flex",gap:6 }}>
-                            <span style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:"#fff" }}>{r.cal} cal</span>
-                            {r.protein > 0 && <span style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:PRIMARY }}>{r.protein}g P</span>}
-                          </div>
+                        style={{ background:"#fff",borderRadius:14,overflow:"hidden",cursor:"pointer",border:`1px solid ${BORDER}` }}>
+                        <div style={{ height:110,overflow:"hidden",position:"relative" }}>
+                          {r.img
+                            ? <img src={r.img} alt={r.name} style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+                            : <div style={{ width:"100%",height:"100%",background:"#e5e7eb",display:"flex",alignItems:"center",justifyContent:"center" }}>
+                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="1.5"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>
+                              </div>
+                          }
                         </div>
-                        <div style={{ padding:"8px 10px" }}>
-                          <div style={{ fontFamily:FONT,fontWeight:700,fontSize:12,color:"#fff",lineHeight:1.3,marginBottom:3 }}>{r.name}</div>
-                          <div style={{ fontFamily:FONT,fontSize:10,color:"#666" }}>{r.time || '—'}</div>
+                        <div style={{ padding:"10px" }}>
+                          <div style={{ fontFamily:FONT,fontSize:12,fontWeight:700,color:"#111",marginBottom:4,lineHeight:1.3 }}>{r.name}</div>
+                          <div style={{ display:"flex",gap:6 }}>
+                            <span style={{ fontFamily:FONT,fontSize:10,color:"#EF4444",fontWeight:600 }}>{r.cal} cal</span>
+                            <span style={{ fontFamily:FONT,fontSize:10,color:PRIMARY,fontWeight:600 }}>{r.protein}g protein</span>
+                          </div>
                         </div>
                       </div>
                     ))}
