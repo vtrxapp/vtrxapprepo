@@ -196,17 +196,16 @@ const RECIPES = [
   { id:12, name:"Lentil Veggie Soup",         cat:["Vegan","Vegetarian","Meal Prep"],tag:"Dinner",  cal:290, protein:16, carbs:42, fats:6,  mins:35, saved:false, img:"https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400&q=80", ingredients:["1 cup red lentils","2 carrots","2 celery stalks","1 onion","2 garlic cloves","1 can diced tomatoes","1 tsp cumin & turmeric"], steps:["Sauté onion, garlic, carrots and celery 5 min.","Add lentils, tomatoes and 4 cups water.","Simmer 25 min until lentils are soft.","Season with cumin and turmeric."] },
 ];
 
-const NUTRITION_FILTERS = ["All","High Protein","Low Carb","Vegan","Vegetarian","Weight Loss","Muscle Gain","Meal Prep"];
-// Maps UI filter label → ymove diet query param
-const RECIPE_DIET_MAP = {
+const NUTRITION_FILTERS = ["All","High Protein","Low Carb","Vegan","Vegetarian"];
+// Maps UI filter label → personalised endpoint tab param
+const FILTER_TAB_MAP = {
+  "All":          "all",
   "High Protein": "high_protein",
   "Low Carb":     "low_carb",
   "Vegan":        "vegan",
   "Vegetarian":   "vegetarian",
-  "Weight Loss":  "low_carb",
-  "Muscle Gain":  "high_protein",
 };
-const RECIPE_PAGE_SIZE = 20;
+const RECIPE_PAGE_SIZE = 10;
 
 // Strip Wikibooks/CC attribution appended by ymove to some recipe descriptions
 const cleanRecipeDesc = (s) => {
@@ -7868,26 +7867,12 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
   const showCalTracking  = trackPref === 'yes_both' || trackPref === 'only_calories' || trackPref === 'no_but_interested';
   const calTarget = aiNutritionPlan?.daily_targets?.calories || currentUser?.dailyCalorieTarget || 2000;
 
-  // Fetch paginated recipes from server whenever page or filter changes
+  // Fetch personalised recipes (≤10) from backend whenever tab or user changes
   useEffect(()=>{
+    if (!getAuthToken()) return;
     setLoadingRecipes(true);
-    const diet = RECIPE_DIET_MAP[filter];
-    const qs   = new URLSearchParams({ limit: RECIPE_PAGE_SIZE, page: recipePage, source: 'ymove' });
-    if (diet) qs.set('diet', diet);
-    // Auto-apply user's dietary restrictions
-    if (currentUser?.dietaryRestrictions?.length) {
-      const restrictionDietMap = {
-        vegan: 'vegan',
-        vegetarian: 'vegetarian',
-        gluten_free: 'gluten free',
-        dairy_free: null, // handled by exclusion, not a diet tag
-      };
-      const primaryRestriction = currentUser.dietaryRestrictions.find(r => restrictionDietMap[r]);
-      if (primaryRestriction && restrictionDietMap[primaryRestriction] && !diet) {
-        qs.set('diet', restrictionDietMap[primaryRestriction]);
-      }
-    }
-    apiCall(`/nutrition/recipes?${qs}`)
+    const tab = FILTER_TAB_MAP[filter] || 'all';
+    apiCall(`/nutrition/recipes/personalised?tab=${tab}`)
       .then(d=>{
         if(d?.data?.recipes) {
           setApiRecipes(d.data.recipes.map(normalizeRecipe));
@@ -7897,7 +7882,7 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
       .catch(()=>{})
       .finally(()=>setLoadingRecipes(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[recipePage, filter, currentUser?.id]);
+  },[filter, currentUser?.id]);
 
   // Fetch saved recipes once on mount
   useEffect(()=>{
@@ -7913,8 +7898,6 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
         .catch(()=>{});
     }
   },[]);
-
-  const totalPages = Math.max(1, Math.ceil(totalRecipes / RECIPE_PAGE_SIZE));
 
   const handleFilterChange = (f) => { setFilter(f); setRecipePage(1); };
 
@@ -8297,8 +8280,37 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
               ))}
             </div>
             {/* Recipe grid */}
-            {loadingRecipes && apiRecipes.length===0 && (
-              <div style={{ textAlign:"center",padding:"32px 0",fontFamily:FONT,fontSize:13,color:"#555" }}>Loading recipes...</div>
+            {loadingRecipes && (
+              <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12 }}>
+                {Array.from({length:10}).map((_,i)=>(
+                  <div key={i} style={{ background:CARD,borderRadius:14,overflow:"hidden",border:`1px solid ${BORDER}` }}>
+                    <div style={{ height:110,background:"#1e1e1e" }}/>
+                    <div style={{ padding:"10px" }}>
+                      <div style={{ height:13,background:"#1e1e1e",borderRadius:4,marginBottom:6,width:"75%" }}/>
+                      <div style={{ height:10,background:"#1e1e1e",borderRadius:4,width:"45%" }}/>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {!loadingRecipes && filteredGrid.length===0 && (
+              <div style={{ textAlign:"center",padding:"40px 16px" }}>
+                <div style={{ width:52,height:52,borderRadius:"50%",background:`${PRIMARY}18`,border:`1px solid ${PRIMARY}33`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px" }}>
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.8"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>
+                </div>
+                <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#fff",marginBottom:8 }}>
+                  {search ? `No results for "${search}"` : `No ${filter !== "All" ? filter.toLowerCase() : ""} recipes found`}
+                </div>
+                <div style={{ fontFamily:FONT,fontSize:12,color:"#555",lineHeight:1.65,marginBottom:20,maxWidth:260,margin:"0 auto 20px" }}>
+                  {search ? "Try a different search term." : "Try a different filter or update your dietary preferences in Settings."}
+                </div>
+                {!search && (
+                  <button onClick={()=>setShowProfile(true)}
+                    style={{ padding:"12px 28px",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:700,fontSize:13,color:"#fff",cursor:"pointer" }}>
+                    Update Preferences
+                  </button>
+                )}
+              </div>
             )}
             <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12 }}>
               {filteredGrid.map((r,i)=>{
@@ -8328,48 +8340,6 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
               })}
             </div>
 
-            {/* ── Pagination ─────────────────────────────────────────────── */}
-            {totalPages > 1 && (
-              <div style={{ display:"flex",flexDirection:"column",alignItems:"center",gap:10,marginTop:20,paddingBottom:8 }}>
-                <div style={{ display:"flex",alignItems:"center",gap:6 }}>
-                  {/* Previous */}
-                  <button
-                    disabled={recipePage === 1}
-                    onClick={()=>{ setRecipePage(p=>p-1); scrollRef.current?.scrollTo({top:0,behavior:'smooth'}); }}
-                    style={{ width:34,height:34,borderRadius:10,border:`1.5px solid ${recipePage===1?BORDER:PRIMARY}`,background:"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:recipePage===1?"default":"pointer",opacity:recipePage===1?0.35:1 }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={recipePage===1?"#555":PRIMARY} strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-                  </button>
-
-                  {/* Page numbers — show up to 5 around current page */}
-                  {Array.from({ length: totalPages }, (_,i)=>i+1)
-                    .filter(p => p===1 || p===totalPages || Math.abs(p - recipePage) <= 1)
-                    .reduce((acc, p, idx, arr) => {
-                      if (idx > 0 && p - arr[idx-1] > 1) acc.push('…');
-                      acc.push(p);
-                      return acc;
-                    }, [])
-                    .map((p, i) => p === '…'
-                      ? <span key={`ellipsis-${i}`} style={{ fontFamily:FONT,fontSize:12,color:"#555",width:20,textAlign:"center" }}>…</span>
-                      : <button key={p} onClick={()=>{ setRecipePage(p); scrollRef.current?.scrollTo({top:0,behavior:'smooth'}); }}
-                          style={{ width:34,height:34,borderRadius:10,border:`1.5px solid ${p===recipePage?PRIMARY:BORDER}`,background:p===recipePage?`${PRIMARY}18`:"transparent",fontFamily:FONT,fontWeight:700,fontSize:13,color:p===recipePage?PRIMARY:"#888",cursor:"pointer" }}>
-                          {p}
-                        </button>
-                    )
-                  }
-
-                  {/* Next */}
-                  <button
-                    disabled={recipePage === totalPages}
-                    onClick={()=>{ setRecipePage(p=>p+1); scrollRef.current?.scrollTo({top:0,behavior:'smooth'}); }}
-                    style={{ width:34,height:34,borderRadius:10,border:`1.5px solid ${recipePage===totalPages?BORDER:PRIMARY}`,background:"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:recipePage===totalPages?"default":"pointer",opacity:recipePage===totalPages?0.35:1 }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={recipePage===totalPages?"#555":PRIMARY} strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-                  </button>
-                </div>
-                <div style={{ fontFamily:FONT,fontSize:11,color:"#555" }}>
-                  Page {recipePage} of {totalPages} · {totalRecipes} recipes
-                </div>
-              </div>
-            )}
           </div>
         )}
 

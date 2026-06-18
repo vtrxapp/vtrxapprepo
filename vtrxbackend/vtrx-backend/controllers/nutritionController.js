@@ -64,6 +64,95 @@ const getRecipes = async (req, res) => {
   }
 };
 
+// ── In-memory cache for personalised recipe responses ────────────────────────
+const _recipeCache    = new Map();
+const RECIPE_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+// ── GET /api/nutrition/recipes/personalised ───────────────────────────────────
+// Returns ≤10 recipes tailored to the user's dietary restrictions + goal.
+// Tab values: all | high_protein | low_carb | vegan | vegetarian
+const getPersonalisedRecipes = async (req, res) => {
+  const { tab = 'all' } = req.query;
+  const userId = req.user.id;
+
+  try {
+    // 1. Load user profile
+    const user = await prisma.user.findUnique({
+      where:  { id: userId },
+      select: { dietaryRestrictions: true, nutritionGoal: true, goal: true },
+    });
+    const restrictions  = user?.dietaryRestrictions || [];
+    const nutritionGoal = user?.nutritionGoal || '';
+    const primaryGoal   = user?.goal          || '';
+
+    // 2. Cache lookup
+    const cacheKey = `r_${userId}_${tab}_${[...restrictions].sort().join(',')}`;
+    const hit = _recipeCache.get(cacheKey);
+    if (hit && Date.now() < hit.expiresAt) {
+      return res.json({ success: true, data: hit.data, fromCache: true });
+    }
+
+    // 3. Build ymove query params — base dietary filter first
+    const params = { limit: 10, page: 1 };
+    if      (restrictions.includes('vegan'))       params.diet = 'vegan';
+    else if (restrictions.includes('vegetarian'))  params.diet = 'vegetarian';
+    else if (restrictions.includes('gluten_free')) params.diet = 'gluten-free';
+    else if (restrictions.includes('dairy_free'))  params.diet = 'dairy-free';
+
+    const isVegan       = restrictions.includes('vegan');
+    const isVeg         = restrictions.includes('vegetarian');
+    const isLoseFat     = nutritionGoal === 'lose_fat'     || primaryGoal === 'lose_weight';
+    const isBuildMuscle = nutritionGoal === 'build_muscle' || primaryGoal === 'build_muscle';
+
+    // 4. Tab-specific overrides
+    switch (tab) {
+      case 'all':
+        if (isLoseFat)                           { params.maxCalories = 500; params.minProtein = 20; }
+        else if (isBuildMuscle)                  { params.minProtein = 30; }
+        else if (nutritionGoal === 'eat_clean')  { params.query = 'whole food'; }
+        else if (nutritionGoal === 'improve_energy') { params.query = 'complex carbs'; }
+        break;
+      case 'high_protein':
+        if (isVegan)    { params.query = 'high protein vegan';        params.minProtein = 15; }
+        else if (isVeg) { params.query = 'high protein vegetarian';   params.minProtein = 20; }
+        else            { params.query = 'high protein';               params.minProtein = 30; }
+        break;
+      case 'low_carb':
+        params.query = isVegan ? 'low carb vegan' : isVeg ? 'low carb vegetarian' : 'low carb';
+        break;
+      case 'vegan':
+        params.diet  = 'vegan';
+        params.query = isBuildMuscle ? 'vegan high protein' : isLoseFat ? 'vegan low calorie' : 'vegan';
+        if (isLoseFat) params.maxCalories = 400;
+        break;
+      case 'vegetarian':
+        params.diet  = 'vegetarian';
+        params.query = isBuildMuscle ? 'vegetarian high protein' : isLoseFat ? 'vegetarian low calorie' : 'vegetarian';
+        if (isLoseFat) params.maxCalories = 400;
+        break;
+      default: break;
+    }
+
+    if (restrictions.includes('no_peanuts')) {
+      params.query = (params.query ? params.query + ' -peanut' : '-peanut').trim();
+    }
+
+    // 5. Call ymove
+    const result  = await ymove.getRecipes(params);
+    const recipes = result.recipes || [];
+
+    logger.info(`[personalised-recipes] userId=${userId} tab=${tab} diet=${params.diet||'none'} query="${params.query||''}" → ${recipes.length} results`);
+
+    // 6. Cache + return
+    const responseData = { recipes, total: recipes.length, tab };
+    _recipeCache.set(cacheKey, { data: responseData, expiresAt: Date.now() + RECIPE_CACHE_TTL });
+    res.json({ success: true, data: responseData });
+  } catch (error) {
+    logger.error('getPersonalisedRecipes error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch personalised recipes' });
+  }
+};
+
 // ── GET /api/nutrition/recipes/:id ───────────────────────────────────────────
 const getRecipeById = async (req, res) => {
   const { id } = req.params;
@@ -445,6 +534,7 @@ const generateYmoveMealPlan = async (req, res) => {
 
 module.exports = {
   getRecipes,
+  getPersonalisedRecipes,
   getRecipeById,
   getRecipeDiets,
   getRecipeMealTypes,

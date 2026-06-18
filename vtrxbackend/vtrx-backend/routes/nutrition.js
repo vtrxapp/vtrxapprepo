@@ -10,8 +10,9 @@ router.use(protect);
 router.post('/ymove/sync-recipes',       nutrition.syncYmoveRecipes);
 
 // ── Recipes — static paths must come before /:id ─────────────────────────────
-router.get('/recipes/diets',             nutrition.getRecipeDiets);       // GET /nutrition/recipes/diets
-router.get('/recipes/meal-types',        nutrition.getRecipeMealTypes);   // GET /nutrition/recipes/meal-types
+router.get('/recipes/diets',             nutrition.getRecipeDiets);          // GET /nutrition/recipes/diets
+router.get('/recipes/meal-types',        nutrition.getRecipeMealTypes);      // GET /nutrition/recipes/meal-types
+router.get('/recipes/personalised',      nutrition.getPersonalisedRecipes);  // GET /nutrition/recipes/personalised?tab=all|high_protein|low_carb|vegan|vegetarian
 router.get('/recipes',                   nutrition.getRecipes);
 router.get('/recipes/:id',               nutrition.getRecipeById);
 
