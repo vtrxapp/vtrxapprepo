@@ -1085,7 +1085,7 @@ function normaliseExercise(ex) {
     cal:          src.cal          || 0,
     img:          thumbUrl,
     videoUrl,
-    ymoveId:      'ymoveId' in src ? (src.ymoveId || null) : (src.id || null),
+    ymoveId:      src.ymoveId || null,
     thumbnailUrl: thumbUrl,
     restSecs:     src.restSecs     || src.restSeconds || 60,
     instructions: src.instructions || null,

@@ -902,13 +902,14 @@ const getExerciseVideoUrl = async (req, res) => {
         if (res.exercises.length > 0) { exercises = res.exercises; break; }
       }
 
-      // Prefer exact name match, then partial match, then first result with a video
+      // Prefer exact name match, then partial match.
+      // NEVER fall back to exercises[0] — that attaches the wrong exercise's video.
       const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
       const nameLower = norm(searchName);
       const match =
         exercises.find(e => norm(e.title || e.name) === nameLower) ||
-        exercises.find(e => norm(e.title || e.name).includes(nameLower) || nameLower.includes(norm(e.title || e.name))) ||
-        exercises[0];
+        exercises.find(e => norm(e.title || e.name).includes(nameLower) || nameLower.includes(norm(e.title || e.name)));
+      // No exercises[0] fallback — if nothing matches, we return 404 below.
 
       if (match) {
         foundId = match.id != null ? String(match.id) : null;
