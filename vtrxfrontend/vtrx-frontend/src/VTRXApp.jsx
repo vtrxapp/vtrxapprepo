@@ -8047,10 +8047,10 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
                       <span style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:PRIMARY }}>AI Picks</span>
                     </div>
                   </div>
-                  <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12 }}>
-                    {recommended.map((r,i) => (
+                  <div style={{ display:"flex",gap:12,overflowX:"auto",paddingBottom:4,scrollbarWidth:"none",msOverflowStyle:"none" }}>
+                    {recommended.slice(0,5).map((r,i) => (
                       <div key={i} onClick={()=>setSelectedRecipe(r)}
-                        style={{ background:"#fff",borderRadius:14,overflow:"hidden",cursor:"pointer",border:`1px solid ${BORDER}` }}>
+                        style={{ width:160,minWidth:160,flexShrink:0,background:"#fff",borderRadius:14,overflow:"hidden",cursor:"pointer",border:`1px solid ${BORDER}` }}>
                         <div style={{ height:110,overflow:"hidden",position:"relative" }}>
                           {r.img
                             ? <img src={r.img} alt={r.name} style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
