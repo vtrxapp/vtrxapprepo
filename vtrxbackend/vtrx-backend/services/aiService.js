@@ -62,6 +62,8 @@ const generateWorkoutSummary = async ({
   userGoal,
   streakDays,
   personalBests = {},   // { exerciseName: { weight, reps } }
+  moodHistory = [],
+  avgCompletionRate = 100,
 }) => {
   // Build detailed per-exercise breakdown for the prompt
   const exerciseLines = (exercises || []).map(ex => {
@@ -86,6 +88,8 @@ Athlete data:
 - Duration: ${duration} min | Calories: ${caloriesBurned || 'estimated'}
 - Energy/mood going in: ${energyLevel || 'okay'} | Goal: ${userGoal || 'general fitness'}
 - Current streak: ${streakDays || 0} days
+${moodHistory.length ? `- Mood trend (last 7 days): ${moodHistory.join(', ')}` : ''}
+${avgCompletionRate < 100 ? `- Average workout completion: ${avgCompletionRate}% (factor this into volume/intensity recommendations)` : ''}
 
 Exercise log:
 ${exerciseLines}

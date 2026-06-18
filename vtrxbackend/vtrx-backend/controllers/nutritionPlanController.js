@@ -23,7 +23,44 @@ const generateNutritionPlan = async (req, res, next) => {
     });
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-    const { plan, calcs } = await planSvc.generateNutritionPlan(user);
+    // Fetch behavioral context for personalized nutrition planning
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const [recentFoodLogs, savedMealCount, recentMoods] = await Promise.all([
+      prisma.foodLog.findMany({
+        where: { userId: req.user.id, loggedAt: { gte: sevenDaysAgo } },
+        orderBy: { loggedAt: 'desc' },
+        select: { mealName: true, recipeName: true, calories: true, proteinG: true, carbsG: true, fatG: true, loggedAt: true },
+        take: 50,
+      }),
+      prisma.savedMeal.count({ where: { userId: req.user.id } }),
+      prisma.moodLog.findMany({
+        where: { userId: req.user.id, loggedAt: { gte: sevenDaysAgo } },
+        orderBy: { loggedAt: 'desc' },
+        take: 5,
+        select: { mood: true },
+      }),
+    ]);
+
+    // Compute compliance stats from food logs
+    const dayCalories = {};
+    for (const log of recentFoodLogs) {
+      const day = log.loggedAt.toISOString().slice(0, 10);
+      dayCalories[day] = (dayCalories[day] || 0) + (log.calories || 0);
+    }
+    const loggedDays = Object.values(dayCalories);
+    const avgDailyCalories = loggedDays.length
+      ? Math.round(loggedDays.reduce((s, c) => s + c, 0) / loggedDays.length)
+      : null;
+    const uniqueRecipes = [...new Set(recentFoodLogs.map(l => l.recipeName).filter(Boolean))];
+    const dominantMood = recentMoods.length > 0 ? recentMoods[0].mood : null;
+
+    const { plan, calcs } = await planSvc.generateNutritionPlan(user, {
+      avgDailyCalories,
+      uniqueRecentRecipes: uniqueRecipes.slice(0, 10),
+      loggedDaysCount: loggedDays.length,
+      dominantMood,
+      hasSavedMeals: savedMealCount > 0,
+    });
 
     // Deactivate existing active plans
     await prisma.nutritionPlan.updateMany({

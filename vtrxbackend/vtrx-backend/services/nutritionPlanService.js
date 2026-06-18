@@ -77,7 +77,7 @@ const SYSTEM_PROMPT = `You are VTRX's AI nutrition coach. You create practical, 
 You respond ONLY in valid JSON. No markdown, no explanation, just the JSON object.`;
 
 // ── Build the user prompt ────────────────────────────────────────────────────
-const buildPrompt = (user, calcs) => {
+const buildPrompt = (user, calcs, context = {}) => {
   const { bmr, tdee, calorieTarget, proteinG, carbG, fatG } = calcs;
   const weightKg  = Math.round((user.weight || 150) * 0.453592 * 10) / 10;
   const heightCm  = parseHeightToCm(user.height);
@@ -170,6 +170,27 @@ PRACTICALITY RULES:
 - Each meal should require 5 ingredients or fewer
 - Include meal prep batching suggestions
 - At least 3 meals per week should be repeatable from previous days
+${(() => {
+  const behaviorLines = [];
+  if (context.avgDailyCalories) {
+    behaviorLines.push(`- Recent average daily calorie intake: ${context.avgDailyCalories} kcal (adapt plan to this reality)`);
+  }
+  if (context.loggedDaysCount > 0) {
+    behaviorLines.push(`- User has logged meals for ${context.loggedDaysCount} of the last 7 days`);
+  }
+  if (context.uniqueRecentRecipes?.length > 0) {
+    behaviorLines.push(`- Recently eaten: ${context.uniqueRecentRecipes.join(', ')}`);
+  }
+  if (context.dominantMood && ['empty', 'low'].includes(context.dominantMood)) {
+    behaviorLines.push(`- User's recent mood is ${context.dominantMood} — include more energising, nutrient-dense meals`);
+  }
+  if (context.hasSavedMeals) {
+    behaviorLines.push(`- User has saved favourite recipes — prioritise variety`);
+  }
+  return behaviorLines.length
+    ? `\nBEHAVIOURAL CONTEXT (use this to personalise the plan):\n${behaviorLines.join('\n')}`
+    : '';
+})()}
 
 RESPOND WITH THIS EXACT JSON STRUCTURE:
 {
@@ -278,7 +299,7 @@ const calculateNutritionTargets = (user) => {
 };
 
 // ── Main export ───────────────────────────────────────────────────────────────
-const generateNutritionPlan = async (user) => {
+const generateNutritionPlan = async (user, context = {}) => {
   const client = getOpenAIClient();
   if (!client) throw new Error('OPENAI_API_KEY not configured');
 
@@ -290,7 +311,7 @@ const generateNutritionPlan = async (user) => {
     max_tokens: 10000,
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user',   content: buildPrompt(user, calcs) },
+      { role: 'user',   content: buildPrompt(user, calcs, context) },
     ],
   });
 

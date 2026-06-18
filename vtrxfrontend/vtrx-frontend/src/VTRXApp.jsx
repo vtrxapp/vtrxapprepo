@@ -2802,7 +2802,14 @@ function AISummaryPage({ energyKey, logId, onBack }) {
               <div style={{ fontFamily:FONT,fontSize:13,color:"#888888",marginBottom:20 }}>Your feedback helps me tailor your next session.</div>
               <div style={{ display:"flex",justifyContent:"space-around" }}>
                 {postMoods.map(m=>(
-                  <button key={m.key} onClick={()=>setPostMood(m.key)} style={{ display:"flex",flexDirection:"column",alignItems:"center",gap:8,background:"none",border:"none",cursor:"pointer" }}>
+                  <button key={m.key} onClick={()=>{
+                    setPostMood(m.key);
+                    const moodMap = { drained: 'low', okay: 'okay', good: 'good', pumped: 'peak' };
+                    apiCall('/users/mood', {
+                      method: 'POST',
+                      body: JSON.stringify({ mood: moodMap[m.key] || 'okay', notes: 'Post-workout mood check-in' }),
+                    }).catch(() => {});
+                  }} style={{ display:"flex",flexDirection:"column",alignItems:"center",gap:8,background:"none",border:"none",cursor:"pointer" }}>
                     <div style={{ width:56,height:56,borderRadius:"50%",border:`2px solid ${postMood===m.key?m.color:BORDER}`,background:postMood===m.key?`${m.color}22`:"transparent",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s",boxShadow:postMood===m.key?`0 0 16px ${m.color}55`:"none",transform:postMood===m.key?"scale(1.1)":"scale(1)" }}><PostMoodIcon type={m.key} color={m.color}/></div>
                     <span style={{ fontFamily:FONT,fontSize:11,color:postMood===m.key?m.color:"#888888",fontWeight:postMood===m.key?700:500,transition:"all 0.2s" }}>{m.label}</span>
                   </button>
@@ -7871,6 +7878,19 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
     const diet = RECIPE_DIET_MAP[filter];
     const qs   = new URLSearchParams({ limit: RECIPE_PAGE_SIZE, page: recipePage, source: 'ymove' });
     if (diet) qs.set('diet', diet);
+    // Auto-apply user's dietary restrictions
+    if (currentUser?.dietaryRestrictions?.length) {
+      const restrictionDietMap = {
+        vegan: 'vegan',
+        vegetarian: 'vegetarian',
+        gluten_free: 'gluten free',
+        dairy_free: null, // handled by exclusion, not a diet tag
+      };
+      const primaryRestriction = currentUser.dietaryRestrictions.find(r => restrictionDietMap[r]);
+      if (primaryRestriction && restrictionDietMap[primaryRestriction] && !diet) {
+        qs.set('diet', restrictionDietMap[primaryRestriction]);
+      }
+    }
     apiCall(`/nutrition/recipes?${qs}`)
       .then(d=>{
         if(d?.data?.recipes) {
@@ -7926,10 +7946,16 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
   if (showUpgrade) return <UpgradePlanPage onBack={()=>setShowUpgrade(false)}/>;
 
   const displayRecipes = apiRecipes.length > 0 ? apiRecipes : RECIPES.map(normalizeRecipe);
-  // Diet filter is applied server-side; only apply local search here
+  // Diet filter is applied server-side; apply local search and dietary restriction filtering here
   const filtered = displayRecipes.filter(r => {
-    if (search === "") return true;
-    return (r.name||'').toLowerCase().includes(search.toLowerCase());
+    if (search && !(r.name||'').toLowerCase().includes(search.toLowerCase())) return false;
+    // Filter out recipes that violate user's dietary restrictions
+    const restrictions = currentUser?.dietaryRestrictions || [];
+    if (restrictions.includes('vegan') && (r.tags||[]).some(t => /meat|chicken|beef|pork|fish|egg|dairy|milk|cheese/i.test(t))) return false;
+    if (restrictions.includes('vegetarian') && (r.tags||[]).some(t => /meat|chicken|beef|pork|fish/i.test(t))) return false;
+    if (restrictions.includes('gluten_free') && (r.tags||[]).some(t => /gluten|wheat|bread|pasta/i.test(t))) return false;
+    if (restrictions.includes('dairy_free') && (r.tags||[]).some(t => /dairy|milk|cheese|yogurt/i.test(t))) return false;
+    return true;
   });
 
   // ── Meal Plan helpers ─────────────────────────────────────────────────────────
@@ -9187,8 +9213,25 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
   const workoutDays = weeklyWorkoutDays;
   const dayOfYear   = Math.floor((new Date() - new Date(new Date().getFullYear(),0,0)) / 86400000);
   const quote       = QUOTES[dayOfYear % QUOTES.length];
-  const meal        = MEALS[mealIdx % MEALS.length];
-  const altMeals    = MEALS.filter((_,i) => i !== mealIdx).slice(0,2);
+  // Filter MEALS by dietary restrictions and goal
+  const userRestrictions = user?.dietaryRestrictions || [];
+  const userNutritionGoal = user?.nutritionGoal || '';
+  const eligibleMeals = MEALS.filter(m => {
+    const name = (m.name || m.title || '').toLowerCase();
+    const ingredients = (m.ingredients || []).join(' ').toLowerCase();
+    const text = name + ' ' + ingredients;
+    if (userRestrictions.includes('vegan') && /chicken|beef|pork|fish|egg|dairy|milk|cheese/i.test(text)) return false;
+    if (userRestrictions.includes('vegetarian') && /chicken|beef|pork|fish/i.test(text)) return false;
+    return true;
+  }).sort((a,b) => {
+    // Sort by goal alignment: build_muscle → high protein first, lose_fat → low cal first
+    if (userNutritionGoal === 'build_muscle') return (b.protein||0) - (a.protein||0);
+    if (userNutritionGoal === 'lose_fat') return (a.cal||a.calories||999) - (b.cal||b.calories||999);
+    return 0;
+  });
+  const mealPool = eligibleMeals.length > 0 ? eligibleMeals : MEALS;
+  const meal        = mealPool[mealIdx % mealPool.length];
+  const altMeals    = mealPool.filter((_,i) => i !== (mealIdx % mealPool.length)).slice(0,2);
   const workout     = apiWorkout || getTailoredWorkout(user, energyKey);
   const lvl         = energyKey ? ENERGY_LEVELS.find(l => l.key === energyKey) : null;
   const pct         = (workoutDays / daysPerWeek) * 100;
@@ -9508,15 +9551,22 @@ function VTRXAppInner({ setPaymentPlan }) {
         await apiCall("/users/profile", {
           method: "PUT",
           body: JSON.stringify({
-            name:         user.name,
-            gender:       user.gender,
-            weight:       user.weight,
-            height:       user.height,
-            goal:         user.goal,
-            fitnessLevel: user.level || user.fitnessLevel,
-            daysPerWeek:  parseInt(user.days || user.daysPerWeek) || 5,
-            equipment:    user.equipment,
-            location:     user.location || user.workoutLocation,
+            name:                 user.name,
+            gender:               user.gender,
+            weight:               user.weight,
+            height:               user.height,
+            goal:                 user.goal,
+            fitnessLevel:         user.level || user.fitnessLevel,
+            daysPerWeek:          parseInt(user.days || user.daysPerWeek) || 5,
+            equipment:            user.equipment,
+            location:             user.location || user.workoutLocation,
+            nutritionGoal:        user.nutritionGoal,
+            dietaryRestrictions:  user.dietaryRestrictions || [],
+            mealsPerDay:          user.mealsPerDay,
+            wantsMealSuggestions: user.wantsMealSuggestions,
+            trackingPreference:   user.trackingPreference,
+            preferredStyles:      user.preferredStyles || [],
+            sessionDuration:      user.sessionDuration,
           }),
         });
       } catch(_e){}

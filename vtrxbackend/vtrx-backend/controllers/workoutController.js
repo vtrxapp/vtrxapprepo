@@ -363,6 +363,23 @@ const generateAndSaveAISummary = async ({
     }
   }
 
+  const recentMoodLogs = await prisma.moodLog.findMany({
+    where: { userId, createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } },
+    orderBy: { loggedAt: 'desc' },
+    take: 7,
+    select: { mood: true },
+  });
+  const moodHistory = recentMoodLogs.map(m => m.mood);
+
+  const recentLogs = await prisma.workoutLog.findMany({
+    where: { userId, completedAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } },
+    take: 10,
+    select: { completionPercentage: true },
+  });
+  const avgCompletionRate = recentLogs.length
+    ? Math.round(recentLogs.reduce((s,l) => s + (l.completionPercentage || 100), 0) / recentLogs.length)
+    : 100;
+
   const { summary, keyInsights, recommendations, recap, tokensUsed, model } =
     await aiService.generateWorkoutSummary({
       workoutName,
@@ -374,6 +391,8 @@ const generateAndSaveAISummary = async ({
       userGoal,
       streakDays,
       personalBests,
+      moodHistory,
+      avgCompletionRate,
     });
 
   await prisma.aISummary.create({
@@ -517,6 +536,34 @@ const getRecommendation = async (req, res) => {
     const equipment  = user.equipment    || [];
     const location   = user.location     || 'Full Gym';
     const daysPerWeek = user.daysPerWeek || 3;
+
+    // ── Fetch behavioral context for personalization ────────────────────────
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const [recentMoods, recentCompletions] = await Promise.all([
+      prisma.moodLog.findMany({
+        where: { userId: user.id, loggedAt: { gte: sevenDaysAgo } },
+        orderBy: { loggedAt: 'desc' },
+        take: 7,
+        select: { mood: true, loggedAt: true },
+      }),
+      prisma.workoutLog.findMany({
+        where: { userId: user.id, completedAt: { gte: sevenDaysAgo } },
+        orderBy: { completedAt: 'desc' },
+        take: 10,
+        select: { completionPercentage: true, duration: true, name: true },
+      }),
+    ]);
+    const avgCompletion = recentCompletions.length
+      ? Math.round(recentCompletions.reduce((s, l) => s + (l.completionPercentage || 100), 0) / recentCompletions.length)
+      : 100;
+    const dominantMood = recentMoods.length
+      ? recentMoods.reduce((acc, m) => { acc[m.mood] = (acc[m.mood] || 0) + 1; return acc; }, {})
+      : {};
+    // If user's average completion < 70%, suggest shorter/lighter workouts
+    if (avgCompletion < 70 && energyLevel !== 'peak') {
+      adaptation.durationFactor = Math.min(adaptation.durationFactor, 0.75);
+      adaptation.intensityLock = adaptation.intensityLock || 'Beginner';
+    }
 
     // ── Determine preferred workout type from goal ──────────────────────────
     let workoutType = 'STRENGTH';
@@ -959,7 +1006,7 @@ const exerciseMatchesTargets = (muscleGroup, targets) => {
 };
 
 const formatScheduleEntry = async (s) => {
-  const rawExercises = (s.workout.exercises || []).slice(0, 6);
+  const rawExercises = s.workout.exercises || [];
   const targets = inferWorkoutGroups(s.workout.name);
 
   let mappedExercises;
@@ -978,7 +1025,7 @@ const formatScheduleEntry = async (s) => {
             muscleGroup: { contains: t, mode: 'insensitive' },
           })),
         },
-        take: 6,
+        take: 10,
         orderBy: { name: 'asc' },
       });
       mappedExercises = corrected.map(ex => ({
@@ -1065,7 +1112,7 @@ const autoGenerateWeekSchedule = async (userId, weekStart) => {
         update: {},
         include: {
           workout: {
-            include: { exercises: { include: { exercise: true }, orderBy: { order: 'asc' }, take: 6 } },
+            include: { exercises: { include: { exercise: true }, orderBy: { order: 'asc' } } },
           },
         },
       });
@@ -1094,7 +1141,7 @@ const getSchedule = async (req, res) => {
       },
       include: {
         workout: {
-          include: { exercises: { include: { exercise: true }, orderBy: { order: 'asc' }, take: 6 } },
+          include: { exercises: { include: { exercise: true }, orderBy: { order: 'asc' } } },
         },
       },
       orderBy: { scheduledDate: 'asc' },
