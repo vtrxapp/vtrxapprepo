@@ -1614,9 +1614,13 @@ Library:
 ${JSON.stringify(librarySlice.map(e => ({ ymoveId: e.ymoveId, name: e.name, muscleGroup: e.muscleGroup, equipment: e.equipment })))}
 
 Return ONLY a JSON array of exactly ${exerciseCount} objects, each with:
-{ "ymoveId": "<exact id from library>", "name": "<name>", "muscleGroup": "<muscleGroup>", "sets": ${repScheme.sets}, "reps": "${repScheme.reps}", "restSecs": 60 }
+{ "ymoveId": "<exact id from library>", "name": "<name>", "muscleGroup": "<muscleGroup>", "sets": ${repScheme.sets}, "reps": "<reps>", "restSecs": 60 }
 
-No markdown, no extra text.`;
+Rules:
+- ymoveId MUST be copied exactly from the library above — never invent or modify IDs
+- For isometric/timed exercises (Plank, Wall Sit, Dead Hang, etc.) set reps to a duration string like "30s", "45s", or "60s"
+- For all other exercises set reps to a rep range like "${repScheme.reps}"
+- No markdown, no extra text.`;
 
     let selectedExercises = [];
     try {
@@ -1658,12 +1662,44 @@ No markdown, no extra text.`;
       }
     }
 
-    // 8. MET-based calorie calculation (server-side, stable)
+    // 8. Enrich each selected exercise with individual ymove details.
+    // The list endpoint (getExercises) does not include videoUrl or exercise-specific
+    // thumbnailUrl. Calling getExerciseById (once per selected exercise, 3–6 calls)
+    // gives us the correct video and thumbnail for every exercise in the workout.
+    const enriched = await Promise.all(
+      validated.map(async (ex) => {
+        if (!ex.ymoveId) {
+          logger.warn(`[generate-daily] "${ex.name}" has no ymoveId — cannot enrich`);
+          return ex;
+        }
+        try {
+          const detail = await ymove.getExerciseById(ex.ymoveId);
+          if (!detail) {
+            logger.warn(`[generate-daily] "${ex.name}" ymoveId=${ex.ymoveId} → no detail from ymove`);
+            return ex;
+          }
+          const primaryVideo = Array.isArray(detail.videos)
+            ? (detail.videos.find(v => v.isPrimary) || detail.videos[0])
+            : null;
+          const videoUrl    = detail.videoUrl    || detail.video_url    || primaryVideo?.videoUrl    || null;
+          const hlsUrl      = detail.videoHlsUrl || primaryVideo?.hlsUrl || null;
+          const thumbnailUrl = detail.thumbnailUrl || detail.thumbnail_url || detail.gifUrl
+            || primaryVideo?.thumbnailUrl || ex.thumbnailUrl || null;
+          logger.info(`[generate-daily] "${ex.name}" ymoveId=${ex.ymoveId} video=${videoUrl ? 'YES' : 'NO'} hls=${hlsUrl ? 'YES' : 'NO'} thumb=${thumbnailUrl ? 'YES' : 'NO'}`);
+          return { ...ex, videoUrl, hlsUrl, thumbnailUrl };
+        } catch (enrichErr) {
+          logger.warn(`[generate-daily] failed to enrich "${ex.name}" (${ex.ymoveId}): ${enrichErr.message}`);
+          return ex;
+        }
+      })
+    );
+
+    // 9. MET-based calorie calculation (server-side, stable)
     const MET = { STRENGTH: 4.0, HIIT: 8.0, CARDIO: 6.0 };
     const met      = MET[workoutType] || 4.0;
     const calories = Math.round(met * weightKg * (durationMins / 60));
 
-    logger.info(`generateDailyWorkout: user=${userId} day=${dayNumber} type=${workoutType} exercises=${validated.length} calories=${calories}`);
+    logger.info(`generateDailyWorkout: user=${userId} day=${dayNumber} type=${workoutType} exercises=${enriched.length} calories=${calories}`);
 
     res.json({
       success: true,
@@ -1677,7 +1713,7 @@ No markdown, no extra text.`;
           day:          dayNumber,
           daysPerWeek,
           muscleGroups: targetMuscleGroups,
-          exercises:    validated,
+          exercises:    enriched,
         },
       },
     });
