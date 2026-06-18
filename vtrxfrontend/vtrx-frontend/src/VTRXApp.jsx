@@ -309,48 +309,54 @@ const AI_SUGGESTIONS = {
 };
 
 // Rotates daily (Mon–Sun). Each entry drives the VTRX Smart Nutrition banner.
+// showRecipe: only true for food-focused topics; false for hydration/sleep/mindset etc.
 const DAILY_NUTRITION_FACTS = [
   {
-    focus:    "Complex Carbohydrates",
-    fact:     "Complex carbs are your body's preferred fuel source. Unlike simple sugars, they digest slowly — giving you steady energy throughout your workout and keeping you fuller for longer.",
-    examples: "Best sources: oats, sweet potatoes, brown rice, quinoa, lentils, whole-grain bread, chickpeas.",
-    recipeTag:"High Protein",
+    focus:      "Carbohydrates & Energy",
+    fact:       "Complex carbs are your body's preferred fuel source. Unlike simple sugars, they digest slowly — giving you steady energy throughout your workout and keeping you fuller for longer.",
+    examples:   "Best sources: oats, sweet potatoes, brown rice, quinoa, lentils, whole-grain bread, chickpeas.",
+    recipeTag:  "High Protein",
+    showRecipe: true,
   },
   {
-    focus:    "Protein & Muscle Repair",
-    fact:     "After training, your muscle fibres micro-tear and need protein to rebuild stronger. Spread your intake across meals — your body can only absorb around 30–40 g per sitting.",
-    examples: "Best sources: chicken breast, eggs, Greek yoghurt, cottage cheese, salmon, tofu, edamame.",
-    recipeTag:"High Protein",
+    focus:      "Protein & Muscle Recovery",
+    fact:       "After training, your muscle fibres micro-tear and need protein to rebuild stronger. Spread your intake across meals — your body can only absorb around 30–40 g per sitting.",
+    examples:   "Best sources: chicken breast, eggs, Greek yoghurt, cottage cheese, salmon, tofu, edamame.",
+    recipeTag:  "High Protein",
+    showRecipe: true,
   },
   {
-    focus:    "Healthy Fats",
-    fact:     "Healthy fats support hormone production, joint lubrication, and help absorb fat-soluble vitamins (A, D, E, K). They also provide long-lasting energy, ideal for lower-intensity days.",
-    examples: "Best sources: avocado, extra-virgin olive oil, almonds, walnuts, chia seeds, fatty fish, nut butters.",
-    recipeTag:"Low Carb",
+    focus:      "Healthy Fats",
+    fact:       "Healthy fats support hormone production, joint lubrication, and help absorb fat-soluble vitamins (A, D, E, K). They also provide long-lasting energy, ideal for lower-intensity days.",
+    examples:   "Best sources: avocado, extra-virgin olive oil, almonds, walnuts, chia seeds, fatty fish, nut butters.",
+    recipeTag:  "Low Carb",
+    showRecipe: true,
   },
   {
-    focus:    "Hydration & Performance",
-    fact:     "Even 2% dehydration can reduce strength and endurance by up to 20%. Water regulates body temperature, carries nutrients to cells, and removes waste from muscles.",
-    examples: "Aim for 2.5–3.5 L daily. Around intense sessions, add electrolytes: sodium, potassium, magnesium.",
-    recipeTag:"Vegan",
+    focus:      "Hydration & Performance",
+    fact:       "Even 2% dehydration can reduce strength and endurance by up to 20%. Water regulates body temperature, carries nutrients to cells, and removes waste from muscles.",
+    examples:   "Aim for 2.5–3.5 L daily. Around intense sessions, add electrolytes: sodium, potassium, magnesium.",
+    showRecipe: false,
   },
   {
-    focus:    "Pre-Workout Nutrition",
-    fact:     "Eating 1–2 hours before training fills your glycogen stores and gives muscles a pool of amino acids to draw from — directly improving power output and delaying fatigue.",
-    examples: "Ideas: banana + peanut butter, oat porridge with berries, brown rice with chicken, rice cakes + turkey.",
-    recipeTag:"High Protein",
+    focus:      "Pre-Workout Nutrition",
+    fact:       "Eating 1–2 hours before training fills your glycogen stores and gives muscles a pool of amino acids to draw from — directly improving power output and delaying fatigue.",
+    examples:   "Ideas: banana + peanut butter, oat porridge with berries, brown rice with chicken, rice cakes + turkey.",
+    recipeTag:  "High Protein",
+    showRecipe: true,
   },
   {
-    focus:    "Post-Workout Recovery",
-    fact:     "The 30–60 min window after training is prime for nutrient uptake. Fast protein triggers muscle protein synthesis, while carbs replenish glycogen and blunt the cortisol spike.",
-    examples: "Ideas: protein shake + banana, Greek yoghurt with granola, chicken & rice bowl, salmon with sweet potato.",
-    recipeTag:"High Protein",
+    focus:      "Post-Workout Nutrition",
+    fact:       "The 30–60 min window after training is prime for nutrient uptake. Fast protein triggers muscle protein synthesis, while carbs replenish glycogen and blunt the cortisol spike.",
+    examples:   "Ideas: protein shake + banana, Greek yoghurt with granola, chicken & rice bowl, salmon with sweet potato.",
+    recipeTag:  "High Protein",
+    showRecipe: true,
   },
   {
-    focus:    "Micronutrients & Recovery",
-    fact:     "Vitamins and minerals act as co-factors in hundreds of metabolic reactions. Iron carries oxygen to muscles, magnesium calms the nervous system, and vitamin C speeds tissue repair.",
-    examples: "Eat the rainbow: leafy greens, berries, bell peppers, pumpkin seeds, legumes, citrus fruit, dark chocolate.",
-    recipeTag:"Vegan",
+    focus:      "Micronutrients & Vitamins",
+    fact:       "Vitamins and minerals act as co-factors in hundreds of metabolic reactions. Iron carries oxygen to muscles, magnesium calms the nervous system, and vitamin C speeds tissue repair.",
+    examples:   "Eat the rainbow: leafy greens, berries, bell peppers, pumpkin seeds, legumes, citrus fruit, dark chocolate.",
+    showRecipe: false,
   },
 ];
 
@@ -8196,33 +8202,52 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
                       ) : null}
                       {isPremium ? (
                         <>
-                          {/* Macro tiles */}
-                          <div style={{ display:"flex",gap:6,marginBottom:14 }}>
-                            {[{l:"Calories",v:todayMacros.cal||"—",u:"kcal",c:"#FF6B35"},{l:"Protein",v:todayMacros.protein||"—",u:"g",c:PRIMARY},{l:"Carbs",v:todayMacros.carbs||"—",u:"g",c:"#F59E0B"},{l:"Fat",v:todayMacros.fat||"—",u:"g",c:"#A855F7"}].map(m=>(
-                              <div key={m.l} style={{ flex:1,background:"rgba(255,255,255,0.06)",borderRadius:10,padding:"8px 4px",textAlign:"center" }}>
-                                <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:m.c }}>{m.v}</div>
-                                <div style={{ fontFamily:FONT,fontSize:9,color:"#888",marginTop:1 }}>{m.u}</div>
-                                <div style={{ fontFamily:FONT,fontSize:9,color:"#555",marginTop:1 }}>{m.l}</div>
+                          {/* Macro tiles — calories always derived from macros */}
+                          {(()=>{
+                            const macroCalories = Math.round(todayMacros.protein*4 + todayMacros.carbs*4 + todayMacros.fat*9);
+                            return (
+                              <div style={{ display:"flex",gap:6,marginBottom:14 }}>
+                                {[
+                                  {l:"Calories", v: macroCalories||"—", u:"kcal", c:"#FF6B35"},
+                                  {l:"Protein",  v: todayMacros.protein||"—", u:"g", c:PRIMARY},
+                                  {l:"Carbs",    v: todayMacros.carbs||"—",   u:"g", c:"#F59E0B"},
+                                  {l:"Fat",      v: todayMacros.fat||"—",     u:"g", c:"#A855F7"},
+                                ].map(m=>(
+                                  <div key={m.l} style={{ flex:1,background:"rgba(255,255,255,0.06)",borderRadius:10,padding:"8px 4px",textAlign:"center" }}>
+                                    <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:m.c }}>{m.v}</div>
+                                    <div style={{ fontFamily:FONT,fontSize:9,color:"#888",marginTop:1 }}>{m.u}</div>
+                                    <div style={{ fontFamily:FONT,fontSize:9,color:"#555",marginTop:1 }}>{m.l}</div>
+                                  </div>
+                                ))}
                               </div>
-                            ))}
-                          </div>
-                          {/* One recommended recipe */}
-                          <div style={{ fontFamily:FONT,fontSize:11,color:"#888",marginBottom:8 }}>Try this today</div>
-                          <div onClick={()=>setSelectedRecipe(recipeMatch)}
-                            style={{ display:"flex",alignItems:"center",gap:12,borderRadius:14,overflow:"hidden",cursor:"pointer",background:"rgba(255,255,255,0.06)",padding:"8px" }}>
-                            <div style={{ width:60,height:60,borderRadius:10,overflow:"hidden",flexShrink:0 }}>
-                              <img src={recipeMatch.img} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
-                            </div>
-                            <div style={{ flex:1 }}>
-                              <div style={{ fontFamily:FONT,fontSize:13,fontWeight:700,color:"#fff",lineHeight:1.3,marginBottom:4 }}>{recipeMatch.name}</div>
-                              <div style={{ display:"flex",gap:10,alignItems:"center" }}>
-                                <span style={{ fontFamily:FONT,fontSize:11,color:"#888" }}>{recipeMatch.cal} cal</span>
-                                <span style={{ fontFamily:FONT,fontSize:11,color:PRIMARY }}>{recipeMatch.protein}g protein</span>
-                                <span style={{ fontFamily:FONT,fontSize:11,color:"#888" }}>{recipeMatch.time}</span>
+                            );
+                          })()}
+                          {/* Recommended recipe — only for food-focused topics */}
+                          {nFact.showRecipe ? (
+                            <>
+                              <div style={{ fontFamily:FONT,fontSize:11,color:"#888",marginBottom:8 }}>Try this today</div>
+                              <div onClick={()=>setSelectedRecipe(recipeMatch)}
+                                style={{ display:"flex",alignItems:"center",gap:12,borderRadius:14,overflow:"hidden",cursor:"pointer",background:"rgba(255,255,255,0.06)",padding:"8px" }}>
+                                <div style={{ width:60,height:60,borderRadius:10,overflow:"hidden",flexShrink:0 }}>
+                                  <img src={recipeMatch.img} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+                                </div>
+                                <div style={{ flex:1 }}>
+                                  <div style={{ fontFamily:FONT,fontSize:13,fontWeight:700,color:"#fff",lineHeight:1.3,marginBottom:4 }}>{recipeMatch.name}</div>
+                                  <div style={{ display:"flex",gap:10,alignItems:"center" }}>
+                                    <span style={{ fontFamily:FONT,fontSize:11,color:"#888" }}>{(()=>{const p=recipeMatch.protein||0,c=recipeMatch.carbs||0,f=recipeMatch.fats||recipeMatch.fat||0;const v=Math.round(p*4+c*4+f*9);return v?`${v} cal`:recipeMatch.cal?`${recipeMatch.cal} cal`:'';})()}</span>
+                                    <span style={{ fontFamily:FONT,fontSize:11,color:PRIMARY }}>{recipeMatch.protein}g protein</span>
+                                    <span style={{ fontFamily:FONT,fontSize:11,color:"#888" }}>{recipeMatch.time}</span>
+                                  </div>
+                                </div>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#bbb" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
                               </div>
+                            </>
+                          ) : nFact.focus.includes('Hydration') ? (
+                            <div style={{ background:"rgba(56,189,248,0.08)",border:"1px solid rgba(56,189,248,0.2)",borderRadius:10,padding:"10px 12px",display:"flex",alignItems:"center",gap:10 }}>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="#38BDF8"><path d="M12 2.69l5.66 5.66a8 8 0 11-11.31 0z"/></svg>
+                              <div style={{ fontFamily:FONT,fontSize:12,color:"#7DD3FC",lineHeight:1.5 }}>Aim for <strong>2.5–3.5 L</strong> of water today. Add electrolytes (sodium, potassium, magnesium) around intense sessions.</div>
                             </div>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#bbb" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
-                          </div>
+                          ) : null}
                         </>
                       ) : (
                         <>
@@ -8238,21 +8263,23 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
                               <span style={{ fontFamily:FONT,fontWeight:700,fontSize:12,color:"#fff" }}>Premium only</span>
                             </div>
                           </div>
-                          {/* Blurred recipe teaser */}
-                          <div style={{ position:"relative",marginBottom:14 }}>
-                            <div style={{ filter:"blur(5px)",pointerEvents:"none",userSelect:"none",display:"flex",alignItems:"center",gap:12,borderRadius:14,overflow:"hidden",background:"rgba(255,255,255,0.06)",padding:"8px" }}>
-                              <div style={{ width:60,height:60,borderRadius:10,overflow:"hidden",flexShrink:0 }}>
-                                <img src={recipeMatch.img} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
-                              </div>
-                              <div style={{ flex:1 }}>
-                                <div style={{ fontFamily:FONT,fontSize:13,fontWeight:700,color:"#fff",lineHeight:1.3,marginBottom:4 }}>{recipeMatch.name}</div>
-                                <div style={{ display:"flex",gap:10 }}>
-                                  <span style={{ fontFamily:FONT,fontSize:11,color:"#888" }}>{recipeMatch.cal} cal</span>
-                                  <span style={{ fontFamily:FONT,fontSize:11,color:PRIMARY }}>{recipeMatch.protein}g protein</span>
+                          {/* Blurred recipe teaser — only for food-focused topics */}
+                          {nFact.showRecipe && (
+                            <div style={{ position:"relative",marginBottom:14 }}>
+                              <div style={{ filter:"blur(5px)",pointerEvents:"none",userSelect:"none",display:"flex",alignItems:"center",gap:12,borderRadius:14,overflow:"hidden",background:"rgba(255,255,255,0.06)",padding:"8px" }}>
+                                <div style={{ width:60,height:60,borderRadius:10,overflow:"hidden",flexShrink:0 }}>
+                                  <img src={recipeMatch.img} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+                                </div>
+                                <div style={{ flex:1 }}>
+                                  <div style={{ fontFamily:FONT,fontSize:13,fontWeight:700,color:"#fff",lineHeight:1.3,marginBottom:4 }}>{recipeMatch.name}</div>
+                                  <div style={{ display:"flex",gap:10 }}>
+                                    <span style={{ fontFamily:FONT,fontSize:11,color:"#888" }}>{(()=>{const p=recipeMatch.protein||0,c=recipeMatch.carbs||0,f=recipeMatch.fats||recipeMatch.fat||0;const v=Math.round(p*4+c*4+f*9);return v?`${v} cal`:recipeMatch.cal?`${recipeMatch.cal} cal`:'';})()}</span>
+                                    <span style={{ fontFamily:FONT,fontSize:11,color:PRIMARY }}>{recipeMatch.protein}g protein</span>
+                                  </div>
                                 </div>
                               </div>
                             </div>
-                          </div>
+                          )}
                           {/* CTA */}
                           <button onClick={()=>setShowUpgrade(true)}
                             style={{ width:"100%",padding:"12px 0",borderRadius:50,background:`linear-gradient(90deg,${PRIMARY},#7C3AED)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:13,color:"#fff",cursor:"pointer",letterSpacing:0.5 }}>
