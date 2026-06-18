@@ -1095,7 +1095,9 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onStop, onExercise, co
 
   const exercises = (Array.isArray(workout?.exercises) && workout.exercises.length > 0)
     ? workout.exercises.map(normaliseExercise)
-    : EXERCISES.map(normaliseExercise);
+    : typeof workout?.exercises === 'number' && workout.exercises > 0
+      ? EXERCISES.slice(0, workout.exercises).map(normaliseExercise)
+      : EXERCISES.map(normaliseExercise);
 
   const fmt     = (s) => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
   const toggleEx = (i) => setCompletedEx(p => p.includes(i) ? p.filter(x=>x!==i) : [...p,i]);
@@ -9455,17 +9457,17 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
           <div style={{ height:1,background:BORDER,margin:"0 0 14px" }}/>
           <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:11 }}>
             <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#fff" }}>Exercise Preview</div>
-            <span onClick={()=>onNavigate("workoutDetail")} style={{ fontFamily:FONT,fontSize:12,color:PRIMARY,cursor:"pointer",fontWeight:600 }}>View All</span>
+            <span onClick={()=>onNavigate("workoutDetail", workout)} style={{ fontFamily:FONT,fontSize:12,color:PRIMARY,cursor:"pointer",fontWeight:600 }}>View All</span>
           </div>
           <div style={{ display:"flex",gap:9,marginBottom:16,overflowX:"auto" }}>
             {exPreview.map((ex, i) => (
-              <div key={i} onClick={()=>onNavigate("workoutDetail")} style={{ minWidth:76,width:76,height:76,borderRadius:12,overflow:"hidden",flexShrink:0,cursor:"pointer" }}>
+              <div key={i} onClick={()=>onNavigate("workoutDetail", workout)} style={{ minWidth:76,width:76,height:76,borderRadius:12,overflow:"hidden",flexShrink:0,cursor:"pointer" }}>
                 <img src={ex?.thumbnailUrl || ex?.img || workoutBanner} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
               </div>
             ))}
           </div>
           {!workoutDone?(
-            <button onClick={()=>onNavigate("workoutDetail")} style={{ width:"100%",padding:"15px 0",borderRadius:50,border:"none",background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,fontFamily:FONT,fontWeight:800,fontSize:13.5,color:"#fff",letterSpacing:2,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,boxShadow:`0 4px 28px ${PRIMARY}55` }}>
+            <button onClick={()=>onNavigate("workoutDetail", workout)} style={{ width:"100%",padding:"15px 0",borderRadius:50,border:"none",background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,fontFamily:FONT,fontWeight:800,fontSize:13.5,color:"#fff",letterSpacing:2,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,boxShadow:`0 4px 28px ${PRIMARY}55` }}>
               <svg width="13" height="13" viewBox="0 0 13 13" fill="white"><polygon points="0,0 13,6.5 0,13"/></svg>
               START WORKOUT
             </button>
@@ -9921,12 +9923,14 @@ function VTRXAppInner({ setPaymentPlan }) {
   const handleTabSelect = (i) => {
     setActiveTab(i);
     setInnerPage(null);
+    setSelectedScheduleWorkout(null);
     setTimeout(() => setNavExpanded(false), 250);
   };
 
   const navigate = (page, workoutData = null) => {
     if (dashScrollRef.current) savedScrollPos.current = dashScrollRef.current.scrollTop;
     if (workoutData) setSelectedScheduleWorkout(workoutData);
+    else setSelectedScheduleWorkout(null);
     setInnerPage(page);
   };
 
