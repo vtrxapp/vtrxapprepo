@@ -241,7 +241,7 @@ RESPOND WITH THIS EXACT JSON STRUCTURE:
     "sunday":    { "day_total_calories": number, "day_total_protein_g": number, "meals": [] }
   },
   "supplement_suggestions": [{ "supplement": "string", "reason": "string", "timing": "string" }],
-  "nutrition_coach_message": "string (max 30 words${name ? `, address ${name} by name` : ''})`,
+  "nutrition_coach_message": "string (max 30 words${name ? `, address ${name} by name` : ''})",
   "calorie_breakdown_note": "string"
 }`;
 };
