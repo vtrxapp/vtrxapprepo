@@ -1580,7 +1580,7 @@ const VideoPlayer = forwardRef(function VideoPlayer({ videoUrl, hlsUrl = null, t
             <div style={{ position:'relative', width:52, height:52, borderRadius:'50%', background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.12)', display:'flex', alignItems:'center', justifyContent:'center' }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="1.5"><polygon points="5 3 19 12 5 21"/></svg>
             </div>
-            <span style={{ position:'relative', fontFamily:FONT, fontSize:10, color:'#444', letterSpacing:1.5 }}>DEMO VIDEO COMING SOON</span>
+            <span style={{ position:'relative', fontFamily:FONT, fontSize:10, color:'#444', letterSpacing:1.5 }}>VIDEO PREVIEW UNAVAILABLE</span>
           </>
         )}
       </div>
