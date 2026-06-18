@@ -560,7 +560,7 @@ model NotificationLog {
   id      String   @id @default(uuid())
   userId  String
   type    String
-  date    String   // YYYY-MM-DD in UTC — used for unique-per-day constraint
+  date    String?  // YYYY-MM-DD in UTC — used for unique-per-day constraint; nullable so existing rows aren't blocked
   sentAt  DateTime @default(now())
 
   @@unique([userId, type, date])
