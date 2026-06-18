@@ -7890,7 +7890,8 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
       })
       .catch(()=>{})
       .finally(()=>setLoadingRecipes(false));
-  },[recipePage, filter]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[recipePage, filter, currentUser?.id]);
 
   // Fetch saved recipes once on mount
   useEffect(()=>{
@@ -9623,14 +9624,15 @@ function VTRXAppInner({ setPaymentPlan }) {
   const mouseStart     = useRef(null);
   const touchStart     = useRef(null);
 
-  // Fetch personalised workout recommendation whenever energy level changes
+  // Fetch personalised workout recommendation whenever energy level or user changes
   useEffect(()=>{
     const token = getAuthToken();
     if (!token) return;
     apiCall(`/workouts/recommend?energyLevel=${energyKey || 'okay'}`)
       .then(d => { if (d?.data?.recommendation) setApiWorkout(d.data.recommendation); })
       .catch(()=>{});
-  }, [energyKey]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [energyKey, liveUser?.id]);
 
   // Load real data on mount — also drives splash → onboarding/dashboard transition
   useEffect(()=>{
@@ -9650,6 +9652,7 @@ function VTRXAppInner({ setPaymentPlan }) {
       if (res?.data?.user) {
         const u = res.data.user;
         setUser(prev=>({...prev,
+          id:                  u.id                  || prev.id,
           name:                u.name                || prev.name,
           email:               u.email               || prev.email,
           username:            u.username            || prev.username,
