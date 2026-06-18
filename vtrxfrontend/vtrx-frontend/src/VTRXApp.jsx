@@ -4989,6 +4989,10 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
     const idx = sortedForDayLabels.findIndex(s => s.id === entry.id);
     return idx >= 0 ? `Day ${idx + 1}` : "";
   };
+  // Progress-based day counter: completions + 1, not schedule position
+  const completedCount = weekSchedule.filter(s => s.status === 'COMPLETED').length;
+  const planAllDone = weekSchedule.length > 0 && completedCount >= weekSchedule.length;
+  const upNextLabel = planAllDone ? 'PLAN COMPLETE 🎉' : `UP NEXT · DAY ${completedCount + 1}`;
 
   // Swipe handlers for monthly card
   const onMonthSwipeStart = (e) => { swipeStartX.current = e.touches[0].clientX; };
@@ -5130,7 +5134,7 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
                     <div style={{ background:`linear-gradient(135deg,${nc}22,${nc}08)`,padding:"16px 16px 12px" }}>
                       <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6 }}>
                         <div>
-                          <div style={{ fontFamily:FONT,fontWeight:600,fontSize:10,color:nc,letterSpacing:1.5,marginBottom:3 }}>UP NEXT · {getDayLabel(nextEntry).toUpperCase()}</div>
+                          <div style={{ fontFamily:FONT,fontWeight:600,fontSize:10,color:nc,letterSpacing:1.5,marginBottom:3 }}>{upNextLabel}</div>
                           <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff" }}>{generateWorkoutTitle(exs) || nextEntry.workout.name}</div>
                         </div>
                         <div style={{ background:nc,borderRadius:20,padding:"5px 12px",flexShrink:0 }}>
@@ -7951,6 +7955,50 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
     return true;
   });
 
+  // ── Recommended recipes — computed once here, reused for strip + dedup ──────
+  const _recGoal = currentUser?.nutritionGoal || currentUser?.goal || '';
+  const _isDessert = (r) => /cookie|cookies|cake|brownie|browni|muffin|donut|doughnut|chocolate chip|pudding|dessert|tart|pastry|candy/i.test(r.name || '');
+  const recommended = (() => {
+    if (!displayRecipes.length) return [];
+    const restrictions = currentUser?.dietaryRestrictions || [];
+    const dietFiltered = displayRecipes.filter(r => {
+      if (restrictions.includes('vegan') && (r.tags||[]).some(t => /meat|chicken|beef|pork|fish|egg|dairy|milk|cheese/i.test(t))) return false;
+      if (restrictions.includes('vegetarian') && (r.tags||[]).some(t => /meat|chicken|beef|pork|fish/i.test(t))) return false;
+      if (restrictions.includes('gluten_free') && (r.tags||[]).some(t => /gluten|wheat|bread|pasta/i.test(t))) return false;
+      if (restrictions.includes('dairy_free') && (r.tags||[]).some(t => /dairy|milk|cheese|yogurt/i.test(t))) return false;
+      return true;
+    });
+    let pool = [...dietFiltered];
+    if (_recGoal === 'lose_fat' || _recGoal === 'lose_weight') {
+      pool = pool.filter(r => (r.cal || 999) <= 600);
+      const nonDesserts = pool.filter(r => !_isDessert(r));
+      const desserts    = pool.filter(r => _isDessert(r));
+      const sortByCal   = (a, b) => ((a.cal||0) - (b.cal||0)) || ((b.protein||0) - (a.protein||0));
+      pool = [...nonDesserts.sort(sortByCal), ...desserts.sort(sortByCal)];
+    } else if (_recGoal === 'build_muscle') {
+      pool = pool.filter(r => (r.protein||0) >= 20 || (r.tags||[]).some(t => /protein|chicken|beef|egg|meat/i.test(t)));
+      const nonDesserts = pool.filter(r => !_isDessert(r));
+      const desserts    = pool.filter(r => _isDessert(r));
+      pool = [...nonDesserts.sort((a,b) => (b.protein||0)-(a.protein||0)), ...desserts];
+    } else if (_recGoal === 'eat_clean') {
+      const nonDesserts = pool.filter(r => !_isDessert(r));
+      pool = nonDesserts.length >= 3 ? nonDesserts : pool.filter(r => !_isDessert(r) || (r.cal||999) < 350);
+    } else if (_recGoal === 'improve_energy') {
+      const nonHighSugar = pool.filter(r => !(_isDessert(r) && (r.cal||0) > 350));
+      pool = nonHighSugar.length >= 3 ? nonHighSugar : pool;
+      pool.sort((a,b) => (b.protein||0)-(a.protein||0));
+    } else {
+      // Default: protein-first, non-desserts first
+      const nonDesserts = pool.filter(r => !_isDessert(r));
+      const desserts    = pool.filter(r => _isDessert(r));
+      pool = [...nonDesserts.sort((a,b)=>(b.protein||0)-(a.protein||0)), ...desserts];
+    }
+    return (pool.length >= 3 ? pool : dietFiltered.sort((a,b)=>(b.protein||0)-(a.protein||0))).slice(0, 5);
+  })();
+  const recommendedIds = new Set(recommended.map(r => String(r.id)));
+  // Main grid excludes already-recommended recipes so users never see the same recipe twice
+  const filteredGrid = filtered.filter(r => !recommendedIds.has(String(r.id)));
+
   // ── Meal Plan helpers ─────────────────────────────────────────────────────────
   const MEAL_SLOTS = ['breakfast','lunch','snack','dinner'];
   const SLOT_LABELS = { breakfast:'Breakfast', lunch:'Lunch', snack:'Snack', dinner:'Dinner' };
@@ -8041,65 +8089,43 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
           <div>
 
             {/* ── RECOMMENDED FOR YOU ─────────────────────────────────────── */}
-            {(() => {
-              const goal = currentUser?.nutritionGoal || '';
-              // Pick recipes relevant to the user's nutrition goal
-              const recommended = (() => {
-                if (!displayRecipes.length) return [];
-                // Apply dietary restrictions to the pool so vegetarian/vegan users never see excluded items
-                const restrictions = currentUser?.dietaryRestrictions || [];
-                const dietFiltered = displayRecipes.filter(r => {
-                  if (restrictions.includes('vegan') && (r.tags||[]).some(t => /meat|chicken|beef|pork|fish|egg|dairy|milk|cheese/i.test(t))) return false;
-                  if (restrictions.includes('vegetarian') && (r.tags||[]).some(t => /meat|chicken|beef|pork|fish/i.test(t))) return false;
-                  if (restrictions.includes('gluten_free') && (r.tags||[]).some(t => /gluten|wheat|bread|pasta/i.test(t))) return false;
-                  if (restrictions.includes('dairy_free') && (r.tags||[]).some(t => /dairy|milk|cheese|yogurt/i.test(t))) return false;
-                  return true;
-                });
-                let pool = [...dietFiltered];
-                if (goal === 'lose_fat') pool = pool.filter(r => (r.cal||999) < 450 || (r.tags||[]).some(t => /low.cal|salad|light|lean/i.test(t)));
-                else if (goal === 'build_muscle') pool = pool.filter(r => (r.protein||0) >= 25 || (r.tags||[]).some(t => /protein|chicken|beef|egg|meat/i.test(t)));
-                else if (goal === 'eat_clean') pool = pool.filter(r => (r.tags||[]).some(t => /clean|whole|natural|veg/i.test(t)));
-                return (pool.length >= 3 ? pool : dietFiltered).slice(0, 6);
-              })();
-              if (!recommended.length) return null;
-              return (
-                <div style={{ marginBottom:16 }}>
-                  <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10 }}>
-                    <div>
-                      <div style={{ fontFamily:FONT,fontWeight:900,fontSize:15,color:"#fff" }}>Recommended For You</div>
-                      <div style={{ fontFamily:FONT,fontSize:11,color:"#555",marginTop:2 }}>
-                        {goal === 'lose_fat' ? 'Low-calorie picks for fat loss' : goal === 'build_muscle' ? 'High-protein picks for muscle gain' : goal === 'eat_clean' ? 'Clean eating choices' : 'Personalised to your goals'}
-                      </div>
-                    </div>
-                    <div style={{ background:`${PRIMARY}18`,borderRadius:20,padding:"4px 10px" }}>
-                      <span style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:PRIMARY }}>AI Picks</span>
+            {recommended.length > 0 && (
+              <div style={{ marginBottom:16 }}>
+                <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10 }}>
+                  <div>
+                    <div style={{ fontFamily:FONT,fontWeight:900,fontSize:15,color:"#fff" }}>Recommended For You</div>
+                    <div style={{ fontFamily:FONT,fontSize:11,color:"#555",marginTop:2 }}>
+                      {_recGoal === 'lose_fat' || _recGoal === 'lose_weight' ? 'Low-calorie picks for fat loss' : _recGoal === 'build_muscle' ? 'High-protein picks for muscle gain' : _recGoal === 'eat_clean' ? 'Clean eating choices' : 'Personalised to your goals'}
                     </div>
                   </div>
-                  <div style={{ display:"flex",gap:12,overflowX:"auto",paddingBottom:4,scrollbarWidth:"none",msOverflowStyle:"none" }}>
-                    {recommended.slice(0,5).map((r,i) => (
-                      <div key={i} onClick={()=>setSelectedRecipe(r)}
-                        style={{ width:160,minWidth:160,flexShrink:0,background:"#fff",borderRadius:14,overflow:"hidden",cursor:"pointer",border:`1px solid ${BORDER}` }}>
-                        <div style={{ height:110,overflow:"hidden",position:"relative" }}>
-                          {r.img
-                            ? <img src={r.img} alt={r.name} style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
-                            : <div style={{ width:"100%",height:"100%",background:"#e5e7eb",display:"flex",alignItems:"center",justifyContent:"center" }}>
-                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="1.5"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>
-                              </div>
-                          }
-                        </div>
-                        <div style={{ padding:"10px" }}>
-                          <div style={{ fontFamily:FONT,fontSize:12,fontWeight:700,color:"#111",marginBottom:4,lineHeight:1.3 }}>{r.name}</div>
-                          <div style={{ display:"flex",gap:6 }}>
-                            <span style={{ fontFamily:FONT,fontSize:10,color:"#EF4444",fontWeight:600 }}>{r.cal} cal</span>
-                            <span style={{ fontFamily:FONT,fontSize:10,color:PRIMARY,fontWeight:600 }}>{r.protein}g protein</span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                  <div style={{ background:`${PRIMARY}18`,borderRadius:20,padding:"4px 10px" }}>
+                    <span style={{ fontFamily:FONT,fontWeight:700,fontSize:10,color:PRIMARY }}>AI Picks</span>
                   </div>
                 </div>
-              );
-            })()}
+                <div style={{ display:"flex",gap:12,overflowX:"auto",paddingBottom:4,scrollbarWidth:"none",msOverflowStyle:"none" }}>
+                  {recommended.map((r,i) => (
+                    <div key={i} onClick={()=>setSelectedRecipe(r)}
+                      style={{ width:160,minWidth:160,flexShrink:0,background:"#fff",borderRadius:14,overflow:"hidden",cursor:"pointer",border:`1px solid ${BORDER}` }}>
+                      <div style={{ height:110,overflow:"hidden",position:"relative" }}>
+                        {r.img
+                          ? <img src={r.img} alt={r.name} style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+                          : <div style={{ width:"100%",height:"100%",background:"linear-gradient(135deg,#1a1a2e,#16213e)",display:"flex",alignItems:"center",justifyContent:"center",padding:"8px" }}>
+                              <span style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#fff",textAlign:"center",lineHeight:1.3 }}>{r.name}</span>
+                            </div>
+                        }
+                      </div>
+                      <div style={{ padding:"10px" }}>
+                        <div style={{ fontFamily:FONT,fontSize:12,fontWeight:700,color:"#111",marginBottom:4,lineHeight:1.3 }}>{r.name}</div>
+                        <div style={{ display:"flex",gap:6 }}>
+                          <span style={{ fontFamily:FONT,fontSize:10,color:"#EF4444",fontWeight:600 }}>{r.cal} cal</span>
+                          <span style={{ fontFamily:FONT,fontSize:10,color:PRIMARY,fontWeight:600 }}>{r.protein}g protein</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* ── FREE AI NUTRITION SUMMARY ────────────────────────────────── */}
             {(onboardingNutrition || onboardingNutritionLoading) && (
@@ -8275,15 +8301,15 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
               <div style={{ textAlign:"center",padding:"32px 0",fontFamily:FONT,fontSize:13,color:"#555" }}>Loading recipes...</div>
             )}
             <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12 }}>
-              {filtered.map((r,i)=>{
+              {filteredGrid.map((r,i)=>{
                 const isSaved = savedSet.has(String(r.id));
                 return (
                   <div key={r.id||i} onClick={()=>setSelectedRecipe(r)} style={{ background:"#fff",borderRadius:14,overflow:"hidden",cursor:"pointer",border:`1px solid ${BORDER}` }}>
                     <div style={{ height:110,overflow:"hidden",position:"relative" }}>
                       {r.img
                         ? <img src={r.img} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
-                        : <div style={{ width:"100%",height:"100%",background:"#e5e7eb",display:"flex",alignItems:"center",justifyContent:"center" }}>
-                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="1.5"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>
+                        : <div style={{ width:"100%",height:"100%",background:"linear-gradient(135deg,#1a1a2e,#16213e)",display:"flex",alignItems:"center",justifyContent:"center",padding:"8px" }}>
+                            <span style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#fff",textAlign:"center",lineHeight:1.3 }}>{r.name}</span>
                           </div>
                       }
                       <button onClick={e=>{ e.stopPropagation(); toggleSave(r); }} style={{ position:"absolute",top:8,right:8,width:28,height:28,borderRadius:"50%",background:"rgba(0,0,0,0.5)",border:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}>
@@ -9251,10 +9277,11 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
     RECOVERY: "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=300&q=70",
   };
   const workoutBanner = WORKOUT_BANNERS[workout.type] || WORKOUT_BANNERS.STRENGTH;
-  // Exercise list for preview — uses actual API exercises, padded to min 4
-  const exList   = apiWorkout?.exercises || [];
-  const padCount = Math.max(4, exList.length);
-  const exPreview = Array.from({length: padCount}, (_, i) => exList[i] || null);
+  // Exercise list for preview — use API exercises, fall back to today's WEEKLY_WORKOUTS entry
+  const exList = Array.isArray(apiWorkout?.exercises) && apiWorkout.exercises.length > 0
+    ? apiWorkout.exercises
+    : (WEEKLY_WORKOUTS[TODAY_IDX % WEEKLY_WORKOUTS.length]?.exercises || []);
+  const exPreview = exList.slice(0, 4);
 
   return (
     <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column" }}>
@@ -9460,11 +9487,20 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
             <span onClick={()=>onNavigate("workoutDetail", workout)} style={{ fontFamily:FONT,fontSize:12,color:PRIMARY,cursor:"pointer",fontWeight:600 }}>View All</span>
           </div>
           <div style={{ display:"flex",gap:9,marginBottom:16,overflowX:"auto" }}>
-            {exPreview.map((ex, i) => (
-              <div key={i} onClick={()=>onNavigate("workoutDetail", workout)} style={{ minWidth:76,width:76,height:76,borderRadius:12,overflow:"hidden",flexShrink:0,cursor:"pointer" }}>
-                <img src={ex?.thumbnailUrl || ex?.img || workoutBanner} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
-              </div>
-            ))}
+            {exPreview.map((ex, i) => {
+              const imgSrc = ex?.thumbnailUrl || ex?.img || null;
+              const initials = (ex?.name || '').split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase() || '•';
+              return (
+                <div key={i} onClick={()=>onNavigate("workoutDetail", workout)} style={{ minWidth:76,width:76,height:76,borderRadius:12,overflow:"hidden",flexShrink:0,cursor:"pointer" }}>
+                  {imgSrc
+                    ? <img src={imgSrc} alt={ex?.name||''} style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+                    : <div style={{ width:"100%",height:"100%",background:"linear-gradient(135deg,#1a1a2e,#16213e)",display:"flex",alignItems:"center",justifyContent:"center" }}>
+                        <span style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:"#556" }}>{initials}</span>
+                      </div>
+                  }
+                </div>
+              );
+            })}
           </div>
           {!workoutDone?(
             <button onClick={()=>onNavigate("workoutDetail", workout)} style={{ width:"100%",padding:"15px 0",borderRadius:50,border:"none",background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,fontFamily:FONT,fontWeight:800,fontSize:13.5,color:"#fff",letterSpacing:2,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,boxShadow:`0 4px 28px ${PRIMARY}55` }}>
