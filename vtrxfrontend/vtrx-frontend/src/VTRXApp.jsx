@@ -3391,7 +3391,7 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
         if (data.data?.emailAddressId)  localStorage.setItem("vtrx_email_address_id", data.data.emailAddressId);
       }
 
-      onContinue(f.email.trim().toLowerCase());
+      onContinue(f.email.trim().toLowerCase(), f.password);
     } catch (e) {
       setErrors({ general: e.message || "Signup failed. Please try again." });
     } finally { 
@@ -8043,11 +8043,20 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
               // Pick recipes relevant to the user's nutrition goal
               const recommended = (() => {
                 if (!displayRecipes.length) return [];
-                let pool = [...displayRecipes];
+                // Apply dietary restrictions to the pool so vegetarian/vegan users never see excluded items
+                const restrictions = currentUser?.dietaryRestrictions || [];
+                const dietFiltered = displayRecipes.filter(r => {
+                  if (restrictions.includes('vegan') && (r.tags||[]).some(t => /meat|chicken|beef|pork|fish|egg|dairy|milk|cheese/i.test(t))) return false;
+                  if (restrictions.includes('vegetarian') && (r.tags||[]).some(t => /meat|chicken|beef|pork|fish/i.test(t))) return false;
+                  if (restrictions.includes('gluten_free') && (r.tags||[]).some(t => /gluten|wheat|bread|pasta/i.test(t))) return false;
+                  if (restrictions.includes('dairy_free') && (r.tags||[]).some(t => /dairy|milk|cheese|yogurt/i.test(t))) return false;
+                  return true;
+                });
+                let pool = [...dietFiltered];
                 if (goal === 'lose_fat') pool = pool.filter(r => (r.cal||999) < 450 || (r.tags||[]).some(t => /low.cal|salad|light|lean/i.test(t)));
                 else if (goal === 'build_muscle') pool = pool.filter(r => (r.protein||0) >= 25 || (r.tags||[]).some(t => /protein|chicken|beef|egg|meat/i.test(t)));
                 else if (goal === 'eat_clean') pool = pool.filter(r => (r.tags||[]).some(t => /clean|whole|natural|veg/i.test(t)));
-                return (pool.length >= 3 ? pool : displayRecipes).slice(0, 6);
+                return (pool.length >= 3 ? pool : dietFiltered).slice(0, 6);
               })();
               if (!recommended.length) return null;
               return (
@@ -9529,7 +9538,8 @@ function VTRXAppInner({ setPaymentPlan }) {
 
   // ── Phase / onboarding state ──────────────────────────────────────────────
   const [phase, setPhase]           = useState("splash");
-  const [pendingEmail, setPendingEmail] = useState(""); // onboarding | login | preferences | dashboard
+  const [pendingEmail,    setPendingEmail]    = useState("");
+  const [pendingPassword, setPendingPassword] = useState(""); // held only for auto-login after email verify
   const [screen, setScreen]         = useState(0);
   const [dir, setDir]               = useState(1);
   const goNext = () => { setDir(1);  setScreen(s=>s+1); };
@@ -9541,7 +9551,7 @@ function VTRXAppInner({ setPaymentPlan }) {
         await apiCall("/users/profile", {
           method: "PUT",
           body: JSON.stringify({
-            name:                 user.name,
+            ...(user.name && { name: user.name }),
             gender:               user.gender,
             weight:               user.weight,
             height:               user.height,
@@ -9847,7 +9857,18 @@ function VTRXAppInner({ setPaymentPlan }) {
   if (phase==="emailVerify") return (
     <EmailVerifyScreen
       email={pendingEmail}
-      onVerified={()=>{ setPhase("preferences"); setScreen(2); }}
+      onVerified={async ()=>{
+        // Auto-login after email verification so the user has a token for all subsequent API calls
+        if (pendingEmail && pendingPassword) {
+          try {
+            const loginRes = await apiCall("/auth/login", { method:"POST", body: JSON.stringify({ email: pendingEmail, password: pendingPassword }) });
+            if (loginRes?.data?.token) { storeAuth(loginRes.data.token, loginRes.data.user || {}); }
+            if (loginRes?.data?.user)  { setUser(u=>({...u, ...loginRes.data.user})); }
+          } catch(_) {}
+          setPendingPassword(""); // clear sensitive data immediately
+        }
+        setPhase("preferences"); setScreen(2);
+      }}
       onBack={()=>setPhase("login")}
     />
   );
@@ -9860,7 +9881,7 @@ function VTRXAppInner({ setPaymentPlan }) {
 
   if (phase==="preferences") {
     const SCREENS = [
-      <SignUpScreen              key={0} onContinue={(email)=>{ if(email){ setPendingEmail(email); setPhase("emailVerify"); } else goNext(); }} onBack={()=>setPhase("onboarding")} onLogin={()=>setPhase("login")}/>,
+      <SignUpScreen              key={0} onContinue={(email, password)=>{ if(email){ setPendingEmail(email); setPendingPassword(password||""); setPhase("emailVerify"); } else goNext(); }} onBack={()=>setPhase("onboarding")} onLogin={()=>setPhase("login")}/>,
       <EmailVerifyScreen   key={1} onContinue={goNext} onBack={goPrev}/>,
       <BodyScreen                key={2} onContinue={goNext} onBack={goPrev}/>,
       <WorkoutScreen             key={3} onContinue={goNext} onBack={goPrev}/>,
