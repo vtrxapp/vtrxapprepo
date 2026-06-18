@@ -1437,6 +1437,18 @@ const syncYmoveExercises = async (req, res) => {
 const _exerciseLibraryCache = new Map();
 const EXERCISE_CACHE_TTL    = 24 * 60 * 60 * 1000;
 
+// ymove API muscle group names vary; try primary name then common aliases
+const MG_ALIASES = {
+  'Shoulders': ['Shoulders', 'Shoulder', 'Deltoids', 'Deltoid'],
+  'Chest':     ['Chest', 'Pectorals', 'Pecs'],
+  'Back':      ['Back', 'Lats', 'Latissimus Dorsi'],
+  'Legs':      ['Legs', 'Quadriceps', 'Quads', 'Hamstrings', 'Lower Body'],
+  'Glutes':    ['Glutes', 'Glute', 'Buttocks'],
+  'Core':      ['Core', 'Abs', 'Abdominals'],
+  'Biceps':    ['Biceps', 'Bicep'],
+  'Triceps':   ['Triceps', 'Tricep'],
+};
+
 const getYmoveExerciseLibrary = async (muscleGroups = []) => {
   const cacheKey = [...muscleGroups].sort().join(',') || 'all';
   const hit = _exerciseLibraryCache.get(cacheKey);
@@ -1444,13 +1456,38 @@ const getYmoveExerciseLibrary = async (muscleGroups = []) => {
 
   try {
     const allExercises = [];
+
     if (muscleGroups.length === 0) {
-      const { exercises } = await ymove.getExercises({ limit: 50 });
-      allExercises.push(...exercises);
+      // General pool — two pages so we have ~100 exercises to choose from
+      const [p1, p2] = await Promise.all([
+        ymove.getExercises({ limit: 50 }),
+        ymove.getExercises({ limit: 50, page: 2 }),
+      ]);
+      allExercises.push(...p1.exercises, ...p2.exercises);
     } else {
       for (const mg of muscleGroups) {
-        const { exercises } = await ymove.getExercises({ muscleGroup: mg, limit: 20 });
-        allExercises.push(...exercises);
+        const aliases = MG_ALIASES[mg] || [mg];
+        let found = false;
+        // Try each alias until we get results
+        for (const alias of aliases) {
+          const { exercises } = await ymove.getExercises({ muscleGroup: alias, limit: 25 });
+          if (exercises.length > 0) {
+            allExercises.push(...exercises);
+            found = true;
+            break;
+          }
+        }
+        // If no results with any alias, fall back to a text search
+        if (!found) {
+          const { exercises } = await ymove.getExercises({ search: aliases[0], limit: 25 });
+          allExercises.push(...exercises);
+        }
+      }
+
+      // Supplement with a general pool when muscle-group results are sparse
+      if (allExercises.length < 15) {
+        const { exercises: supplement } = await ymove.getExercises({ limit: 50 });
+        allExercises.push(...supplement);
       }
     }
 
@@ -1474,6 +1511,7 @@ const getYmoveExerciseLibrary = async (muscleGroups = []) => {
           : (ex.instructions || null),
       }));
 
+    logger.info(`getYmoveExerciseLibrary: key="${cacheKey}" → ${normalized.length} unique exercises`);
     _exerciseLibraryCache.set(cacheKey, { data: normalized, expiresAt: Date.now() + EXERCISE_CACHE_TTL });
     return normalized;
   } catch (err) {
@@ -1514,12 +1552,7 @@ const _parseDurationMins = (sessionDuration) => {
   return singleMatch ? parseInt(singleMatch[1]) : 45;
 };
 
-const _getExerciseCount = (durationMins) => {
-  if (durationMins < 30) return 3;
-  if (durationMins < 45) return 4;
-  if (durationMins < 60) return 5;
-  return 6;
-};
+const _getExerciseCount = () => 5;
 
 const _getRepScheme = (nutritionGoal, goal) => {
   const g = (nutritionGoal || goal || '').toLowerCase();
@@ -1581,11 +1614,15 @@ const generateDailyWorkout = async (req, res) => {
 
     // 4. Fetch ymove exercise library (cached 24hr)
     let library = await getYmoveExerciseLibrary(targetMuscleGroups);
-    if (library.length < exerciseCount) {
-      const extra   = await getYmoveExerciseLibrary([]);
+    // Always supplement when library is sparse — need at least 3× exerciseCount entries
+    // so the AI has real variety and the fallback pad loop has room to work
+    if (library.length < exerciseCount * 3) {
+      const extra    = await getYmoveExerciseLibrary([]);
       const extraIds = new Set(library.map(e => e.ymoveId));
       library = [...library, ...extra.filter(e => !extraIds.has(e.ymoveId))];
     }
+    logger.info(`[generate-daily] library size after supplement: ${library.length}`);
+
 
     // 5. Filter by user equipment if specified
     let filtered = library;
