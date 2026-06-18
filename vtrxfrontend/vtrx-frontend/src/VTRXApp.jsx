@@ -1085,7 +1085,8 @@ function normaliseExercise(ex) {
     cal:          src.cal          || 0,
     img:          thumbUrl,
     videoUrl,
-    ymoveId:      src.ymoveId || null,
+    hlsUrl:       src.hlsUrl       || null,
+    ymoveId:      src.ymoveId      || null,
     thumbnailUrl: thumbUrl,
     restSecs:     src.restSecs     || src.restSeconds || 60,
     instructions: src.instructions || null,
@@ -1897,12 +1898,12 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
   const ex = exercise ? normaliseExercise(exercise) : normaliseExercise(EXERCISES[0]);
 
   const [resolvedVideoUrl, setResolvedVideoUrl] = useState(ex.videoUrl || null);
-  const [resolvedHlsUrl,   setResolvedHlsUrl]   = useState(null);
+  const [resolvedHlsUrl,   setResolvedHlsUrl]   = useState(ex.hlsUrl || null);
   const [videoLoading, setVideoLoading] = useState(!!(ex.ymoveId || ex.name));
   const [resumePos, setResumePos] = useState(0);
   useEffect(()=>{
     setResolvedVideoUrl(ex.videoUrl || null); // show stored URL immediately while fresh one loads
-    setResolvedHlsUrl(null);
+    setResolvedHlsUrl(ex.hlsUrl || null);
     // Need either a ymoveId (fast path) or a name (name-search fallback) to fetch a video
     if (!ex.ymoveId && !ex.name) { setVideoLoading(false); return; }
     const token = getAuthToken();
@@ -5330,11 +5331,12 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
       </div>
       {/* Sub-page overlays — WeightsHub stays mounted preserving scroll + state */}
       {subPage === "calendar"  && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><CalendarPage        onBack={goBack} loggedWorkouts={loggedWorkouts}/></div>}
-      {subPage === "history"   && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><WorkoutHistoryPage  onBack={goBack} onUpgrade={()=>setSubPage('upgrade')}/></div>}
+      {subPage === "history"   && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><WorkoutHistoryPage  onBack={goBack} onUpgrade={()=>setSubPage('upgrade_from_history')}/></div>}
       {subPage === "records"   && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><PersonalRecordsPage onBack={goBack}/></div>}
       {subPage === "customize" && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><CustomizePage       onBack={goBack}/></div>}
       {subPage === "profile"   && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><ProfilePage         onBack={goBack} onLogout={()=>{ setSubPage(null); onLogout&&onLogout(); }}/></div>}
-      {subPage === "upgrade"   && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><UpgradePlanPage     onBack={goBack}/></div>}
+      {subPage === "upgrade"             && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><UpgradePlanPage onBack={goBack}/></div>}
+      {subPage === "upgrade_from_history"&& <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><UpgradePlanPage onBack={()=>setSubPage('history')}/></div>}
     </div>
 
 
@@ -8208,10 +8210,10 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
                             return (
                               <div style={{ display:"flex",gap:6,marginBottom:14 }}>
                                 {[
-                                  {l:"Calories", v: macroCalories||"—", u:"kcal", c:"#FF6B35"},
-                                  {l:"Protein",  v: todayMacros.protein||"—", u:"g", c:PRIMARY},
-                                  {l:"Carbs",    v: todayMacros.carbs||"—",   u:"g", c:"#F59E0B"},
-                                  {l:"Fat",      v: todayMacros.fat||"—",     u:"g", c:"#A855F7"},
+                                  {l:"Calories", v: macroCalories ?? "—", u:"kcal", c:"#FF6B35"},
+                                  {l:"Protein",  v: todayMacros.protein ?? "—", u:"g", c:PRIMARY},
+                                  {l:"Carbs",    v: todayMacros.carbs   ?? "—", u:"g", c:"#F59E0B"},
+                                  {l:"Fat",      v: todayMacros.fat     ?? "—", u:"g", c:"#A855F7"},
                                 ].map(m=>(
                                   <div key={m.l} style={{ flex:1,background:"rgba(255,255,255,0.06)",borderRadius:10,padding:"8px 4px",textAlign:"center" }}>
                                     <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:m.c }}>{m.v}</div>
@@ -9660,12 +9662,27 @@ function VTRXAppInner({ setPaymentPlan }) {
   const mouseStart     = useRef(null);
   const touchStart     = useRef(null);
 
-  // Fetch today's AI-generated daily workout (ymove-first)
+  // Fetch today's AI-generated daily workout (ymove-first).
+  // Cache the result in localStorage keyed by userId+date so re-mounts don't burn API quota.
   useEffect(()=>{
-    const token = getAuthToken();
-    if (!token) return;
+    const token  = getAuthToken();
+    const userId = liveUser?.id;
+    if (!token || !userId) return;
+
+    const today    = new Date().toISOString().slice(0, 10);
+    const cacheKey = `vtrx_daily_workout_${userId}_${today}`;
+    try {
+      const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null');
+      if (cached?.workout) { setApiWorkout(cached.workout); return; }
+    } catch (_e) {}
+
     apiCall('/workouts/generate-daily', { method: 'POST' })
-      .then(d => { if (d?.data?.workout) setApiWorkout(d.data.workout); })
+      .then(d => {
+        if (d?.data?.workout) {
+          setApiWorkout(d.data.workout);
+          try { localStorage.setItem(cacheKey, JSON.stringify(d.data)); } catch (_e) {}
+        }
+      })
       .catch(()=>{
         // Fallback: use recommend endpoint if generate-daily fails
         apiCall(`/workouts/recommend?energyLevel=${energyKey || 'okay'}`)

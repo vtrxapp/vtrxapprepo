@@ -101,7 +101,7 @@ const getPersonalisedRecipes = async (req, res) => {
 
     const isVegan       = restrictions.includes('vegan');
     const isVeg         = restrictions.includes('vegetarian');
-    const isLoseFat     = nutritionGoal === 'lose_fat'     || primaryGoal === 'lose_weight';
+    const isLoseFat     = nutritionGoal === 'lose_fat' || nutritionGoal === 'lose_weight' || primaryGoal === 'lose_weight';
     const isBuildMuscle = nutritionGoal === 'build_muscle' || primaryGoal === 'build_muscle';
 
     // 4. Tab-specific overrides

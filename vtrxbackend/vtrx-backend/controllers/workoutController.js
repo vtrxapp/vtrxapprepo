@@ -1477,11 +1477,7 @@ const getYmoveExerciseLibrary = async (muscleGroups = []) => {
             break;
           }
         }
-        // If no results with any alias, fall back to a text search
-        if (!found) {
-          const { exercises } = await ymove.getExercises({ search: aliases[0], limit: 25 });
-          allExercises.push(...exercises);
-        }
+        // No results with any alias — supplement step below will cover the gap
       }
 
       // Supplement with a general pool when muscle-group results are sparse
@@ -1594,13 +1590,37 @@ const generateDailyWorkout = async (req, res) => {
     const equipment     = user?.equipment       || [];
     const durationMins  = _parseDurationMins(user?.sessionDuration);
 
-    // 2. Count completed workouts to determine day position in cycle
-    const totalCompleted = await prisma.workoutLog.count({ where: { userId } });
+    // 2. Count meaningful completions (≥50%) to determine day position in cycle
+    const totalCompleted = await prisma.workoutLog.count({
+      where: { userId, OR: [{ completionPercentage: { gte: 50 } }, { completionPercentage: null }] },
+    });
     const cycleLen       = Math.max(daysPerWeek, 1);
     const dayNumber      = (totalCompleted % cycleLen) + 1;
 
     // 3. Determine muscle groups + exercise parameters
     const targetMuscleGroups = _getMuscleGroupsForDay(dayNumber, daysPerWeek);
+
+    // Rest day: 7-day schedule, day 7 slot is explicitly empty
+    if (daysPerWeek >= 5 && targetMuscleGroups.length === 0) {
+      return res.json({
+        success: true,
+        data: {
+          workout: {
+            name:         `Day ${dayNumber} — Rest`,
+            type:         'REST',
+            duration:     0,
+            calories:     0,
+            difficulty:   level,
+            day:          dayNumber,
+            daysPerWeek,
+            muscleGroups: [],
+            exercises:    [],
+            isRestDay:    true,
+          },
+        },
+      });
+    }
+
     const exerciseCount      = _getExerciseCount(durationMins);
     const repScheme          = _getRepScheme(nutritionGoal, goal);
 
@@ -1635,17 +1655,19 @@ const generateDailyWorkout = async (req, res) => {
     }
 
     // 6. AI selects exercises from the library
-    const librarySlice = filtered.slice(0, 40);
+    const librarySlice = filtered.slice(0, 60);
+    const targetLabel  = targetMuscleGroups.length ? targetMuscleGroups.join(', ') : 'Full Body';
     const aiPrompt = `You are VTRX Coach selecting exercises for today's workout.
 
 User:
 - Goal: ${goal}
 - Fitness level: ${level}
-- Target: ${targetMuscleGroups.length ? targetMuscleGroups.join(', ') : 'Full Body'}
+- Target muscles: ${targetLabel}
 - Equipment: ${equipment.length ? equipment.join(', ') : 'Full Gym'}
 - Day ${dayNumber} of a ${daysPerWeek}-day programme
 
-Select exactly ${exerciseCount} exercises from this library. Vary movement patterns (compound + isolation).
+Select exactly ${exerciseCount} exercises from this library.
+${targetMuscleGroups.length ? `IMPORTANT: Prioritise exercises whose muscleGroup matches "${targetLabel}". Use non-target-muscle exercises only to fill remaining slots.` : 'Vary movement patterns (compound + isolation).'}
 
 Library:
 ${JSON.stringify(librarySlice.map(e => ({ ymoveId: e.ymoveId, name: e.name, muscleGroup: e.muscleGroup, equipment: e.equipment })))}
@@ -1669,8 +1691,10 @@ Rules:
       logger.warn('generateDailyWorkout: AI selection failed, using random from library:', aiErr.message);
     }
 
-    // 7. Validate ymove_ids — replace any not in library with a real library entry
-    const libraryMap = new Map(filtered.map(e => [e.ymoveId, e]));
+    // 7. Validate ymove_ids — replace any not in slice with a real slice entry
+    // Use librarySlice for both lookup and fallback to keep exercises consistent with
+    // what the AI saw, and to ensure MG-targeted exercises are preferred.
+    const libraryMap = new Map(librarySlice.map(e => [e.ymoveId, e]));
     const usedIds    = new Set();
 
     const validated = selectedExercises
@@ -1680,8 +1704,8 @@ Rules:
           usedIds.add(libEx.ymoveId);
           return { ...libEx, sets: ex.sets || repScheme.sets, reps: ex.reps || repScheme.reps, restSecs: ex.restSecs || 60 };
         }
-        // Replace with unused library entry
-        const fallback = filtered.find(e => !usedIds.has(e.ymoveId));
+        // Replace with unused slice entry
+        const fallback = librarySlice.find(e => !usedIds.has(e.ymoveId));
         if (fallback) {
           usedIds.add(fallback.ymoveId);
           return { ...fallback, sets: repScheme.sets, reps: repScheme.reps, restSecs: 60 };
@@ -1690,8 +1714,12 @@ Rules:
       })
       .filter(Boolean);
 
-    // Pad if AI returned too few
-    for (const ex of filtered) {
+    // Pad if AI returned too few — prefer MG-targeted entries first, then others
+    const padPool = [
+      ...librarySlice.filter(e => targetMuscleGroups.some(mg => (e.muscleGroup || '').includes(mg))),
+      ...librarySlice.filter(e => !targetMuscleGroups.some(mg => (e.muscleGroup || '').includes(mg))),
+    ];
+    for (const ex of padPool) {
       if (validated.length >= exerciseCount) break;
       if (!usedIds.has(ex.ymoveId)) {
         validated.push({ ...ex, sets: repScheme.sets, reps: repScheme.reps, restSecs: 60 });
@@ -1699,37 +1727,37 @@ Rules:
       }
     }
 
-    // 8. Enrich each selected exercise with individual ymove details.
-    // The list endpoint (getExercises) does not include videoUrl or exercise-specific
-    // thumbnailUrl. Calling getExerciseById (once per selected exercise, 3–6 calls)
-    // gives us the correct video and thumbnail for every exercise in the workout.
-    const enriched = await Promise.all(
-      validated.map(async (ex) => {
-        if (!ex.ymoveId) {
-          logger.warn(`[generate-daily] "${ex.name}" has no ymoveId — cannot enrich`);
-          return ex;
+    // 8. Enrich each selected exercise serially to respect ymove rate limits.
+    // The list endpoint (getExercises) does not return videoUrl or exercise-specific
+    // thumbnailUrl; getExerciseById (one call per exercise, serial) fills both.
+    const enriched = [];
+    for (const ex of validated) {
+      if (!ex.ymoveId) {
+        logger.warn(`[generate-daily] "${ex.name}" has no ymoveId — cannot enrich`);
+        enriched.push(ex);
+        continue;
+      }
+      try {
+        const detail = await ymove.getExerciseById(ex.ymoveId);
+        if (!detail) {
+          logger.warn(`[generate-daily] "${ex.name}" ymoveId=${ex.ymoveId} → no detail from ymove`);
+          enriched.push(ex);
+          continue;
         }
-        try {
-          const detail = await ymove.getExerciseById(ex.ymoveId);
-          if (!detail) {
-            logger.warn(`[generate-daily] "${ex.name}" ymoveId=${ex.ymoveId} → no detail from ymove`);
-            return ex;
-          }
-          const primaryVideo = Array.isArray(detail.videos)
-            ? (detail.videos.find(v => v.isPrimary) || detail.videos[0])
-            : null;
-          const videoUrl    = detail.videoUrl    || detail.video_url    || primaryVideo?.videoUrl    || null;
-          const hlsUrl      = detail.videoHlsUrl || primaryVideo?.hlsUrl || null;
-          const thumbnailUrl = detail.thumbnailUrl || detail.thumbnail_url || detail.gifUrl
-            || primaryVideo?.thumbnailUrl || ex.thumbnailUrl || null;
-          logger.info(`[generate-daily] "${ex.name}" ymoveId=${ex.ymoveId} video=${videoUrl ? 'YES' : 'NO'} hls=${hlsUrl ? 'YES' : 'NO'} thumb=${thumbnailUrl ? 'YES' : 'NO'}`);
-          return { ...ex, videoUrl, hlsUrl, thumbnailUrl };
-        } catch (enrichErr) {
-          logger.warn(`[generate-daily] failed to enrich "${ex.name}" (${ex.ymoveId}): ${enrichErr.message}`);
-          return ex;
-        }
-      })
-    );
+        const primaryVideo = Array.isArray(detail.videos)
+          ? (detail.videos.find(v => v.isPrimary) || detail.videos[0])
+          : null;
+        const videoUrl    = detail.videoUrl    || detail.video_url    || primaryVideo?.videoUrl    || null;
+        const hlsUrl      = detail.videoHlsUrl || primaryVideo?.hlsUrl || null;
+        const thumbnailUrl = detail.thumbnailUrl || detail.thumbnail_url || detail.gifUrl
+          || primaryVideo?.thumbnailUrl || ex.thumbnailUrl || null;
+        logger.info(`[generate-daily] "${ex.name}" ymoveId=${ex.ymoveId} video=${videoUrl ? 'YES' : 'NO'} hls=${hlsUrl ? 'YES' : 'NO'} thumb=${thumbnailUrl ? 'YES' : 'NO'}`);
+        enriched.push({ ...ex, videoUrl, hlsUrl, thumbnailUrl });
+      } catch (enrichErr) {
+        logger.warn(`[generate-daily] failed to enrich "${ex.name}" (${ex.ymoveId}): ${enrichErr.message}`);
+        enriched.push(ex);
+      }
+    }
 
     // 9. MET-based calorie calculation (server-side, stable)
     const MET = { STRENGTH: 4.0, HIIT: 8.0, CARDIO: 6.0 };
