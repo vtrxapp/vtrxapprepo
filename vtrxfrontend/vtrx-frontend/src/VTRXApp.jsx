@@ -2672,15 +2672,21 @@ function AISummaryPage({ energyKey, logId, onBack }) {
               )}
             </>
           ) : (
-            /* Analysis not ready yet */
+            /* No workout logged yet */
             <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"40px 24px",textAlign:"center",marginTop:20 }}>
-              <div style={{ width:64,height:64,borderRadius:"50%",background:"linear-gradient(135deg,#7C3AED,#4C1D95)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",boxShadow:"0 0 24px rgba(124,58,237,0.4)" }}>
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              <div style={{ width:64,height:64,borderRadius:"50%",background:"rgba(124,58,237,0.12)",border:"1.5px solid rgba(124,58,237,0.35)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px" }}>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
               </div>
-              <div style={{ fontFamily:FONT,fontWeight:900,fontSize:18,color:"#fff",marginBottom:10 }}>Analysis Being Prepared</div>
-              <div style={{ fontFamily:FONT,fontSize:13,color:"#888",lineHeight:1.7 }}>
-                Your personalised AI coaching plan is being generated. You'll get a notification when it's ready — usually within a few minutes of signing up.
+              <div style={{ fontFamily:FONT,fontWeight:900,fontSize:18,color:"#fff",marginBottom:10 }}>No Workouts Logged Yet</div>
+              <div style={{ fontFamily:FONT,fontSize:13,color:"#888",lineHeight:1.7,marginBottom:24 }}>
+                Complete your first workout to unlock your personalised VTRX analysis — strength scores, progress tracking, and coaching insights all in one place.
               </div>
+              <button
+                onClick={() => setPage('workouts')}
+                style={{ padding:"13px 32px",borderRadius:50,background:"linear-gradient(135deg,#7C3AED,#4C1D95)",border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",letterSpacing:0.8,boxShadow:"0 4px 20px rgba(124,58,237,0.35)" }}
+              >
+                START A WORKOUT
+              </button>
             </div>
           )}
         </div>
