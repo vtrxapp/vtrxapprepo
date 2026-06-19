@@ -97,6 +97,11 @@ const useUser = () => useContext(UserCtx);
 // any non-auth route so the user is sent back to login automatically.
 let _onSessionExpired = null;
 
+// ── Browser back-button bridge ────────────────────────────────────────────────
+// Child hubs (WeightsHub, NutritionHub) set this when they have a sub-page open
+// so the root popstate handler can delegate to them without prop-drilling.
+let _backHandler = null;
+
 // ── In-app payment sheet bridge ───────────────────────────────────────────────
 // Module-level ref so any component can open the sheet without prop-drilling.
 // VTRXAppInner registers the setter; everything else just calls openPaymentSheet().
@@ -4944,6 +4949,11 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
       }
     });
   };
+  useEffect(() => {
+    if (!subPage) return;
+    _backHandler = goBack;
+    return () => { _backHandler = null; };
+  }, [subPage]); // eslint-disable-line react-hooks/exhaustive-deps
   const w  = WEEKLY_WORKOUTS[wIdx % WEEKLY_WORKOUTS.length] || WEEKLY_WORKOUTS[0];
   const typeColors = { "STRENGTH":PRIMARY, "CARDIO":"#F59E0B", "HIIT":"#6366F1", "REST":"#374151", "MOBILITY":"#22C55E" };
   const tc = typeColors[w.type] || PRIMARY;
@@ -7793,6 +7803,18 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
   const [onboardingNutritionTwDone, setOnboardingNutritionTwDone] = useState(false);
   const [nutritionSummaryExpanded, setNutritionSummaryExpanded] = useState(true);
 
+  // Register browser back-button handler when a detail overlay is open
+  useEffect(() => {
+    const hasOverlay = !!selectedRecipe || showProfile || showUpgrade;
+    if (!hasOverlay) return;
+    _backHandler = () => {
+      if (selectedRecipe) { setSelectedRecipe(null); return; }
+      if (showUpgrade)    { setShowUpgrade(false);    return; }
+      if (showProfile)    { setShowProfile(false);    return; }
+    };
+    return () => { _backHandler = null; };
+  }, [selectedRecipe, showProfile, showUpgrade]);
+
   useEffect(() => {
     if (!getAuthToken()) return;
     setOnboardingNutritionLoading(true);
@@ -10009,6 +10031,46 @@ function VTRXAppInner({ setPaymentPlan }) {
       if (dashScrollRef.current) dashScrollRef.current.scrollTop = savedScrollPos.current;
     });
   };
+
+  // ── Browser back-button handler ───────────────────────────────────────────
+  const handleAppBackRef = useRef(null);
+  const handleAppBack = useCallback(() => {
+    // Let an open hub sub-page handle it first
+    if (_backHandler) { _backHandler(); return true; }
+    // exerciseDetail → workoutDetail
+    if (innerPage === "exerciseDetail") { setInnerPage("workoutDetail"); return true; }
+    // Any other inner page → back to dashboard root
+    if (innerPage !== null) { goBack(); return true; }
+    // Preferences: step back, or exit to onboarding
+    if (phase === "preferences") {
+      if (screen > 0) { goPrev(); return true; }
+      setPhase("onboarding"); setScreen(ONBOARDING_SLIDES.length - 1); return true;
+    }
+    if (phase === "login")       { setPhase("onboarding"); setScreen(ONBOARDING_SLIDES.length - 1); return true; }
+    if (phase === "forgot")      { setPhase("login"); return true; }
+    if (phase === "emailVerify") { setPhase("login"); return true; }
+    if (phase === "onboarding" && screen > 0) { setScreen(s => Math.max(0, s - 1)); return true; }
+    // Non-home dashboard tab → home tab
+    if (phase === "dashboard" && activeTab !== 0) { handleTabSelect(0); return true; }
+    // Home state: let the browser navigate away
+    return false;
+  }, [phase, screen, activeTab, innerPage, goBack, goPrev, handleTabSelect]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { handleAppBackRef.current = handleAppBack; }, [handleAppBack]);
+
+  // Push one sentinel history entry so the first back press fires popstate instead
+  // of leaving the app. After each handled back, re-push the sentinel.
+  useEffect(() => {
+    window.history.pushState({ vtrx: true }, '', window.location.pathname);
+    const onPopState = () => {
+      const handled = handleAppBackRef.current?.();
+      if (handled) {
+        window.history.pushState({ vtrx: true }, '', window.location.pathname);
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []); // mount only
 
 
   if (phase !== "dashboard") return null;
