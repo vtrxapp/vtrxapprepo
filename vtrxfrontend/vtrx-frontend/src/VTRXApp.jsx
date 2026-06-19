@@ -1285,9 +1285,9 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onStop, onExercise, co
                     {skipped && <div style={{ fontFamily:FONT,fontSize:10,color:"#F97316",marginTop:2,fontWeight:600 }}>Skipped</div>}
                   </div>
                   <div style={{ padding:"0 12px 0 4px",display:"flex",flexDirection:"column",gap:6,alignItems:"center" }}>
-                    <button onClick={(e)=>{e.stopPropagation(); if(started && !skipped) toggleEx(i);}}
-                      style={{ width:34,height:34,borderRadius:"50%",background:done?"#22C55E":started?"#2a2a2a":"#1e1e1e",border:done?`2px solid #22C55E`:started?`2px solid ${PRIMARY}`:`2px solid #333`,display:"flex",alignItems:"center",justifyContent:"center",cursor:started&&!skipped?"pointer":"default",transition:"all 0.2s",opacity:skipped?0.3:1 }}>
-                      <svg width="14" height="11" viewBox="0 0 14 11" fill="none" stroke={done?"#fff":started?"#555":"#333"} strokeWidth="2.5"><polyline points="1,5.5 5,9.5 13,1"/></svg>
+                    <button onClick={(e)=>{e.stopPropagation(); if(!skipped) toggleEx(i);}}
+                      style={{ width:34,height:34,borderRadius:"50%",background:done?"#22C55E":"#f0f0f0",border:done?"2px solid #22C55E":"2px solid #d0d0d0",display:"flex",alignItems:"center",justifyContent:"center",cursor:skipped?"default":"pointer",transition:"all 0.2s",opacity:skipped?0.3:1 }}>
+                      <svg width="14" height="11" viewBox="0 0 14 11" fill="none" stroke={done?"#fff":"#999"} strokeWidth="2.5"><polyline points="1,5.5 5,9.5 13,1"/></svg>
                     </button>
                     {!done && (
                       <button onClick={(e)=>{e.stopPropagation(); setCompletedEx(p => p.includes(`skip_${i}`) ? p.filter(x=>x!==`skip_${i}`) : [...p,`skip_${i}`]);}}
