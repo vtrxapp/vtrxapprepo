@@ -1119,6 +1119,24 @@ function normaliseExercise(ex) {
   };
 }
 
+function RestDayView() {
+  return (
+    <div style={{ display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'40px 24px',textAlign:'center',height:'100%' }}>
+      <div style={{ fontSize:64,marginBottom:16 }}>😴</div>
+      <h2 style={{ fontSize:24,fontWeight:700,color:'#FFFFFF',marginBottom:8,fontFamily:FONT }}>Rest Day</h2>
+      <p style={{ fontSize:16,color:'#888888',lineHeight:1.6,maxWidth:280,fontFamily:FONT,marginBottom:0 }}>
+        Recovery is where growth happens. Your body is repairing and getting stronger. Take it easy today.
+      </p>
+      <div style={{ marginTop:24,padding:'16px 20px',background:'#1A1A2E',borderRadius:12,width:'100%',maxWidth:320 }}>
+        <p style={{ fontSize:14,color:PRIMARY,fontWeight:600,marginBottom:8,fontFamily:FONT }}>Rest day suggestions:</p>
+        <p style={{ fontSize:13,color:'#AAAAAA',fontFamily:FONT,marginBottom:4 }}>• Light walking or stretching</p>
+        <p style={{ fontSize:13,color:'#AAAAAA',fontFamily:FONT,marginBottom:4 }}>• Foam rolling or yoga</p>
+        <p style={{ fontSize:13,color:'#AAAAAA',fontFamily:FONT,marginBottom:0 }}>• Prioritise sleep and hydration</p>
+      </div>
+    </div>
+  );
+}
+
 function WorkoutDetailPage({ workout, onBack, onComplete, onStop, onExercise, completedExercises=[], elapsed=0, started=false, onStart, paused=false, onTogglePause }) {
   const wdpScrollRef = useScrollPos("workout-detail");
   const [completedEx, setCompletedEx] = useState([]);
@@ -1142,6 +1160,20 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onStop, onExercise, co
     const pct = exercises.length > 0 ? Math.round((doneCt / exercises.length) * 100) : 0;
     if (onStop) onStop(elapsed, completedEx, pct);
   };
+
+  if (workout?.isRestDay) {
+    return (
+      <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column" }}>
+        <div style={{ display:"flex",alignItems:"center",padding:"54px 18px 14px",gap:12,borderBottom:`1px solid ${BORDER}` }}>
+          <button onClick={onBack} style={{ background:"none",border:"none",cursor:"pointer",padding:4,display:"flex",alignItems:"center" }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <span style={{ fontFamily:FONT,fontWeight:800,fontSize:17,color:"#fff" }}>Today's Plan</span>
+        </div>
+        <RestDayView/>
+      </div>
+    );
+  }
 
   return (
     <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column" }}>
@@ -1248,7 +1280,7 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onStop, onExercise, co
                   </div>
                   <div onClick={()=>onExercise&&onExercise(ex)} style={{ flex:1,padding:"12px 10px",cursor:"pointer" }}>
                     <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:"#111",marginBottom:2 }}>{ex.name}</div>
-                    {(()=>{const r=parseReps(ex.reps);const lbl=/^\d+s$/.test(r)?`${ex.sets} sets × ${r.replace(/s$/,' sec')}`:`${ex.sets} sets × ${r} reps`;return<div style={{fontFamily:FONT,fontSize:12,color:"#888888",marginBottom:3}}>{lbl}</div>;})()
+                    {(()=>{const r=parseReps(ex.reps);const lbl=/^\d+s$/.test(r)?`${ex.sets} sets × ${r.replace(/s$/,' sec')}`:`${ex.sets} sets × ${r} reps`;return<div style={{fontFamily:FONT,fontSize:12,color:"#888888",marginBottom:3}}>{lbl}</div>;})()}
                     <div style={{ fontFamily:FONT,fontSize:11,color:PRIMARY }}>{ex.muscles}</div>
                     {skipped && <div style={{ fontFamily:FONT,fontSize:10,color:"#F97316",marginTop:2,fontWeight:600 }}>Skipped</div>}
                   </div>
@@ -1963,9 +1995,9 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
         if (vUrl || hUrl) _videoUrlCache.set(cacheKey, { videoUrl: vUrl||null, hlsUrl: hUrl||null, cachedAt: Date.now() });
         if (!vUrl && !hUrl) console.warn(`[video] No URL for "${ex.name}" — check YMOVE_API_KEY in Railway`);
       })
-      .catch(err => console.error(`[video] fetch failed for "${ex.name}":`, err))
+      .catch(err => { console.error(`[video] fetch failed for "${ex.name}":`, err); setResolvedHlsUrl(null); })
       .finally(()=>{ setVideoLoading(false); });
-  }, [ex.ymoveId, ex.name, ex.videoUrl]);
+  }, [ex.ymoveId, ex.name, ex.videoUrl, ex.hlsUrl]);
 
   const [sets, setSets] = useState([{reps:"",weight:"",done:false},{reps:"",weight:"",done:false}]);
   const MIN_SETS = 2; // first 2 sets cannot be deleted
@@ -5225,7 +5257,7 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
                           <div style={{ width:28,height:28,borderRadius:8,background:nc,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:FONT,fontWeight:800,fontSize:11,color:"#fff" }}>{j+1}</div>
                           <div style={{ flex:1,minWidth:0 }}>
                             <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{ex.name}</div>
-                            {(()=>{const r=parseReps(ex.reps);const lbl=/^\d+s$/.test(r)?`${ex.sets} sets × ${r.replace(/s$/,' sec')}`:`${ex.sets} sets × ${r} reps`;return<div style={{fontFamily:FONT,fontSize:11,color:"#666"}}>{lbl}</div>;})()
+                            {(()=>{const r=parseReps(ex.reps);const lbl=/^\d+s$/.test(r)?`${ex.sets} sets × ${r.replace(/s$/,' sec')}`:`${ex.sets} sets × ${r} reps`;return<div style={{fontFamily:FONT,fontSize:11,color:"#666"}}>{lbl}</div>;})()}
                           </div>
                           {ex.muscleGroup && <div style={{ fontFamily:FONT,fontSize:10,color:"#444",flexShrink:0 }}>{ex.muscleGroup}</div>}
                         </div>
@@ -9298,7 +9330,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
   const [freezeUsed,  setFreezeUsed]  = useState(()=>{
     try {
       const saved = JSON.parse(localStorage.getItem("vtrx_freeze")||"{}");
-      return saved.date === new Date().toISOString().slice(0,10) ? saved.used : false;
+      return saved.date === new Date().toLocaleDateString('en-CA') ? saved.used : false;
     } catch(_e){ return false; }
   });
   const [showFreezeSheet, setShowFreezeSheet] = useState(false);
@@ -9321,7 +9353,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
 
   const activateFreeze = () => {
     setFreezeUsed(true);
-    try { localStorage.setItem("vtrx_freeze", JSON.stringify({ used:true, date:new Date().toISOString().slice(0,10) })); } catch(_e){}
+    try { localStorage.setItem("vtrx_freeze", JSON.stringify({ used:true, date:new Date().toLocaleDateString('en-CA') })); } catch(_e){}
     setShowFreezeSheet(false);
   };
 
@@ -9363,6 +9395,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
     HIIT:     "https://images.unsplash.com/photo-1549060279-7e168fcee0c2?w=300&q=70",
     MOBILITY: "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=300&q=70",
     RECOVERY: "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=300&q=70",
+    REST:     "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=300&q=70",
   };
   const workoutBanner = WORKOUT_BANNERS[workout.type] || WORKOUT_BANNERS.STRENGTH;
   // Exercise list for preview — use API exercises, fall back to today's WEEKLY_WORKOUTS entry
@@ -9546,6 +9579,16 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
         </div>
 
         {/* TODAY'S WORKOUT */}
+        {apiWorkout?.isRestDay ? (
+          <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"16px 18px",marginBottom:13,animation:"fadeUp 0.4s ease 0.2s both",textAlign:"center" }}>
+            <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#fff",marginBottom:12 }}>Today's Workout</div>
+            <div style={{ padding:"16px",background:"#1A1A2E",borderRadius:12,textAlign:"center" }}>
+              <span style={{ fontSize:32 }}>😴</span>
+              <p style={{ color:"#FFFFFF",fontWeight:600,marginTop:8,marginBottom:4,fontFamily:FONT }}>Today is your rest day</p>
+              <p style={{ color:"#888888",fontSize:13,marginBottom:0,fontFamily:FONT }}>Recovery is part of the plan</p>
+            </div>
+          </div>
+        ) : (
         <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"16px 18px",marginBottom:13,animation:"fadeUp 0.4s ease 0.2s both" }}>
           <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14 }}>
             <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#fff" }}>Today's Workout</div>
@@ -9605,6 +9648,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
             </div>
           )}
         </div>
+        )}
       </div>
 
       {/* Streak Freeze sheet */}
@@ -9672,6 +9716,13 @@ function VTRXAppInner({ setPaymentPlan }) {
   const goNext = () => { setDir(1);  setScreen(s=>s+1); };
   const goPrev = () => { setDir(-1); setScreen(s=>Math.max(0,s-1)); };
   const goToDashboard = async () => {
+    // Guard: if the user hasn't completed goal/fitness-level setup, route them
+    // back to preferences rather than showing a broken empty dashboard
+    if (!user?.goal || !user?.fitnessLevel) {
+      setPhase('preferences');
+      setScreen(0);
+      return;
+    }
     // Save onboarding profile to backend
     if (!DEMO_MODE && getAuthToken()) {
       try {
@@ -9735,7 +9786,7 @@ function VTRXAppInner({ setPaymentPlan }) {
   const [energyKey, setEnergyKey] = useState(()=>{
     try {
       const saved = JSON.parse(localStorage.getItem("vtrx_mood")||"{}");
-      const today = new Date().toISOString().slice(0,10);
+      const today = new Date().toLocaleDateString('en-CA');
       return saved.date===today ? saved.key : null; // null = show MoodSheet
     } catch(_e){ return null; }
   });
@@ -9757,18 +9808,18 @@ function VTRXAppInner({ setPaymentPlan }) {
     const userId = liveUser?.id;
     if (!token || !userId) return;
 
-    const today    = new Date().toISOString().slice(0, 10);
-    const cacheKey = `vtrx_daily_workout_${userId}_${today}`;
+    const today    = new Date().toLocaleDateString('en-CA');
+    const cacheKey = `vtrx_daily_workout_${userId}`;
     try {
       const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null');
-      if (cached?.workout) { setApiWorkout(cached.workout); return; }
+      if (cached?.workout && cached?.date === today) { setApiWorkout(cached.workout); return; }
     } catch (_e) {}
 
     apiCall('/workouts/generate-daily', { method: 'POST' })
       .then(d => {
         if (d?.data?.workout) {
           setApiWorkout(d.data.workout);
-          try { localStorage.setItem(cacheKey, JSON.stringify(d.data)); } catch (_e) {}
+          try { localStorage.setItem(cacheKey, JSON.stringify({ ...d.data, date: today })); } catch (_e) {}
         }
       })
       .catch(()=>{
@@ -9870,12 +9921,18 @@ function VTRXAppInner({ setPaymentPlan }) {
     return () => { _openPaymentSheet = null; };
   }, []);
 
-  // When any protected API call returns 401, clear auth and send to login
+  // When any protected API call returns 401, clear auth and send to login.
+  // The 500ms delay avoids false logouts during navigation where a 401 can
+  // transiently fire before the new route establishes a fresh token context.
   useEffect(()=>{
     _onSessionExpired = () => {
-      setUser({ name:"", age:"", gender:"", weight:"", height:"", goal:"", level:"", days:5 });
-      setIsPremium(false);
-      setPhase("login");
+      setTimeout(() => {
+        if (!getAuthToken()) {
+          setUser({ name:"", age:"", gender:"", weight:"", height:"", goal:"", level:"", days:5 });
+          setIsPremium(false);
+          setPhase("login");
+        }
+      }, 500);
     };
     return () => { _onSessionExpired = null; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -10181,6 +10238,7 @@ function VTRXAppInner({ setPaymentPlan }) {
         const snapExNames  = completedExNames;
         const snapExSets   = loggedExSets;
 
+        console.log('Workout abandoned with:', { completionPercentage: pct, exercisesCompleted: snapExNames.length, totalExercises: (activeW.exercises||[]).length, durationMins: mins });
         clearInterval(workoutTimerRef.current);
         track("workout_stopped", { name: activeW?.name, type: wType, durationMins: mins, completionPct: pct, exercisesLogged: snapExNames.length });
         setWorkoutDone(false);
@@ -10368,7 +10426,7 @@ function VTRXAppInner({ setPaymentPlan }) {
             onMoodSelect={(key)=>{
               setEnergyKey(key);
               track("mood_logged", { mood: key });
-              try { localStorage.setItem("vtrx_mood", JSON.stringify({key, date:new Date().toISOString().slice(0,10)})); } catch(_e){}
+              try { localStorage.setItem("vtrx_mood", JSON.stringify({key, date:new Date().toLocaleDateString('en-CA')})); } catch(_e){}
               if (!DEMO_MODE && getAuthToken()) {
                 apiCall("/users/mood", { method:"POST", body:JSON.stringify({ mood:key }) }).catch(()=>{});
               }

@@ -1523,6 +1523,26 @@ const _MG_4DAY = [
   ['Legs', 'Glutes'],
   ['Shoulders', 'Core'],
 ];
+// 5-day: Push/Pull/Legs/Push/Pull + 2 rest days (7-day cycle)
+const _MG_5DAY = [
+  ['Chest', 'Shoulders', 'Triceps'],
+  ['Back', 'Biceps'],
+  ['Legs', 'Glutes'],
+  ['Chest', 'Triceps'],
+  ['Back', 'Biceps'],
+  [], // REST
+  [], // REST
+];
+// 6-day: Push/Pull/Legs × 2 + 1 rest day (7-day cycle)
+const _MG_6DAY = [
+  ['Chest', 'Shoulders', 'Triceps'],
+  ['Back', 'Biceps'],
+  ['Legs', 'Glutes'],
+  ['Chest', 'Triceps'],
+  ['Back', 'Biceps'],
+  ['Legs', 'Glutes'],
+  [], // REST
+];
 const _MG_7DAY = [
   ['Chest'],
   ['Back'],
@@ -1530,11 +1550,13 @@ const _MG_7DAY = [
   ['Shoulders'],
   ['Biceps', 'Triceps'],
   ['Core'],
-  [], // rest — shouldn't normally reach here
+  [], // REST
 ];
 
 const _getMuscleGroupsForDay = (dayNumber, daysPerWeek) => {
   if (daysPerWeek <= 2) return [];          // Full Body
+  if (daysPerWeek === 5) return _MG_5DAY[(dayNumber - 1) % _MG_5DAY.length];
+  if (daysPerWeek === 6) return _MG_6DAY[(dayNumber - 1) % _MG_6DAY.length];
   const pool = daysPerWeek <= 4 ? _MG_4DAY : _MG_7DAY;
   return pool[(dayNumber - 1) % pool.length];
 };
@@ -1590,18 +1612,21 @@ const generateDailyWorkout = async (req, res) => {
     const equipment     = user?.equipment       || [];
     const durationMins  = _parseDurationMins(user?.sessionDuration);
 
-    // 2. Count meaningful completions (≥50%) to determine day position in cycle
+    // 2. Count meaningful completions (≥50%) to determine day position in cycle.
+    // Abandoned workouts (pct===0) are NOT logged by the frontend so they never
+    // appear here. Legacy logs with null pct are counted to avoid skipping days.
     const totalCompleted = await prisma.workoutLog.count({
       where: { userId, OR: [{ completionPercentage: { gte: 50 } }, { completionPercentage: null }] },
     });
-    const cycleLen       = Math.max(daysPerWeek, 1);
+    // 5-day and 6-day schedules run on a 7-day cycle (includes programmed rest days)
+    const cycleLen       = (daysPerWeek === 5 || daysPerWeek === 6) ? 7 : Math.max(daysPerWeek, 1);
     const dayNumber      = (totalCompleted % cycleLen) + 1;
 
     // 3. Determine muscle groups + exercise parameters
     const targetMuscleGroups = _getMuscleGroupsForDay(dayNumber, daysPerWeek);
 
-    // Rest day: 7-day schedule, day 7 slot is explicitly empty
-    if (daysPerWeek >= 5 && targetMuscleGroups.length === 0) {
+    // Rest day: empty muscle group slot means this is a programmed rest day
+    if (targetMuscleGroups.length === 0) {
       return res.json({
         success: true,
         data: {
@@ -1691,10 +1716,10 @@ Rules:
       logger.warn('generateDailyWorkout: AI selection failed, using random from library:', aiErr.message);
     }
 
-    // 7. Validate ymove_ids — replace any not in slice with a real slice entry
-    // Use librarySlice for both lookup and fallback to keep exercises consistent with
-    // what the AI saw, and to ensure MG-targeted exercises are preferred.
-    const libraryMap = new Map(librarySlice.map(e => [e.ymoveId, e]));
+    // 7. Validate ymove_ids — replace any not in map with a real slice entry
+    // libraryMap covers the full filtered set so AI picks outside the 60-entry slice
+    // are still resolved; fallback still prefers librarySlice (MG-targeted) entries.
+    const libraryMap = new Map(filtered.map(e => [e.ymoveId, e]));
     const usedIds    = new Set();
 
     const validated = selectedExercises
