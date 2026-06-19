@@ -9800,6 +9800,21 @@ function VTRXAppInner({ setPaymentPlan }) {
   const savedScrollPos = useRef(0);
   const mouseStart     = useRef(null);
   const touchStart     = useRef(null);
+  const handleAppBackRef = useRef(null);
+
+  // Push one sentinel history entry so the first back press fires popstate instead
+  // of leaving the app. Must be declared before any early returns to satisfy rules of hooks.
+  useEffect(() => {
+    window.history.pushState({ vtrx: true }, '', window.location.pathname);
+    const onPopState = () => {
+      const handled = handleAppBackRef.current?.();
+      if (handled) {
+        window.history.pushState({ vtrx: true }, '', window.location.pathname);
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   // Fetch today's AI-generated daily workout (ymove-first).
   // Cache the result in localStorage keyed by userId+date so re-mounts don't burn API quota.
@@ -10168,15 +10183,12 @@ function VTRXAppInner({ setPaymentPlan }) {
   };
 
   // ── Browser back-button handler ───────────────────────────────────────────
-  const handleAppBackRef = useRef(null);
-  const handleAppBack = useCallback(() => {
-    // Let an open hub sub-page handle it first
+  // Assign the latest closure to the stable ref each render so the popstate
+  // listener (registered once above, before early returns) always calls current logic.
+  handleAppBackRef.current = () => {
     if (_backHandler) { _backHandler(); return true; }
-    // exerciseDetail → workoutDetail
     if (innerPage === "exerciseDetail") { setInnerPage("workoutDetail"); return true; }
-    // Any other inner page → back to dashboard root
     if (innerPage !== null) { goBack(); return true; }
-    // Preferences: step back, or exit to onboarding
     if (phase === "preferences") {
       if (screen > 0) { goPrev(); return true; }
       setPhase("onboarding"); setScreen(ONBOARDING_SLIDES.length - 1); return true;
@@ -10185,28 +10197,9 @@ function VTRXAppInner({ setPaymentPlan }) {
     if (phase === "forgot")      { setPhase("login"); return true; }
     if (phase === "emailVerify") { setPhase("login"); return true; }
     if (phase === "onboarding" && screen > 0) { setScreen(s => Math.max(0, s - 1)); return true; }
-    // Non-home dashboard tab → home tab
     if (phase === "dashboard" && activeTab !== 0) { handleTabSelect(0); return true; }
-    // Home state: let the browser navigate away
     return false;
-  }, [phase, screen, activeTab, innerPage, goBack, goPrev, handleTabSelect]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => { handleAppBackRef.current = handleAppBack; }, [handleAppBack]);
-
-  // Push one sentinel history entry so the first back press fires popstate instead
-  // of leaving the app. After each handled back, re-push the sentinel.
-  useEffect(() => {
-    window.history.pushState({ vtrx: true }, '', window.location.pathname);
-    const onPopState = () => {
-      const handled = handleAppBackRef.current?.();
-      if (handled) {
-        window.history.pushState({ vtrx: true }, '', window.location.pathname);
-      }
-    };
-    window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
-  }, []); // mount only
-
+  };
 
   if (phase !== "dashboard") return null;
 
