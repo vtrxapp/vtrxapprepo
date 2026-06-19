@@ -3,55 +3,107 @@
 // Fetches machine, dumbbell, and bodyweight exercises from ymove API,
 // validates video URLs, and exports vtrx_exercise_library.csv
 //
-// Usage:
-//   YMOVE_API_KEY=<key> node scripts/fetchExerciseLibrary.js
-//   Output: vtrx_exercise_library.csv (in current directory)
+// Uses ONLY Node.js built-ins — no npm install needed.
+//
+// Usage (run from any directory with Node.js installed):
+//   YMOVE_API_KEY=<key> node fetchExerciseLibrary.js
+//   Output: vtrx_exercise_library.csv (in the same directory)
 
 'use strict';
 
-const axios  = require('axios');
-const https  = require('https');
-const http   = require('http');
-const fs     = require('fs');
-const path   = require('path');
+const https = require('https');
+const http  = require('http');
+const fs    = require('fs');
+const path  = require('path');
 
 const API_KEY  = process.env.YMOVE_API_KEY;
-const BASE_URL = process.env.YMOVE_API_URL || 'https://exercise-api.ymove.app/api/v2';
+const BASE     = 'exercise-api.ymove.app';
+const BASE_PATH = '/api/v2';
 
 if (!API_KEY) {
   console.error('ERROR: YMOVE_API_KEY env var not set.');
-  console.error('Usage: YMOVE_API_KEY=<key> node scripts/fetchExerciseLibrary.js');
+  console.error('Usage: YMOVE_API_KEY=<key> node fetchExerciseLibrary.js');
   process.exit(1);
 }
 
-const api = axios.create({
-  baseURL: BASE_URL,
-  timeout: 20000,
-  headers: { 'X-API-Key': API_KEY, 'Content-Type': 'application/json' },
-});
+// ─── minimal HTTPS GET ───────────────────────────────────────────────────────
+function get(pathAndQuery) {
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: BASE,
+      path: pathAndQuery,
+      method: 'GET',
+      headers: { 'X-API-Key': API_KEY, 'Accept': 'application/json' },
+      timeout: 20000,
+    };
+    const req = https.request(options, res => {
+      let raw = '';
+      res.on('data', chunk => { raw += chunk; });
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          try { resolve(JSON.parse(raw)); }
+          catch { resolve({}); }
+        } else {
+          reject(new Error(`HTTP ${res.statusCode} — ${raw.slice(0, 120)}`));
+        }
+      });
+    });
+    req.on('error',   reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+    req.end();
+  });
+}
 
+// HEAD request to validate video URL
+function head(rawUrl) {
+  return new Promise(resolve => {
+    try {
+      const parsed = new URL(rawUrl);
+      const lib    = parsed.protocol === 'https:' ? https : http;
+      const req    = lib.request({
+        hostname: parsed.hostname,
+        path:     parsed.pathname + parsed.search,
+        method:   'HEAD',
+        timeout:  8000,
+      }, res => resolve(res.statusCode));
+      req.on('error',   () => resolve(0));
+      req.on('timeout', () => { req.destroy(); resolve(0); });
+      req.end();
+    } catch { resolve(0); }
+  });
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+const toArray = r => Array.isArray(r) ? r : (r?.data || r?.exercises || r?.items || r?.results || []);
+
+// ─── config ──────────────────────────────────────────────────────────────────
 const MUSCLE_GROUPS = ['chest','back','legs','shoulders','biceps','triceps','core','glutes'];
 
-// ─── keyword matchers ───────────────────────────────────────────────────────
 const MACHINE_KEYWORDS = [
   'machine','cable','pulldown','lat pulldown','leg press','leg extension',
   'leg curl','pec deck','seated row','smith machine','hip abductor',
   'hip adductor','chest press','row machine','shoulder press machine',
   'ab machine','crunch machine','assisted',
 ];
-const DUMBBELL_KEYWORDS = ['dumbbell','dumbell',' db ','(db)'];
+const DUMBBELL_KEYWORDS = ['dumbbell','dumbell',' db ','(db)','db '];
 const BODYWEIGHT_KEYWORDS = [
-  'push up','pushup','push-up','squat bodyweight','plank','lunge','crunch',
-  'sit up','sit-up','mountain climber','burpee','jump','glute bridge',
-  'hip thrust bodyweight',
+  'push up','pushup','push-up','plank','lunge','crunch','sit up','sit-up',
+  'mountain climber','burpee','jump','glute bridge','hip thrust bodyweight',
+  'bodyweight squat','air squat',
 ];
 
-const matchesAny = (name, keywords) => {
-  const lower = name.toLowerCase();
-  return keywords.some(kw => lower.includes(kw));
+const WRONG_GROUP = {
+  chest:     ['leg curl','leg extension','leg press','squat','hamstring','hip abduct','hip adduct'],
+  back:      ['chest press','pec deck','fly','incline bench'],
+  legs:      ['bicep curl','lateral raise','shoulder press','tricep'],
+  shoulders: ['leg press','squat','lunge','crunch','ab '],
+  biceps:    ['squat','lunge','leg press','leg curl','chest press','pec'],
+  triceps:   ['squat','lunge','leg press','leg curl','bicep curl'],
+  core:      ['bench press','leg press','squat','deadlift'],
+  glutes:    ['bicep curl','lateral raise','shoulder press','tricep'],
 };
 
-// ─── preferred dumbbell exercises per muscle group ──────────────────────────
 const DB_PRIORITY = {
   chest:     ['db bench press','db fly','incline db press','db pullover'],
   back:      ['db row','single arm db row','db pullover','bent over db row'],
@@ -63,153 +115,97 @@ const DB_PRIORITY = {
   glutes:    ['db hip thrust','db glute bridge','db romanian deadlift'],
 };
 
-// ─── cross-group sanity check ───────────────────────────────────────────────
-// muscles that strongly suggest wrong group
-const WRONG_GROUP = {
-  chest:     ['leg curl','leg extension','leg press','squat','hamstring','hip'],
-  back:      ['chest','pec','fly','bench'],
-  legs:      ['tricep','bicep','shoulder press','lateral raise'],
-  shoulders: ['leg','squat','lunge','crunch'],
-  biceps:    ['squat','lunge','leg','chest press','pec'],
-  triceps:   ['squat','lunge','leg','curl'],
-  core:      ['bench press','squat','deadlift'],
-  glutes:    ['bicep curl','tricep','shoulder press'],
-};
+const COMPOUND_WORDS = ['press','row','squat','deadlift','lunge','pull','push up','push-up','pulldown','dip','clean','thrust','clean'];
+const TIMED_WORDS    = ['plank','hold','isometric','wall sit'];
 
-function sanityCheck(name, muscleGroup) {
-  const lower = name.toLowerCase();
-  const bad   = WRONG_GROUP[muscleGroup] || [];
-  return !bad.some(kw => lower.includes(kw));
+// ─── helpers ─────────────────────────────────────────────────────────────────
+const matchesAny = (name, kws) => { const n = name.toLowerCase(); return kws.some(k => n.includes(k)); };
+
+function sanityCheck(name, mg) {
+  const bad = WRONG_GROUP[mg] || [];
+  return !matchesAny(name, bad);
 }
 
-// ─── fetch all exercises for a muscle group ─────────────────────────────────
-async function fetchGroup(muscleGroup) {
-  try {
-    const { data } = await api.get('/exercises', {
-      params: { muscleGroup, pageSize: 50, page: 1 },
-    });
-    const list = Array.isArray(data) ? data : (data?.data || data?.exercises || data?.items || []);
-    console.log(`  ${muscleGroup}: ${list.length} exercises returned`);
-    return list;
-  } catch (err) {
-    console.error(`  ${muscleGroup}: fetch failed — ${err.response?.status || err.message}`);
-    return [];
-  }
-}
-
-// ─── validate a video URL with HEAD request ──────────────────────────────────
-function headRequest(url) {
-  return new Promise(resolve => {
-    try {
-      const lib    = url.startsWith('https') ? https : http;
-      const parsed = new URL(url);
-      const req    = lib.request({ hostname: parsed.hostname, path: parsed.pathname + parsed.search, method: 'HEAD', timeout: 8000 }, res => {
-        resolve(res.statusCode);
-      });
-      req.on('error',   () => resolve(0));
-      req.on('timeout', () => { req.destroy(); resolve(0); });
-      req.end();
-    } catch {
-      resolve(0);
-    }
-  });
-}
-
-// ─── normalise exercise shape from API response ──────────────────────────────
-function normalise(ex, muscleGroup) {
-  const id       = ex.id || ex.ymoveId || ex.exercise_id || null;
-  const name     = ex.name || ex.title || ex.exerciseName || '';
-  const videoUrl = ex.videoUrl || ex.video_url
-    || (Array.isArray(ex.videos) ? (ex.videos.find(v => v.isPrimary) || ex.videos[0])?.videoUrl : null)
-    || null;
-  const thumbUrl = ex.thumbnailUrl || ex.thumbnail_url || ex.imageUrl || null;
-  const equip    = (ex.equipment || ex.equipmentType || '').toLowerCase();
-  const diff     = (ex.difficulty || 'beginner').toLowerCase();
-  return { id, name, muscleGroup, videoUrl, thumbUrl, equip, diff, raw: ex };
-}
-
-// ─── determine equipment bucket ──────────────────────────────────────────────
 function equipBucket(name, equip) {
   const n = name.toLowerCase();
   const e = (equip || '').toLowerCase();
   if (matchesAny(n, MACHINE_KEYWORDS) || e.includes('machine') || e.includes('cable')) return 'machine';
-  if (matchesAny(n, DUMBBELL_KEYWORDS) || e.includes('dumbbell') || e.includes('db'))  return 'dumbbell';
-  if (matchesAny(n, BODYWEIGHT_KEYWORDS) || e === '' || e === 'none' || e === 'bodyweight') return 'bodyweight';
+  if (matchesAny(n, DUMBBELL_KEYWORDS) || e.includes('dumbbell'))                       return 'dumbbell';
+  if (matchesAny(n, BODYWEIGHT_KEYWORDS) || ['','none','bodyweight'].includes(e))        return 'bodyweight';
   return null;
 }
 
-// ─── is_compound heuristic ───────────────────────────────────────────────────
-const COMPOUND_WORDS = ['press','row','squat','deadlift','lunge','pull','push up','pulldown','dip','clean','thrust'];
-function isCompound(name) {
-  const n = name.toLowerCase();
-  return COMPOUND_WORDS.some(w => n.includes(w));
+function normalise(ex, mg) {
+  const videoUrl = ex.videoUrl || ex.video_url
+    || (Array.isArray(ex.videos) ? (ex.videos.find(v => v.isPrimary) || ex.videos[0])?.videoUrl : null)
+    || null;
+  return {
+    id:       ex.id || ex.ymoveId || ex.exercise_id || null,
+    name:     (ex.name || ex.title || '').trim(),
+    muscleGroup: mg,
+    videoUrl,
+    thumbUrl: ex.thumbnailUrl || ex.thumbnail_url || ex.imageUrl || null,
+    equip:    (ex.equipment || ex.equipmentType || '').toLowerCase(),
+    diff:     (ex.difficulty || '').toLowerCase(),
+  };
 }
 
-// ─── is_timed heuristic ─────────────────────────────────────────────────────
-const TIMED_WORDS = ['plank','hold','isometric','wall sit'];
-function isTimed(name) {
-  return TIMED_WORDS.some(w => name.toLowerCase().includes(w));
-}
-
-// ─── difficulty normalise ────────────────────────────────────────────────────
-function normDiff(diff, bucket) {
-  if (diff === 'advanced') return 'ADVANCED';
-  if (diff === 'intermediate') return 'INTERMEDIATE';
-  if (bucket === 'machine' || bucket === 'bodyweight') return 'BEGINNER';
-  if (bucket === 'dumbbell') return 'INTERMEDIATE';
-  return 'BEGINNER';
-}
-
-// ─── sort dumbbell candidates by priority list ───────────────────────────────
-function sortByPriority(exercises, muscleGroup) {
-  const prio = (DB_PRIORITY[muscleGroup] || []).map(s => s.toLowerCase());
+function sortByPriority(exercises, mg) {
+  const prio = (DB_PRIORITY[mg] || []).map(s => s.toLowerCase());
   return [...exercises].sort((a, b) => {
     const ai = prio.findIndex(p => a.name.toLowerCase().includes(p));
     const bi = prio.findIndex(p => b.name.toLowerCase().includes(p));
-    const ar = ai === -1 ? 999 : ai;
-    const br = bi === -1 ? 999 : bi;
-    return ar - br;
+    return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
   });
 }
 
-// ─── build CSV row ───────────────────────────────────────────────────────────
+function normDiff(diff, bucket) {
+  if (diff === 'advanced')     return 'ADVANCED';
+  if (diff === 'intermediate') return 'INTERMEDIATE';
+  if (bucket === 'machine' || bucket === 'bodyweight') return 'BEGINNER';
+  if (bucket === 'dumbbell')   return 'INTERMEDIATE';
+  return 'BEGINNER';
+}
+
 function csvRow(ex) {
-  const timed     = isTimed(ex.name);
-  const compound  = isCompound(ex.name);
-  const defReps   = timed ? 0 : compound ? 10 : 12;
-  const defSecs   = timed ? 30 : 0;
-  const diff      = normDiff(ex.diff, ex.bucket);
-  const note      = ex.note || '';
+  const timed    = matchesAny(ex.name, TIMED_WORDS);
+  const compound = matchesAny(ex.name, COMPOUND_WORDS);
+  const defReps  = timed ? 0 : compound ? 10 : 12;
+  const defSecs  = timed ? 30 : 0;
   const cols = [
-    ex.id, ex.name, ex.muscleGroup, ex.bucket, diff,
+    ex.id, ex.name, ex.muscleGroup, ex.bucket,
+    normDiff(ex.diff, ex.bucket),
     ex.videoUrl || '', ex.thumbUrl || '',
     compound ? 'true' : 'false',
     timed    ? 'true' : 'false',
-    defReps, defSecs, note,
+    defReps, defSecs, '',
   ];
   return cols.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',');
 }
 
 // ─── main ────────────────────────────────────────────────────────────────────
 async function main() {
-  console.log(`\n=== VTRX Exercise Library Fetcher ===`);
-  console.log(`Base URL : ${BASE_URL}`);
-  console.log(`API Key  : ${API_KEY.slice(0,8)}...\n`);
+  console.log('\n=== VTRX Exercise Library Fetcher ===');
+  console.log(`Base URL : https://${BASE}${BASE_PATH}`);
+  console.log(`API Key  : ${API_KEY.slice(0, 8)}...\n`);
 
-  const allByGroup = {};
-
-  // STEP 1-3: Fetch all groups
+  // STEP 1-3: Fetch all muscle groups
   console.log('── Fetching from ymove API ──');
+  const allByGroup = {};
   for (const mg of MUSCLE_GROUPS) {
-    const raw = await fetchGroup(mg);
-    allByGroup[mg] = raw.map(ex => normalise(ex, mg));
-    await new Promise(r => setTimeout(r, 300)); // gentle rate-limit spacing
+    try {
+      const data = await get(`${BASE_PATH}/exercises?muscleGroup=${encodeURIComponent(mg)}&pageSize=50&page=1`);
+      const list = toArray(data);
+      console.log(`  ${mg.padEnd(12)}: ${list.length} exercises`);
+      allByGroup[mg] = list.map(ex => normalise(ex, mg));
+    } catch (err) {
+      console.error(`  ${mg.padEnd(12)}: FAILED — ${err.message}`);
+      allByGroup[mg] = [];
+    }
+    await sleep(350);
   }
 
-  // STEP 1-3: Filter into buckets
-  const kept    = [];
-  const removed = [];
-
+  // Filter into buckets
   const machineByGroup    = {};
   const dumbbellByGroup   = {};
   const bodyweightByGroup = {};
@@ -217,33 +213,23 @@ async function main() {
   for (const mg of MUSCLE_GROUPS) {
     const exercises = allByGroup[mg] || [];
 
-    // ── machines (max 5) ──
-    const machines = exercises
-      .filter(ex => {
-        const b = equipBucket(ex.name, ex.equip);
-        return b === 'machine';
-      })
+    machineByGroup[mg] = exercises
+      .filter(ex => equipBucket(ex.name, ex.equip) === 'machine')
       .slice(0, 5)
       .map(ex => ({ ...ex, bucket: 'machine' }));
-    machineByGroup[mg] = machines;
 
-    // ── dumbbells (max 5, priority sorted) ──
-    const dbCandidates = exercises.filter(ex => {
-      const b = equipBucket(ex.name, ex.equip);
-      return b === 'dumbbell';
-    });
-    const dbSorted = sortByPriority(dbCandidates, mg).slice(0, 5).map(ex => ({ ...ex, bucket: 'dumbbell' }));
-    dumbbellByGroup[mg] = dbSorted;
+    const dbCandidates = exercises.filter(ex => equipBucket(ex.name, ex.equip) === 'dumbbell');
+    dumbbellByGroup[mg] = sortByPriority(dbCandidates, mg)
+      .slice(0, 5)
+      .map(ex => ({ ...ex, bucket: 'dumbbell' }));
 
-    // ── bodyweight (max 3) ──
-    const bwCandidates = exercises.filter(ex => {
-      const n = ex.name.toLowerCase();
-      return BODYWEIGHT_KEYWORDS.some(kw => n.includes(kw));
-    });
-    bodyweightByGroup[mg] = bwCandidates.slice(0, 3).map(ex => ({ ...ex, bucket: 'bodyweight' }));
+    bodyweightByGroup[mg] = exercises
+      .filter(ex => matchesAny(ex.name, BODYWEIGHT_KEYWORDS))
+      .slice(0, 3)
+      .map(ex => ({ ...ex, bucket: 'bodyweight' }));
   }
 
-  // STEP 4: Collect all candidates and validate
+  // Collect all candidates
   const candidates = [];
   for (const mg of MUSCLE_GROUPS) {
     candidates.push(...(machineByGroup[mg]    || []));
@@ -251,61 +237,58 @@ async function main() {
     candidates.push(...(bodyweightByGroup[mg] || []));
   }
 
+  // STEP 4: Validate
   console.log(`\n── Validating ${candidates.length} candidate exercises ──`);
-  let validated = 0;
+  const kept    = [];
+  const removed = [];
 
   for (const ex of candidates) {
-    // 1. Check ID
     if (!ex.id) {
-      removed.push({ name: ex.name, mg: ex.muscleGroup, reason: 'No ymove ID' });
+      removed.push({ ...ex, reason: 'No ymove ID' });
       continue;
     }
-    // 2. Sanity check muscle group vs name
     if (!sanityCheck(ex.name, ex.muscleGroup)) {
-      removed.push({ name: ex.name, mg: ex.muscleGroup, reason: `Name does not match muscle group "${ex.muscleGroup}"` });
+      removed.push({ ...ex, reason: `Name mismatch for group "${ex.muscleGroup}"` });
       continue;
     }
-    // 3. Video URL present
     if (!ex.videoUrl) {
-      removed.push({ name: ex.name, mg: ex.muscleGroup, reason: 'No videoUrl' });
+      removed.push({ ...ex, reason: 'No videoUrl' });
       continue;
     }
-    // 4. HEAD check video URL
-    process.stdout.write(`  Checking ${ex.name.slice(0,40).padEnd(40)} ... `);
-    const status = await headRequest(ex.videoUrl);
-    if (status === 200 || status === 206 || status === 302 || status === 301) {
+    process.stdout.write(`  ${ex.name.slice(0, 42).padEnd(42)} ... `);
+    const status = await head(ex.videoUrl);
+    if ([200, 206, 301, 302].includes(status)) {
       process.stdout.write(`${status} OK\n`);
       kept.push(ex);
-      validated++;
     } else {
       process.stdout.write(`${status || 'ERR'} REMOVED\n`);
-      removed.push({ name: ex.name, mg: ex.muscleGroup, reason: `Video HEAD returned ${status || 'network error'}` });
+      removed.push({ ...ex, reason: `Video HEAD ${status || 'network error'}` });
     }
+    await sleep(100);
   }
 
   // STEP 5: Write CSV
   const CSV_HEADER = 'ymove_id,name,muscle_group,equipment,difficulty,video_url,thumbnail_url,is_compound,is_timed,default_reps,default_duration_secs,notes';
-  const csvLines   = [CSV_HEADER, ...kept.map(csvRow)];
   const csvPath    = path.join(process.cwd(), 'vtrx_exercise_library.csv');
-  fs.writeFileSync(csvPath, csvLines.join('\n'), 'utf8');
-  console.log(`\n── CSV written: ${csvPath} (${kept.length} rows) ──`);
+  fs.writeFileSync(csvPath, [CSV_HEADER, ...kept.map(csvRow)].join('\n') + '\n', 'utf8');
+  console.log(`\n── CSV written → ${csvPath}  (${kept.length} rows) ──`);
 
   // STEP 6: Summary
   console.log('\n════════════════════════════════════════');
+  let totalMachine = 0, totalDB = 0;
+
   console.log('MACHINE EXERCISES FOUND:');
-  let totalMachine = 0;
   for (const mg of MUSCLE_GROUPS) {
     const ex = kept.filter(e => e.muscleGroup === mg && e.bucket === 'machine');
-    console.log(`  ${mg.padEnd(12)}: ${ex.length}  ${ex.map(e=>e.name).join(' | ')}`);
+    console.log(`  ${mg.padEnd(12)}: ${ex.length}  ${ex.map(e => e.name).join(' | ')}`);
     totalMachine += ex.length;
   }
   console.log(`  Total machines: ${totalMachine}`);
 
   console.log('\nDUMBBELL EXERCISES FOUND:');
-  let totalDB = 0;
   for (const mg of MUSCLE_GROUPS) {
     const ex = kept.filter(e => e.muscleGroup === mg && e.bucket === 'dumbbell');
-    console.log(`  ${mg.padEnd(12)}: ${ex.length}  ${ex.map(e=>e.name).join(' | ')}`);
+    console.log(`  ${mg.padEnd(12)}: ${ex.length}  ${ex.map(e => e.name).join(' | ')}`);
     totalDB += ex.length;
   }
   console.log(`  Total dumbbells: ${totalDB}`);
@@ -313,18 +296,14 @@ async function main() {
   console.log('\nBODYWEIGHT EXERCISES FOUND:');
   const bwAll = kept.filter(e => e.bucket === 'bodyweight');
   console.log(`  Total bodyweight: ${bwAll.length}`);
+  if (bwAll.length) console.log(`  ${bwAll.map(e => e.name).join(' | ')}`);
 
   console.log('\nREMOVED (failed validation):');
   console.log(`  ${removed.length} exercises removed`);
-  for (const r of removed) {
-    console.log(`  ✗ [${r.mg}] ${r.name} — ${r.reason}`);
-  }
+  for (const r of removed) console.log(`  ✗ [${r.muscleGroup}] ${r.name} — ${r.reason}`);
 
   console.log(`\nTOTAL EXERCISES IN LIBRARY: ${kept.length}`);
   console.log('════════════════════════════════════════\n');
 }
 
-main().catch(err => {
-  console.error('Fatal error:', err.message);
-  process.exit(1);
-});
+main().catch(err => { console.error('Fatal:', err.message); process.exit(1); });
