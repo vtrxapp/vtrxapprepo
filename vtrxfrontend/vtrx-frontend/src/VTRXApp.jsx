@@ -2682,7 +2682,7 @@ function AISummaryPage({ energyKey, logId, onBack }) {
                 Complete your first workout to unlock your personalised VTRX analysis — strength scores, progress tracking, and coaching insights all in one place.
               </div>
               <button
-                onClick={() => setPage('workouts')}
+                onClick={() => onBack()}
                 style={{ padding:"13px 32px",borderRadius:50,background:"linear-gradient(135deg,#7C3AED,#4C1D95)",border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",letterSpacing:0.8,boxShadow:"0 4px 20px rgba(124,58,237,0.35)" }}
               >
                 START A WORKOUT
