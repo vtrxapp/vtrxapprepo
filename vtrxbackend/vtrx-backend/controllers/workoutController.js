@@ -8,6 +8,9 @@ const ymove     = require('../services/ymoveService');
 const logger    = require('../utils/logger');
 const notif     = require('../services/notificationService');
 const pine      = require('../services/pineconeService');
+const { resolveLibrary }     = require('../data/exerciseLibrary');
+const { generateSession }    = require('../data/planGenerator');
+const { PLAN_TEMPLATES }     = require('../data/planTemplates');
 
 // ── GET /api/workouts — Get available workout programmes ──────────────────────
 const getWorkouts = async (req, res) => {
@@ -1814,6 +1817,110 @@ Rules:
   }
 };
 
+// ── POST /api/workouts/generate-session — Deterministic session for day-switch ─
+// Generates a new workout (max 5 exercises) for the given schedule entry's day,
+// using the plan generator's rule engine and the user's profile.
+const generateSessionForDay = async (req, res) => {
+  const { scheduleId } = req.body;
+  if (!scheduleId) return res.status(400).json({ success: false, message: 'scheduleId required' });
+
+  try {
+    const entry = await prisma.workoutSchedule.findFirst({
+      where: { id: scheduleId, userId: req.user.id },
+    });
+    if (!entry) return res.status(404).json({ success: false, message: 'Schedule entry not found' });
+
+    const user = await prisma.user.findUnique({
+      where:  { id: req.user.id },
+      select: { goal: true, fitnessLevel: true, daysPerWeek: true,
+                equipment: true, sessionDuration: true, weight: true, gender: true },
+    });
+
+    // Map the scheduled date's day-of-week to the matching plan template session
+    const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const dayOfWeek = DAY_NAMES[new Date(entry.scheduledDate).getDay()];
+    const frequency = parseInt(user?.daysPerWeek || 3);
+    const templateKey = frequency <= 3 ? 'THREE_DAY' : frequency <= 4 ? 'FOUR_DAY' : 'FIVE_DAY';
+    const template    = PLAN_TEMPLATES[templateKey];
+
+    const sessionTpl  = template.schedule.find(s => !s.isRestDay && s.dayOfWeek === dayOfWeek)
+                     || template.schedule.find(s => !s.isRestDay);
+    const muscleGroups = sessionTpl?.muscleGroups || ['chest', 'back', 'legs', 'core'];
+
+    // Resolve library and generate session (max 5 exercises)
+    const library = await resolveLibrary(prisma);
+    const session  = generateSession(user, library, muscleGroups, 5);
+
+    // Resolve/create Exercise DB records for each generated exercise
+    const enriched = [];
+    for (const ex of session.exercises) {
+      let dbEx = null;
+      if (ex.ymoveId) {
+        dbEx = await prisma.exercise.findFirst({ where: { ymoveId: ex.ymoveId } });
+      }
+      if (!dbEx) {
+        dbEx = await prisma.exercise.findFirst({
+          where: { name: { equals: ex.name, mode: 'insensitive' } },
+        });
+      }
+      if (!dbEx) {
+        dbEx = await prisma.exercise.create({
+          data: { name: ex.name, muscleGroup: ex.muscleGroup || 'Full Body', equipment: ex.equipment || null },
+        });
+      }
+      enriched.push({ ...ex, dbId: dbEx.id, thumbnailUrl: dbEx.thumbnailUrl || null });
+    }
+
+    // Build a human-readable workout name
+    const sessionLabel = muscleGroups
+      .map(g => g.charAt(0).toUpperCase() + g.slice(1))
+      .join(' & ');
+
+    // Create new Workout + WorkoutExercise records in one operation
+    const workout = await prisma.workout.create({
+      data: {
+        name:       `${dayOfWeek} — ${sessionLabel}`,
+        type:       session.type,
+        duration:   session.durationMins,
+        calories:   session.calories,
+        difficulty: user?.fitnessLevel || 'Beginner',
+        isPublic:   false,
+        exercises: {
+          create: enriched.map((ex, i) => ({
+            exerciseId: ex.dbId,
+            order:      i,
+            sets:       ex.sets,
+            reps:       String(ex.reps ?? (ex.durationSecs ? `${ex.durationSecs}s` : '10')),
+            restSecs:   ex.restSeconds || 60,
+          })),
+        },
+      },
+      include: {
+        exercises: { include: { exercise: true }, orderBy: { order: 'asc' } },
+      },
+    });
+
+    // Point the schedule entry at the new workout
+    await prisma.workoutSchedule.update({
+      where: { id: scheduleId },
+      data:  { workoutId: workout.id },
+    });
+
+    // Fetch the updated entry and return it in the same shape as getSchedule
+    const updated = await prisma.workoutSchedule.findFirst({
+      where:   { id: scheduleId },
+      include: { workout: { include: { exercises: { include: { exercise: true }, orderBy: { order: 'asc' } } } } },
+    });
+
+    const formatted = await formatScheduleEntry(updated);
+    logger.info(`generateSessionForDay: user=${req.user.id} schedule=${scheduleId} workout=${workout.id} exercises=${enriched.length}`);
+    res.json({ success: true, data: { scheduleEntry: formatted } });
+  } catch (error) {
+    logger.error('generateSessionForDay error:', error);
+    res.status(500).json({ success: false, message: 'Failed to generate session' });
+  }
+};
+
 module.exports = {
   getWorkouts,
   getWorkoutById,
@@ -1839,4 +1946,5 @@ module.exports = {
   syncYmoveExercises,
   ymovePing,
   generateDailyWorkout,
+  generateSessionForDay,
 };

@@ -5005,6 +5005,7 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
   const [replaceEntry,    setReplaceEntry]    = useState(null);
   const [allWorkouts,     setAllWorkouts]     = useState([]);
   const [replaceSelected, setReplaceSelected] = useState(null);
+  const [replaceLoading,  setReplaceLoading]  = useState(false);
   const [moveTargetDate,  setMoveTargetDate]  = useState(null);
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [hubStats,         setHubStats]         = useState(null);
@@ -5182,11 +5183,17 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
           };
 
           const handleReplace = async () => {
-            if (!replaceEntry || !replaceSelected) return;
+            if (!replaceEntry) return;
+            setReplaceLoading(true);
             try {
-              await apiCall(`/workouts/schedule/${replaceEntry.id}/replace`, { method:'PATCH', body:JSON.stringify({ workoutId: replaceSelected }) });
-              refreshSchedule();
-            } catch {}
+              const result = await apiCall('/workouts/generate-session', { method:'POST', body:JSON.stringify({ scheduleId: replaceEntry.id }) });
+              if (result?.data?.scheduleEntry) {
+                setWeekSchedule(prev => prev.map(s => s.id === replaceEntry.id ? result.data.scheduleEntry : s));
+              } else {
+                refreshSchedule();
+              }
+            } catch { refreshSchedule(); }
+            setReplaceLoading(false);
             setReplaceEntry(null);
             setReplaceSelected(null);
           };
@@ -5320,37 +5327,31 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
 
               {/* REPLACE MODAL */}
               {replaceEntry && (
-                <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:200,display:"flex",alignItems:"flex-end" }} onClick={()=>{ setReplaceEntry(null); setReplaceSelected(null); }}>
-                  <div onClick={e=>e.stopPropagation()} style={{ width:"100%",background:"#111",borderRadius:"24px 24px 0 0",padding:"24px 20px 40px",maxHeight:"80vh",overflowY:"auto" }}>
+                <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:200,display:"flex",alignItems:"flex-end" }} onClick={()=>{ if(!replaceLoading){ setReplaceEntry(null); setReplaceSelected(null); } }}>
+                  <div onClick={e=>e.stopPropagation()} style={{ width:"100%",background:"#111",borderRadius:"24px 24px 0 0",padding:"24px 20px 40px" }}>
                     <div style={{ width:40,height:4,borderRadius:2,background:"#333",margin:"0 auto 20px" }}/>
                     <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:"#fff",marginBottom:4 }}>Replace Workout</div>
-                    <div style={{ fontFamily:FONT,fontSize:13,color:"#555",marginBottom:20 }}>{generateWorkoutTitle(replaceEntry.workout.exercises) || replaceEntry.workout.name}</div>
-                    <div style={{ fontFamily:FONT,fontWeight:700,fontSize:12,color:"#666",letterSpacing:1,marginBottom:12 }}>SELECT NEW WORKOUT</div>
-                    {allWorkouts.map(w=>{
-                      const wc = TYPE_C[w.type]||PRIMARY;
-                      const isSelected = replaceSelected===w.id;
-                      return (
-                        <div key={w.id} onClick={()=>setReplaceSelected(w.id)} style={{ display:"flex",alignItems:"center",gap:12,padding:"14px 16px",borderRadius:14,marginBottom:8,background:isSelected?`${wc}22`:"#1a1a1a",border:isSelected?`1px solid ${wc}`:"1px solid #222",cursor:"pointer" }}>
-                          <div style={{ flex:1,minWidth:0 }}>
-                            <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:isSelected?"#fff":"#888",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{w.name}</div>
-                            <div style={{ fontFamily:FONT,fontSize:11,color:"#444",marginTop:2 }}>{w.duration} min · {w.calories} cal</div>
-                          </div>
-                          <div style={{ display:"flex",alignItems:"center",gap:8,flexShrink:0 }}>
-                            <div style={{ background:wc,borderRadius:20,padding:"3px 10px" }}>
-                              <span style={{ fontFamily:FONT,fontWeight:800,fontSize:9,color:"#fff",letterSpacing:0.5 }}>{w.type}</span>
-                            </div>
-                            {isSelected && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={wc} strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
-                          </div>
+                    <div style={{ fontFamily:FONT,fontSize:13,color:"#555",marginBottom:24 }}>{generateWorkoutTitle(replaceEntry.workout.exercises) || replaceEntry.workout.name}</div>
+                    <div style={{ background:"#1a1a1a",borderRadius:16,padding:"20px 16px",marginBottom:24,border:"1px solid #222" }}>
+                      <div style={{ display:"flex",alignItems:"center",gap:12,marginBottom:12 }}>
+                        <div style={{ width:40,height:40,borderRadius:12,background:`${PRIMARY}22`,border:`1px solid ${PRIMARY}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
                         </div>
-                      );
-                    })}
-                    {allWorkouts.length===0 && <div style={{ fontFamily:FONT,fontSize:13,color:"#444",textAlign:"center",padding:"20px 0" }}>Loading workouts...</div>}
-                    <div style={{ display:"flex",gap:10,marginTop:8 }}>
-                      <button onClick={()=>{ setReplaceEntry(null); setReplaceSelected(null); }} style={{ flex:1,padding:"14px 0",borderRadius:50,background:"#1a1a1a",border:"1px solid #333",fontFamily:FONT,fontWeight:700,fontSize:14,color:"#888",cursor:"pointer" }}>
+                        <div>
+                          <div style={{ fontFamily:FONT,fontWeight:800,fontSize:13,color:"#fff",letterSpacing:0.5 }}>PERSONALIZED WORKOUT</div>
+                          <div style={{ fontFamily:FONT,fontSize:11,color:"#555",marginTop:2 }}>Built from your profile</div>
+                        </div>
+                      </div>
+                      <div style={{ fontFamily:FONT,fontSize:13,color:"#777",lineHeight:1.6 }}>
+                        A new workout will be generated for <span style={{ color:"#fff",fontWeight:700 }}>{getDayLabel(replaceEntry)}</span> using your fitness level, goal, and available equipment. Max 5 exercises.
+                      </div>
+                    </div>
+                    <div style={{ display:"flex",gap:10 }}>
+                      <button onClick={()=>{ if(!replaceLoading){ setReplaceEntry(null); setReplaceSelected(null); } }} style={{ flex:1,padding:"14px 0",borderRadius:50,background:"#1a1a1a",border:"1px solid #333",fontFamily:FONT,fontWeight:700,fontSize:14,color:"#888",cursor:replaceLoading?"not-allowed":"pointer",opacity:replaceLoading?0.5:1 }}>
                         CANCEL
                       </button>
-                      <button onClick={handleReplace} disabled={!replaceSelected} style={{ flex:2,padding:"14px 0",borderRadius:50,background:replaceSelected?PRIMARY:"#222",border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:replaceSelected?"#fff":"#444",cursor:replaceSelected?"pointer":"default",letterSpacing:1 }}>
-                        CONFIRM REPLACE
+                      <button onClick={handleReplace} disabled={replaceLoading} style={{ flex:2,padding:"14px 0",borderRadius:50,background:replaceLoading?"#222":PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:replaceLoading?"#555":"#fff",cursor:replaceLoading?"not-allowed":"pointer",letterSpacing:1 }}>
+                        {replaceLoading ? 'GENERATING...' : 'GENERATE'}
                       </button>
                     </div>
                   </div>

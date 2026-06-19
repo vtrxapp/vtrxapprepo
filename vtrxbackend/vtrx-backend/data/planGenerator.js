@@ -447,8 +447,93 @@ function validatePlan(plan) {
   return { valid: errors.length === 0, errors, totalExercises };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Generate exercises for a single workout session (used by the day-switch flow).
+// Applies the same rules as generatePlan but for one session only.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * @param {object}   userProfile   Raw user profile from the DB
+ * @param {object}   library       Resolved exercise library from resolveLibrary()
+ * @param {string[]} muscleGroups  Target muscle groups for this session
+ * @param {number}   [maxEx=5]     Hard cap on number of exercises
+ * @returns {{ exercises, durationMins, calories, type, sets }}
+ */
+function generateSession(userProfile, library, muscleGroups, maxEx = 5) {
+  const { goal, level, equipTier, sex, duration, weightLbs } = normaliseProfile(userProfile);
+
+  const goalRules    = GOAL_RULES[goal]   || GOAL_RULES.stay_active;
+  const levelRules   = LEVEL_RULES[level] || LEVEL_RULES.beginner;
+  const allowedTiers = EQUIPMENT_RULES[equipTier] || ['bodyweight'];
+  const sexEmphasis  = SEX_MUSCLE_EMPHASIS[sex]   || SEX_MUSCLE_EMPHASIS.other;
+  const sets         = Math.max(1, levelRules.setsPerExercise + goalRules.setsModifier);
+  const durationMins = levelRules.sessionDurationMins[duration] || 40;
+  const cap          = Math.min(maxEx, 5);
+
+  const exercises    = [];
+  const ordered      = reorderByEmphasis(muscleGroups, sexEmphasis.prioritise);
+
+  for (const muscleGroup of ordered) {
+    if (exercises.length >= cap) break;
+    const available = getAvailableExercises(library, muscleGroup, allowedTiers, levelRules.difficultiesAllowed);
+    if (available.length === 0) continue;
+
+    const selected = selectExercisesForWeek(available, levelRules.exercisesPerMuscleGroup, 1, goalRules.compoundFirst);
+    for (const ex of selected) {
+      if (exercises.length >= cap) break;
+      const midReps = Math.floor((goalRules.repsPerSet.min + goalRules.repsPerSet.max) / 2);
+      exercises.push({
+        ymoveId:         ex.ymoveId || null,
+        name:            ex.name,
+        muscleGroup,
+        difficulty:      ex.difficulty,
+        isCompound:      ex.isCompound,
+        equipment:       ex.equipment || null,
+        sets,
+        reps:            ex.isTimed ? null  : midReps,
+        durationSecs:    ex.isTimed ? ex.defaultDurationSecs : null,
+        restSeconds:     goalRules.restSeconds,
+        isTimedExercise: ex.isTimed,
+      });
+    }
+  }
+
+  // Cardio finisher for applicable goals
+  if (goalRules.cardioFinisher && exercises.length < cap) {
+    const cardioAvail = getAvailableExercises(library, 'cardio', allowedTiers, levelRules.difficultiesAllowed);
+    if (cardioAvail.length > 0) {
+      const [finisher] = selectExercisesForWeek(cardioAvail, 1, 1, false);
+      if (finisher) {
+        exercises.push({
+          ymoveId:         finisher.ymoveId || null,
+          name:            finisher.name,
+          muscleGroup:     'cardio',
+          difficulty:      finisher.difficulty,
+          isCompound:      finisher.isCompound,
+          equipment:       finisher.equipment || null,
+          sets:            2,
+          reps:            finisher.isTimed ? null : 15,
+          durationSecs:    finisher.isTimed ? finisher.defaultDurationSecs : null,
+          restSeconds:     20,
+          isTimedExercise: finisher.isTimed,
+          isFinisher:      true,
+        });
+      }
+    }
+  }
+
+  return {
+    exercises:   exercises.slice(0, cap),
+    durationMins,
+    calories:    calculateCalories(weightLbs, durationMins, goal, goalRules.calorieMultiplier),
+    type:        goalRules.workoutType,
+    sets,
+  };
+}
+
 module.exports = {
   generatePlan,
+  generateSession,
   validatePlan,
   normaliseProfile,
   // Exported for testing
