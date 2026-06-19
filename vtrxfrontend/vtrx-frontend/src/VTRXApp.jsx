@@ -102,6 +102,14 @@ let _onSessionExpired = null;
 // so the root popstate handler can delegate to them without prop-drilling.
 let _backHandler = null;
 
+// ── Data caches (prevent re-fetching on every tab switch) ─────────────────────
+const _weightsCache   = { data: null, fetchedAt: 0 };
+const _nutritionCache = {};          // keyed by "filter_userId"
+const _savedCache     = { data: null, fetchedAt: 0 };
+const _videoUrlCache  = new Map();   // key: ymoveId|name → { videoUrl, hlsUrl, cachedAt }
+const CACHE_TTL_MS    = 30 * 60 * 1000;   // 30 min
+const VIDEO_TTL_MS    = 12 * 60 * 60 * 1000; // 12 h
+
 // ── In-app payment sheet bridge ───────────────────────────────────────────────
 // Module-level ref so any component can open the sheet without prop-drilling.
 // VTRXAppInner registers the setter; everything else just calls openPaymentSheet().
@@ -1231,7 +1239,7 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onStop, onExercise, co
               <div key={i} style={{ background:"#fff",borderRadius:18,marginBottom:12,overflow:"hidden",border:done?`2px solid #22C55E`:skipped?`2px solid #F9731633`:`2px solid transparent`,transition:"border-color 0.2s" }}>
                 <div style={{ display:"flex",alignItems:"center" }}>
                   <div onClick={()=>onExercise&&onExercise(ex)} style={{ position:"relative",width:90,height:90,flexShrink:0,cursor:"pointer" }}>
-                    <img src={ex.thumbnailUrl || ex.img || "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=200&q=70"} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+                    <img src={ex.thumbnailUrl || ex.img || "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=200&q=70"} alt="" width={90} height={90} loading="lazy" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
                     <div style={{ position:"absolute",inset:0,background:"rgba(0,0,0,0.2)",display:"flex",alignItems:"center",justifyContent:"center" }}>
                       <div style={{ width:36,height:36,borderRadius:"50%",background:PRIMARY,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 0 12px ${PRIMARY}99` }}>
                         <svg width="11" height="13" viewBox="0 0 11 13" fill="white"><polygon points="0,0 11,6.5 0,13"/></svg>
@@ -1925,6 +1933,15 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
     if (!ex.ymoveId && !ex.name) { setVideoLoading(false); return; }
     const token = getAuthToken();
     if (!token) { setVideoLoading(false); return; }
+    // Check in-memory cache before hitting the network (CDN URLs are valid for 48 h)
+    const cacheKey = ex.ymoveId || ex.name;
+    const cached = _videoUrlCache.get(cacheKey);
+    if (cached && (Date.now() - cached.cachedAt) < VIDEO_TTL_MS) {
+      if (cached.videoUrl) setResolvedVideoUrl(cached.videoUrl);
+      if (cached.hlsUrl)   setResolvedHlsUrl(cached.hlsUrl);
+      setVideoLoading(false);
+      return;
+    }
     setVideoLoading(true);
     // Restore resume position — use ymoveId if available, otherwise DB id
     const progressKey = ex.ymoveId || ex.id;
@@ -1943,6 +1960,7 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
         console.log(`[video] ymoveId=${ex.ymoveId||'null'} name="${ex.name}" videoUrl=${vUrl||'null'} hlsUrl=${hUrl||'null'}`);
         if (vUrl) setResolvedVideoUrl(vUrl);
         if (hUrl) setResolvedHlsUrl(hUrl);
+        if (vUrl || hUrl) _videoUrlCache.set(cacheKey, { videoUrl: vUrl||null, hlsUrl: hUrl||null, cachedAt: Date.now() });
         if (!vUrl && !hUrl) console.warn(`[video] No URL for "${ex.name}" — check YMOVE_API_KEY in Railway`);
       })
       .catch(err => console.error(`[video] fetch failed for "${ex.name}":`, err))
@@ -2424,6 +2442,8 @@ function AISummaryPage({ energyKey, logId, onBack }) {
   const [summaryData, setSummaryData] = useState(null);
   const [loading, setLoading] = useState(!!logId);
   const [fetchFailed, setFetchFailed] = useState(false);
+  const [pollStatus, setPollStatus] = useState("Analyzing your workout data");
+  const [retryCount, setRetryCount] = useState(0);
   const [dotCount, setDotCount] = useState(0);
 
   // ── UI state ──
@@ -2443,12 +2463,21 @@ function AISummaryPage({ energyKey, logId, onBack }) {
   }, [loading]);
 
   // Poll API
+  const POLL_STATUSES = [
+    "Analyzing your workout data",
+    "Processing performance metrics",
+    "Building your personalized report",
+    "Almost there, finalizing insights",
+  ];
   useEffect(() => {
     if (!logId) { setLoading(false); return; }
     let attempts = 0;
     let cancelled = false;
+    setLoading(true);
+    setFetchFailed(false);
     const poll = async () => {
       if (cancelled) return;
+      setPollStatus(POLL_STATUSES[attempts < 4 ? 0 : attempts < 7 ? 1 : attempts < 10 ? 2 : 3]);
       try {
         const res = await apiCall(`/workouts/ai-summary/${logId}`);
         if (cancelled) return;
@@ -2459,12 +2488,13 @@ function AISummaryPage({ energyKey, logId, onBack }) {
         }
       } catch (_e) { /* 202 or other — keep polling */ }
       attempts++;
-      if (attempts >= 10) { setLoading(false); setFetchFailed(true); return; }
+      if (attempts >= 12) { setLoading(false); setFetchFailed(true); return; }
       setTimeout(poll, 2500);
     };
     poll();
     return () => { cancelled = true; };
-  }, [logId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [logId, retryCount]);
 
   // Trigger bar animation on tab change
   useEffect(() => {
@@ -2634,7 +2664,30 @@ function AISummaryPage({ energyKey, logId, onBack }) {
           <svg width="34" height="34" viewBox="0 0 24 24" fill="white"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
         </div>
         <div style={{ fontWeight:800,fontSize:16,color:"#fff",marginBottom:10,letterSpacing:0.5 }}>VTRX Coach is analyzing your workout{".".repeat(dotCount)}</div>
-        <div style={{ fontSize:13,color:"#888" }}>This may take a few seconds...</div>
+        <div style={{ fontSize:13,color:"#888" }}>{pollStatus}{".".repeat(dotCount)}</div>
+      </div>
+    );
+  }
+
+  // ── Timeout screen ──
+  if (fetchFailed) {
+    return (
+      <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:FONT,padding:32 }}>
+        <div style={{ width:64,height:64,borderRadius:"50%",background:"linear-gradient(135deg,#7C3AED,#4C1D95)",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:24 }}>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        </div>
+        <div style={{ fontWeight:800,fontSize:17,color:"#fff",marginBottom:10,textAlign:"center" }}>Still generating...</div>
+        <div style={{ fontSize:13,color:"#888",textAlign:"center",marginBottom:32,maxWidth:260 }}>Your AI summary is taking longer than usual. Keep waiting or view a default recap.</div>
+        <div style={{ display:"flex",gap:12 }}>
+          <button onClick={()=>setRetryCount(c=>c+1)}
+            style={{ padding:"12px 24px",borderRadius:50,background:PRIMARY,border:"none",fontFamily:FONT,fontWeight:700,fontSize:14,color:"#fff",cursor:"pointer" }}>
+            Keep Waiting
+          </button>
+          <button onClick={()=>setFetchFailed(false)}
+            style={{ padding:"12px 24px",borderRadius:50,background:"#1a1a1a",border:"1px solid #333",fontFamily:FONT,fontWeight:700,fontSize:14,color:"#fff",cursor:"pointer" }}>
+            Use Default
+          </button>
+        </div>
       </div>
     );
   }
@@ -4184,7 +4237,7 @@ function TypeBadge({ type, small }) {
 function VideoThumbSmall({ img }) {
   return (
     <div style={{ position:"relative",width:80,height:80,borderRadius:12,overflow:"hidden",flexShrink:0 }}>
-      <img src={img} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+      <img src={img} alt="" width={80} height={80} loading="lazy" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
       <div style={{ position:"absolute",inset:0,background:"rgba(0,0,0,0.3)",display:"flex",alignItems:"center",justifyContent:"center" }}>
         <div style={{ width:26,height:26,borderRadius:"50%",background:PRIMARY,display:"flex",alignItems:"center",justifyContent:"center" }}>
           <svg width="9" height="11" viewBox="0 0 9 11" fill="white"><polygon points="0,0 9,5.5 0,11"/></svg>
@@ -4925,20 +4978,27 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
   const [hubStats,         setHubStats]         = useState(null);
   const [previewPRs,       setPreviewPRs]       = useState([]);
   useEffect(()=>{
+    const now = Date.now();
+    if (_weightsCache.fetchedAt && (now - _weightsCache.fetchedAt) < CACHE_TTL_MS && _weightsCache.data) {
+      const { schedule, workouts, stats, prs } = _weightsCache.data;
+      if (schedule) setWeekSchedule(schedule);
+      if (workouts) setAllWorkouts(workouts);
+      if (stats)    setHubStats(stats);
+      if (prs)      setPreviewPRs(prs);
+      return;
+    }
     setScheduleLoading(true);
-    apiCall('/workouts/schedule')
-      .then(d=>{ if(d?.data?.schedule) setWeekSchedule(d.data.schedule); })
-      .catch(()=>{})
-      .finally(()=>setScheduleLoading(false));
-    apiCall('/workouts?limit=20')
-      .then(d=>{ if(d?.data?.workouts) setAllWorkouts(d.data.workouts); })
-      .catch(()=>{});
-    apiCall('/workouts/stats')
-      .then(d=>{ if(d?.data?.stats) setHubStats(d.data.stats); })
-      .catch(()=>{});
-    apiCall('/users/personal-records')
-      .then(d=>{ if(d?.data?.records) setPreviewPRs(d.data.records); })
-      .catch(()=>{});
+    const newData = {};
+    Promise.all([
+      apiCall('/workouts/schedule').then(d=>{ if(d?.data?.schedule){ setWeekSchedule(d.data.schedule); newData.schedule=d.data.schedule; } }).catch(()=>{}),
+      apiCall('/workouts?limit=20').then(d=>{ if(d?.data?.workouts){ setAllWorkouts(d.data.workouts); newData.workouts=d.data.workouts; } }).catch(()=>{}),
+      apiCall('/workouts/stats').then(d=>{ if(d?.data?.stats){ setHubStats(d.data.stats); newData.stats=d.data.stats; } }).catch(()=>{}),
+      apiCall('/users/personal-records').then(d=>{ if(d?.data?.records){ setPreviewPRs(d.data.records); newData.prs=d.data.records; } }).catch(()=>{}),
+    ]).finally(()=>{
+      _weightsCache.data = newData;
+      _weightsCache.fetchedAt = Date.now();
+      setScheduleLoading(false);
+    });
   }, []);
   const weightsScrollRef = useScrollPos("weights-hub");
   const goBack = () => {
@@ -7889,13 +7949,24 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
   // Fetch personalised recipes (≤10) from backend whenever tab or user changes
   useEffect(()=>{
     if (!getAuthToken()) return;
+    const now = Date.now();
+    const cacheKey = `${filter}_${currentUser?.id}`;
+    const hit = _nutritionCache[cacheKey];
+    if (hit && (now - hit.fetchedAt) < CACHE_TTL_MS) {
+      setApiRecipes(hit.recipes);
+      setTotalRecipes(hit.total);
+      return;
+    }
     setLoadingRecipes(true);
     const tab = FILTER_TAB_MAP[filter] || 'all';
     apiCall(`/nutrition/recipes/personalised?tab=${tab}`)
       .then(d=>{
         if(d?.data?.recipes) {
-          setApiRecipes(d.data.recipes.map(normalizeRecipe));
-          setTotalRecipes(d.data.total || 0);
+          const recipes = d.data.recipes.map(normalizeRecipe);
+          const total = d.data.total || 0;
+          setApiRecipes(recipes);
+          setTotalRecipes(total);
+          _nutritionCache[cacheKey] = { recipes, total, fetchedAt: Date.now() };
         }
       })
       .catch(()=>{})
@@ -7905,17 +7976,24 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
 
   // Fetch saved recipes once on mount
   useEffect(()=>{
-    if (getAuthToken()) {
-      apiCall('/nutrition/saved')
-        .then(d=>{
-          if(d?.data?.recipes?.length) {
-            const norm = d.data.recipes.map(normalizeRecipe);
-            setSavedRecipes(norm);
-            setSavedSet(new Set(norm.map(r=>String(r.id))));
-          }
-        })
-        .catch(()=>{});
+    if (!getAuthToken()) return;
+    const now = Date.now();
+    if (_savedCache.data && (now - _savedCache.fetchedAt) < CACHE_TTL_MS) {
+      setSavedRecipes(_savedCache.data);
+      setSavedSet(new Set(_savedCache.data.map(r=>String(r.id))));
+      return;
     }
+    apiCall('/nutrition/saved')
+      .then(d=>{
+        if(d?.data?.recipes?.length) {
+          const norm = d.data.recipes.map(normalizeRecipe);
+          setSavedRecipes(norm);
+          setSavedSet(new Set(norm.map(r=>String(r.id))));
+          _savedCache.data = norm;
+          _savedCache.fetchedAt = Date.now();
+        }
+      })
+      .catch(()=>{});
   },[]);
 
   const handleFilterChange = (f) => { setFilter(f); setRecipePage(1); };
@@ -8110,7 +8188,7 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
                       style={{ width:160,minWidth:160,flexShrink:0,background:"#fff",borderRadius:14,overflow:"hidden",cursor:"pointer",border:`1px solid ${BORDER}` }}>
                       <div style={{ height:110,overflow:"hidden",position:"relative" }}>
                         {r.img
-                          ? <img src={r.img} alt={r.name} style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+                          ? <img src={r.img} alt={r.name} width={160} height={110} loading="lazy" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
                           : <div style={{ width:"100%",height:"100%",background:"linear-gradient(135deg,#1a1a2e,#16213e)",display:"flex",alignItems:"center",justifyContent:"center",padding:"8px" }}>
                               <span style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#fff",textAlign:"center",lineHeight:1.3 }}>{r.name}</span>
                             </div>
@@ -8359,7 +8437,7 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
                   <div key={r.id||i} onClick={()=>setSelectedRecipe(r)} style={{ background:"#fff",borderRadius:14,overflow:"hidden",cursor:"pointer",border:`1px solid ${BORDER}` }}>
                     <div style={{ height:110,overflow:"hidden",position:"relative" }}>
                       {r.img
-                        ? <img src={r.img} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+                        ? <img src={r.img} alt="" width={160} height={110} loading="lazy" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
                         : <div style={{ width:"100%",height:"100%",background:"linear-gradient(135deg,#1a1a2e,#16213e)",display:"flex",alignItems:"center",justifyContent:"center",padding:"8px" }}>
                             <span style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#fff",textAlign:"center",lineHeight:1.3 }}>{r.name}</span>
                           </div>
