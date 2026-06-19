@@ -51,7 +51,14 @@ const apiCall = async (endpoint, options = {}) => {
     ...options,
   });
   const data = await res.json();
-  if (!data.success && res.status >= 400) throw Object.assign(new Error(data.message || "Request failed"), { status: res.status, code: data.code });
+  if (!data.success && res.status >= 400) {
+    // Expired or invalid token on a protected route — clear session and go to login
+    if (res.status === 401 && !endpoint.startsWith('/auth/')) {
+      clearAuth();
+      if (_onSessionExpired) _onSessionExpired();
+    }
+    throw Object.assign(new Error(data.message || "Request failed"), { status: res.status, code: data.code });
+  }
   return data;
 };
 
@@ -84,6 +91,11 @@ const getStoredUser = () => {
 
 const UserCtx = createContext(null);
 const useUser = () => useContext(UserCtx);
+
+// ── Session-expiry bridge ──────────────────────────────────────────────────────
+// VTRXAppInner registers a handler; apiCall fires it when a 401 is received on
+// any non-auth route so the user is sent back to login automatically.
+let _onSessionExpired = null;
 
 // ── In-app payment sheet bridge ───────────────────────────────────────────────
 // Module-level ref so any component can open the sheet without prop-drilling.
@@ -9710,31 +9722,31 @@ function VTRXAppInner({ setPaymentPlan }) {
       if (res?.data?.user) {
         const u = res.data.user;
         setUser(prev=>({...prev,
-          id:                  u.id                  || prev.id,
-          name:                u.name                || prev.name,
-          email:               u.email               || prev.email,
-          username:            u.username            || prev.username,
-          avatarUrl:           u.avatarUrl           || prev.avatarUrl,
-          goal:                u.goal                || prev.goal,
-          fitnessLevel:        u.fitnessLevel        || prev.fitnessLevel,
-          level:               u.fitnessLevel        || prev.level,
-          daysPerWeek:         u.daysPerWeek         || prev.daysPerWeek,
-          days:                u.daysPerWeek         || prev.days,
-          weight:              u.weight              || prev.weight,
-          height:              u.height              || prev.height,
-          gender:              u.gender              || prev.gender,
-          age:                 u.age                 || prev.age,
-          equipment:           u.equipment           || prev.equipment,
-          location:            u.location            || prev.location,
-          sessionDuration:     u.sessionDuration     || prev.sessionDuration,
-          preferredStyles:     u.preferredStyles     || prev.preferredStyles || [],
+          id:                   u.id                   ?? prev.id,
+          name:                 u.name                 ?? prev.name,
+          email:                u.email                ?? prev.email,
+          username:             u.username             ?? prev.username,
+          avatarUrl:            u.avatarUrl            ?? prev.avatarUrl,
+          goal:                 u.goal                 ?? prev.goal,
+          fitnessLevel:         u.fitnessLevel         ?? prev.fitnessLevel,
+          level:                u.fitnessLevel         ?? prev.level,
+          daysPerWeek:          u.daysPerWeek          ?? prev.daysPerWeek,
+          days:                 u.daysPerWeek          ?? prev.days,
+          weight:               u.weight               ?? prev.weight,
+          height:               u.height               ?? prev.height,
+          gender:               u.gender               ?? prev.gender,
+          age:                  u.age                  ?? prev.age,
+          equipment:            u.equipment            ?? prev.equipment            ?? [],
+          location:             u.location             ?? prev.location,
+          sessionDuration:      u.sessionDuration      ?? prev.sessionDuration,
+          preferredStyles:      u.preferredStyles      ?? prev.preferredStyles      ?? [],
           wantsMealSuggestions: u.wantsMealSuggestions ?? prev.wantsMealSuggestions,
-          nutritionGoal:       u.nutritionGoal       || prev.nutritionGoal,
-          trackingPreference:  u.trackingPreference  || prev.trackingPreference,
-          dietaryRestrictions: u.dietaryRestrictions || prev.dietaryRestrictions || [],
-          mealsPerDay:         u.mealsPerDay         || prev.mealsPerDay,
-          bodyFatPercentage:   u.bodyFatPercentage   ?? prev.bodyFatPercentage,
-          goalWeightLbs:       u.goalWeightLbs       ?? prev.goalWeightLbs,
+          nutritionGoal:        u.nutritionGoal        ?? prev.nutritionGoal,
+          trackingPreference:   u.trackingPreference   ?? prev.trackingPreference,
+          dietaryRestrictions:  u.dietaryRestrictions  ?? prev.dietaryRestrictions  ?? [],
+          mealsPerDay:          u.mealsPerDay          ?? prev.mealsPerDay,
+          bodyFatPercentage:    u.bodyFatPercentage    ?? prev.bodyFatPercentage,
+          goalWeightLbs:        u.goalWeightLbs        ?? prev.goalWeightLbs,
         }));
         if (u.streakDays)           setStreakDay(u.streakDays);
         if (u._count?.workoutLogs)  setWorkoutsTotal(u._count.workoutLogs);
@@ -9780,6 +9792,17 @@ function VTRXAppInner({ setPaymentPlan }) {
   useEffect(()=>{
     _openPaymentSheet = (plan) => setPaymentPlan(plan || "monthly");
     return () => { _openPaymentSheet = null; };
+  }, []);
+
+  // When any protected API call returns 401, clear auth and send to login
+  useEffect(()=>{
+    _onSessionExpired = () => {
+      setUser({ name:"", age:"", gender:"", weight:"", height:"", goal:"", level:"", days:5 });
+      setIsPremium(false);
+      setPhase("login");
+    };
+    return () => { _onSessionExpired = null; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Show "Enable notifications" banner only if browser actually supports web push
@@ -9925,10 +9948,17 @@ function VTRXAppInner({ setPaymentPlan }) {
             const loginRes = await apiCall("/auth/login", { method:"POST", body: JSON.stringify({ email: pendingEmail, password: pendingPassword }) });
             if (loginRes?.data?.token) { storeAuth(loginRes.data.token, loginRes.data.user || {}); }
             if (loginRes?.data?.user)  { setUser(u=>({...u, ...loginRes.data.user})); }
-          } catch(_) {}
-          setPendingPassword(""); // clear sensitive data immediately
+            setPendingPassword(""); // clear sensitive data immediately
+            setPhase("preferences"); setScreen(2);
+          } catch(_) {
+            // Auto-login failed — send to login so the user can authenticate manually
+            setPendingPassword("");
+            setPhase("login");
+          }
+        } else {
+          // Password no longer in memory (page was refreshed before verifying) — send to login
+          setPhase("login");
         }
-        setPhase("preferences"); setScreen(2);
       }}
       onBack={()=>setPhase("login")}
     />
