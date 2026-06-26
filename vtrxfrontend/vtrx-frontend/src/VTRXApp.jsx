@@ -70,8 +70,9 @@ const storeAuth = (token, user) => {
 };
 const clearAuth = () => {
   if (typeof localStorage === "undefined") return;
-  localStorage.removeItem("vtrx_token");
-  localStorage.removeItem("vtrx_user");
+  Object.keys(localStorage)
+    .filter(k => k.startsWith('vtrx_'))
+    .forEach(k => localStorage.removeItem(k));
 };
 
 const getAuthToken = () => {
@@ -3219,7 +3220,7 @@ function ForgotPasswordPage({ onBack }) {
   const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
 
   const resetPass = async () => {
-    if (!code.trim())    { setErr("Enter the verification code."); return; }
+    if (!code.trim() || code.trim().length !== 6) { setErr("Please enter the complete 6-digit code."); return; }
     if (!passwordRegex.test(newPass)) {
       setErr("Password must be at least 8 characters and include uppercase, lowercase, and a number.");
       return;
@@ -3294,7 +3295,7 @@ function ForgotPasswordPage({ onBack }) {
   );
 }
 
-function LoginScreen({ onLogin, onSignUp, onForgot }) {
+function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
   const { setUser } = useUser();   // ← This was missing
 
   const [email, setEmail] = useState("");
@@ -3362,6 +3363,7 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
       console.error(e);
       if (e.code === "EMAIL_NOT_CONFIRMED") {
         setErrors({ general: "Please verify your email before logging in." });
+        if (onEmailVerify) onEmailVerify(email.trim().toLowerCase());
       } else {
         setErrors({ general: e.message || "Incorrect email or password." });
       }
@@ -9039,7 +9041,7 @@ function NutriRegenPage({ onBack, onNavigate }) {
 
 // MY PLAN PAGE — AI-generated 4-week personalised workout programme
 // ─────────────────────────────────────────────────────────────────────────────
-function MyPlanPage({ onBack }) {
+function MyPlanPage({ onBack, onNavigate }) {
   const [plan,            setPlan]            = useState(null);
   const [weekNumber,      setWeekNumber]      = useState(1);
   const [selectedSession, setSelectedSession] = useState(null);
@@ -9065,8 +9067,26 @@ function MyPlanPage({ onBack }) {
     setLoading(true); setError(null);
     try {
       const res = await apiCall('/workouts/active-plan');
-      if (res?.data?.plan) applyPlan(res.data);
-    } catch(_) { setError('Could not load your plan.'); }
+      if (res?.data?.plan) {
+        if (!Array.isArray(res.data.plan.weeks) || res.data.plan.weeks.length === 0) {
+          setPlan(null); // treat malformed plan as no plan
+        } else {
+          applyPlan(res.data);
+        }
+      }
+    } catch(err) {
+      const status = err?.status || err?.response?.status;
+      if (status === 401) {
+        // Session expired — apiCall already handles this globally, just clear state
+        setError(null);
+      } else if (status === 404) {
+        // No plan exists — show the generate plan CTA, not an error
+        setPlan(null);
+        setError(null);
+      } else {
+        setError('Could not load your plan. Check your connection and try again.');
+      }
+    }
     setLoading(false);
   };
 
@@ -9204,12 +9224,13 @@ function MyPlanPage({ onBack }) {
             <div style={{ fontFamily:FONT,fontWeight:800,fontSize:11,color:"#555",letterSpacing:1.5,marginBottom:10 }}>SESSION DETAIL</div>
 
             {(selectedSession.exercises||[]).map((ex,i)=>{
+              const normEx      = normaliseExercise({ ...ex, muscles: ex.muscleGroup, restSecs: ex.restSeconds });
               const isEx        = expandedEx===i;
               const vUrl        = exVideos[ex.name];
-              const repsDisplay = ex.isTimedExercise ? `${ex.durationSecs}s` : `${ex.reps} reps`;
+              const repsDisplay = ex.isTimedExercise ? `${ex.durationSecs ?? 30}s` : `${normEx.reps ?? '—'} reps`;
               const repsLabel   = ex.isTimedExercise ? 'TIME' : 'REPS';
-              const repsValue   = ex.isTimedExercise ? `${ex.durationSecs}s` : ex.reps;
-              const muscle      = (ex.muscleGroup||'').split('_').map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
+              const repsValue   = ex.isTimedExercise ? `${ex.durationSecs ?? 30}s` : (normEx.reps ?? '—');
+              const muscle      = (normEx.muscles||'').split('_').map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
               return (
                 <div key={i} style={{ background:CARD,borderRadius:14,marginBottom:8,border:`1.5px solid ${isEx?PRIMARY:BORDER}`,overflow:"hidden",transition:"border-color 0.18s" }}>
                   <div onClick={()=>{ const next=isEx?null:i; setExpandedEx(next); if(next!==null) fetchExVideo(ex.name); }}
@@ -9219,7 +9240,7 @@ function MyPlanPage({ onBack }) {
                     </div>
                     <div style={{ flex:1 }}>
                       <div style={{ fontFamily:FONT,fontWeight:800,fontSize:13,color:"#fff",marginBottom:2 }}>{ex.name}</div>
-                      <div style={{ fontFamily:FONT,fontSize:11,color:"#555" }}>{ex.sets} sets × {repsDisplay} · {ex.restSeconds}s rest</div>
+                      <div style={{ fontFamily:FONT,fontSize:11,color:"#555" }}>{normEx.sets} sets × {repsDisplay} · {normEx.restSecs}s rest</div>
                     </div>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={isEx?PRIMARY:"#444"} strokeWidth="2"
                       style={{ transform:isEx?"rotate(90deg)":"rotate(0)",transition:"transform 0.18s" }}>
@@ -9229,7 +9250,7 @@ function MyPlanPage({ onBack }) {
                   {isEx&&(
                     <div style={{ padding:"0 15px 14px",borderTop:`1px solid ${BORDER}` }}>
                       <div style={{ display:"flex",gap:7,marginTop:12,marginBottom:12 }}>
-                        {[{l:"SETS",v:ex.sets},{l:repsLabel,v:repsValue},{l:"REST",v:`${ex.restSeconds}s`},{l:"MUSCLE",v:muscle}].map(s=>(
+                        {[{l:"SETS",v:normEx.sets},{l:repsLabel,v:repsValue},{l:"REST",v:`${normEx.restSecs}s`},{l:"MUSCLE",v:muscle}].map(s=>(
                           <div key={s.l} style={{ flex:1,background:CARD2,borderRadius:10,padding:"8px 4px",textAlign:"center" }}>
                             <div style={{ fontFamily:FONT,fontSize:9,color:"#444",letterSpacing:1.2,marginBottom:3 }}>{s.l}</div>
                             <div style={{ fontFamily:FONT,fontWeight:800,fontSize:13,color:PRIMARY }}>{s.v}</div>
@@ -9247,7 +9268,21 @@ function MyPlanPage({ onBack }) {
               );
             })}
 
-            <button style={{ width:"100%",padding:"15px",borderRadius:16,background:PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",letterSpacing:0.3,boxShadow:`0 4px 20px ${PRIMARY}40`,marginBottom:14 }}>
+            <button onClick={()=>{
+              const workoutObj = {
+                id: null,
+                name: selectedSession.sessionName,
+                type: selectedSession.type || 'STRENGTH',
+                duration: selectedSession.durationMins,
+                calories: selectedSession.calories,
+                exercises: (selectedSession.exercises || []).map(ex => normaliseExercise({
+                  ...ex,
+                  muscles: ex.muscleGroup,
+                  restSecs: ex.restSeconds,
+                })),
+              };
+              onNavigate("workoutDetail", workoutObj);
+            }} style={{ width:"100%",padding:"15px",borderRadius:16,background:PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",letterSpacing:0.3,boxShadow:`0 4px 20px ${PRIMARY}40`,marginBottom:14 }}>
               Start Session
             </button>
           </div>
@@ -9694,6 +9729,10 @@ function VTRXAppInner({ setPaymentPlan }) {
       // Fire-and-forget: generate free AI onboarding analysis + schedule 5-min notification
       apiCall("/ai/onboarding-analysis", { method: "POST" }).catch(() => {});
     }
+    if (!getAuthToken()) {
+      setPhase("login");
+      return;
+    }
     setPhase("dashboard");
   };
 
@@ -10055,7 +10094,7 @@ function VTRXAppInner({ setPaymentPlan }) {
     />
   );
   if (phase==="login") return (
-    <LoginScreen onLogin={goToDashboard} onSignUp={()=>{ setPhase("preferences"); setScreen(0); }} onForgot={()=>setPhase("forgot")}/>
+    <LoginScreen onLogin={goToDashboard} onSignUp={()=>{ setPhase("preferences"); setScreen(0); }} onForgot={()=>setPhase("forgot")} onEmailVerify={(email)=>{ setPendingEmail(email); setPhase("emailVerify"); }}/>
   );
   if (phase==="forgot") return (
     <ForgotPasswordPage onBack={()=>setPhase("login")}/>
@@ -10064,7 +10103,7 @@ function VTRXAppInner({ setPaymentPlan }) {
   if (phase==="preferences") {
     const SCREENS = [
       <SignUpScreen              key={0} onContinue={(email, password)=>{ if(email){ setPendingEmail(email); setPendingPassword(password||""); setPhase("emailVerify"); } else goNext(); }} onBack={()=>setPhase("onboarding")} onLogin={()=>setPhase("login")}/>,
-      <EmailVerifyScreen   key={1} onContinue={goNext} onBack={goPrev}/>,
+      <EmailVerifyScreen   key={1} email={pendingEmail} onVerified={goNext} onBack={goPrev}/>,
       <BodyScreen                key={2} onContinue={goNext} onBack={goPrev}/>,
       <WorkoutScreen             key={3} onContinue={goNext} onBack={goPrev}/>,
       <NutritionScreen           key={4} onContinue={goNext} onBack={goPrev}/>,
@@ -10147,7 +10186,7 @@ function VTRXAppInner({ setPaymentPlan }) {
   if (phase !== "dashboard") return null;
 
   // Inner pages
-  if (innerPage==="myPlan")        return <MyPlanPage onBack={goBack}/>;
+  if (innerPage==="myPlan")        return <MyPlanPage onBack={goBack} onNavigate={navigate}/>;
   if (innerPage==="upgrade")       return <UpgradePlanPage onBack={goBack}/>;
   if (innerPage==="aiSummary")     return <AISummaryPage energyKey={energyKey} workoutDone={workoutDone} logId={lastWorkoutLogId} onBack={goBack}/>;
   if (innerPage==="nutrition")     return <NutritionPage meal={MEALS[mealIdx % MEALS.length]} onBack={goBack}/>;
