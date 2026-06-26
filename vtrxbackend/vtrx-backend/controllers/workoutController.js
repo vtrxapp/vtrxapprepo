@@ -8,9 +8,7 @@ const ymove     = require('../services/ymoveService');
 const logger    = require('../utils/logger');
 const notif     = require('../services/notificationService');
 const pine      = require('../services/pineconeService');
-const { resolveLibrary }     = require('../data/exerciseLibrary');
-const { generateSession }    = require('../data/planGenerator');
-const { PLAN_TEMPLATES }     = require('../data/planTemplates');
+const { generateSession, SCHEDULES, SESSIONS } = require('../data/planGenerator');
 
 // ── GET /api/workouts — Get available workout programmes ──────────────────────
 const getWorkouts = async (req, res) => {
@@ -1836,20 +1834,21 @@ const generateSessionForDay = async (req, res) => {
                 equipment: true, sessionDuration: true, weight: true, gender: true },
     });
 
-    // Map the scheduled date's day-of-week to the matching plan template session
+    // Map the scheduled date's day-of-week to the matching session template
     const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
     const dayOfWeek = DAY_NAMES[new Date(entry.scheduledDate).getDay()];
     const frequency = parseInt(user?.daysPerWeek || 3);
-    const templateKey = frequency <= 3 ? 'THREE_DAY' : frequency <= 4 ? 'FOUR_DAY' : 'FIVE_DAY';
-    const template    = PLAN_TEMPLATES[templateKey];
+    const days      = frequency <= 2 ? 2 : frequency <= 3 ? 3 : frequency <= 4 ? 4 : 5;
+    const schedule  = SCHEDULES[days] || SCHEDULES[3];
 
-    const sessionTpl  = template.schedule.find(s => !s.isRestDay && s.dayOfWeek === dayOfWeek)
-                     || template.schedule.find(s => !s.isRestDay);
-    const muscleGroups = sessionTpl?.muscleGroups || ['chest', 'back', 'legs', 'core'];
+    const dayEntry   = schedule.find(([d]) => d === dayOfWeek);
+    const sessionKey = (dayEntry && dayEntry[1] !== 'REST') ? dayEntry[1]
+                     : (schedule.find(([, k]) => k !== 'REST')?.[1] || 'FULL_BODY_A');
+    const tpl        = SESSIONS[sessionKey] || SESSIONS.FULL_BODY_A;
+    const movements  = tpl.movements;
 
-    // Resolve library and generate session (max 5 exercises)
-    const library = await resolveLibrary(prisma);
-    const session  = generateSession(user, library, muscleGroups, 5);
+    // Generate session (max 5 exercises)
+    const session = generateSession(user, movements, 5);
 
     // Resolve/create Exercise DB records for each generated exercise
     const enriched = [];
@@ -1872,9 +1871,7 @@ const generateSessionForDay = async (req, res) => {
     }
 
     // Build a human-readable workout name
-    const sessionLabel = muscleGroups
-      .map(g => g.charAt(0).toUpperCase() + g.slice(1))
-      .join(' & ');
+    const sessionLabel = tpl.name;
 
     // Create new Workout + WorkoutExercise records in one operation
     const workout = await prisma.workout.create({
@@ -1890,7 +1887,7 @@ const generateSessionForDay = async (req, res) => {
             exerciseId: ex.dbId,
             order:      i,
             sets:       ex.sets,
-            reps:       String(ex.reps ?? (ex.durationSecs ? `${ex.durationSecs}s` : '10')),
+            reps:       String(ex.reps ?? (ex.defaultDurationSecs ? `${ex.defaultDurationSecs}s` : '10')),
             restSecs:   ex.restSeconds || 60,
           })),
         },
