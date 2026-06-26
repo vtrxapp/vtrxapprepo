@@ -10,7 +10,7 @@ Sentry.init({
   dsn: import.meta.env.VITE_SENTRY_DSN,
   integrations: [
     Sentry.browserTracingIntegration(),
-    Sentry.replayIntegration({ maskAllText: false, blockAllMedia: false }),
+    Sentry.replayIntegration({ maskAllText: true, blockAllMedia: true }),
   ],
   tracesSampleRate: 0.2,       // 20% of transactions captured for performance
   replaysSessionSampleRate: 0, // session replays off by default (bandwidth cost)
