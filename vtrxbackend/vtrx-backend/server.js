@@ -78,8 +78,6 @@ const aiLimiter = rateLimit({
 });
 
 app.use('/api/', limiter);
-app.use('/api/auth/login',  authLimiter);
-app.use('/api/auth/signup', authLimiter);
 app.use('/api/ai/',         aiLimiter);
 
 // ── CRITICAL: Stripe webhook needs raw body ───────────────────────────────────

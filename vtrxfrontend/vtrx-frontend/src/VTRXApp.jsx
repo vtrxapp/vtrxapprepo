@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, createContext, useContext, useImperativeHandle, forwardRef } from "react";
+import { useAuth as useClerkAuth, useSignUp as useClerkSignUp, useSignIn as useClerkSignIn, useClerk } from '@clerk/clerk-react';
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, PaymentRequestButtonElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { getNotificationToken, onForegroundMessage, isPushSupported } from "./firebase";
@@ -41,7 +42,7 @@ const apiCall = async (endpoint, options = {}) => {
     if (endpoint === "/workouts/log")        return { success:true };
     return { success:true, data:{} };
   }
-  const token = typeof localStorage !== "undefined" ? localStorage.getItem("vtrx_token") : null;
+  const token = _getClerkToken ? await _getClerkToken() : null;
   const res   = await fetch(`${API_URL}${endpoint}`, {
     headers: {
       "Content-Type": "application/json",
@@ -74,9 +75,7 @@ const clearAuth = () => {
   localStorage.removeItem("vtrx_user");
 };
 
-const getAuthToken = () => {
-  try { return typeof localStorage !== "undefined" ? localStorage.getItem("vtrx_token") : null; } catch(_e){ return null; }
-};
+const getAuthToken = () => _isSignedIn ? 'clerk_active' : null;
 const getCachedUser = () => {
   try { return JSON.parse(localStorage.getItem("vtrx_user") || "null"); } catch(_e){ return null; }
 };
@@ -96,6 +95,9 @@ const useUser = () => useContext(UserCtx);
 // VTRXAppInner registers a handler; apiCall fires it when a 401 is received on
 // any non-auth route so the user is sent back to login automatically.
 let _onSessionExpired = null;
+// Clerk token bridge — VTRXAppInner registers getToken(); apiCall() calls it
+let _getClerkToken = null;
+let _isSignedIn = false;
 
 // ── Browser back-button bridge ────────────────────────────────────────────────
 // Child hubs (WeightsHub, NutritionHub) set this when they have a sub-page open
@@ -3195,25 +3197,30 @@ function ForgotPasswordPage({ onBack }) {
   const [confirmPass, setConfirmPass] = useState("");
   const [err, setErr]             = useState("");
   const [loading, setLoading]     = useState(false);
-  const [verificationId, setVerificationId] = useState("");
-  const [emailAddressId, setEmailAddressId] = useState("");
+  const { signIn, setActive } = useClerkSignIn();
 
   const sendCode = async () => {
     if (!email.trim()) { setErr("Please enter your email."); return; }
     setErr(""); setLoading(true);
     try {
-      const res = await apiCall("/auth/forgot-password", { method:"POST", body:JSON.stringify({ email:email.trim().toLowerCase() }) });
-      if (res?.data?.verificationId) setVerificationId(res.data.verificationId);
-      if (res?.data?.emailAddressId) setEmailAddressId(res.data.emailAddressId);
+      await signIn.create({
+        strategy: 'reset_password_email_code',
+        identifier: email.trim().toLowerCase(),
+      });
       setStep("code");
-    } catch (e) { setErr(e.message || "Failed to send code."); }
+    } catch (e) {
+      const clerkErr = e?.errors?.[0];
+      // Treat "user not found" as success to avoid email enumeration
+      if (clerkErr?.code === 'form_identifier_not_found') { setStep("code"); }
+      else { setErr(clerkErr?.longMessage || clerkErr?.message || e?.message || "Failed to send code."); }
+    }
     finally { setLoading(false); }
   };
 
   const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
 
   const resetPass = async () => {
-    if (!code.trim())    { setErr("Enter the verification code."); return; }
+    if (!code.trim() || code.trim().length !== 6) { setErr("Please enter the complete 6-digit code."); return; }
     if (!passwordRegex.test(newPass)) {
       setErr("Password must be at least 8 characters and include uppercase, lowercase, and a number.");
       return;
@@ -3221,9 +3228,22 @@ function ForgotPasswordPage({ onBack }) {
     if (newPass !== confirmPass) { setErr("Passwords do not match."); return; }
     setErr(""); setLoading(true);
     try {
-      await apiCall("/auth/reset-password", { method:"POST", body:JSON.stringify({ email:email.trim().toLowerCase(), code:code.trim(), newPassword:newPass, verificationId, emailAddressId }) });
+      const result = await signIn.attemptFirstFactor({
+        strategy: 'reset_password_email_code',
+        code: code.trim(),
+        password: newPass,
+      });
+      if (result.status === 'complete') {
+        await setActive({ session: result.createdSessionId });
+      }
       setStep("done");
-    } catch (e) { setErr(e.message || "Failed to reset password."); }
+    } catch (e) {
+      const clerkErr = e?.errors?.[0];
+      if (clerkErr?.code === 'form_code_incorrect') { setErr("Incorrect code. Please try again."); }
+      else if (clerkErr?.code === 'form_code_expired') { setErr("Code expired. Please request a new one."); }
+      else if (clerkErr?.code?.includes('password')) { setErr(clerkErr?.longMessage || clerkErr?.message || "Password does not meet requirements."); }
+      else { setErr(clerkErr?.longMessage || clerkErr?.message || e?.message || "Failed to reset password."); }
+    }
     finally { setLoading(false); }
   };
 
@@ -3288,8 +3308,19 @@ function ForgotPasswordPage({ onBack }) {
   );
 }
 
-function LoginScreen({ onLogin, onSignUp, onForgot }) {
+function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
   const { setUser } = useUser();   // ← This was missing
+  const { signIn, setActive } = useClerkSignIn();
+  const { isLoaded: clerkLoaded, isSignedIn } = useClerkAuth();
+
+  React.useEffect(() => {
+    if (!clerkLoaded || !isSignedIn) return;
+    // Already signed in (e.g., after password reset) — fetch profile and route
+    apiCall("/users/profile")
+      .then(res => onLogin(res?.data?.user || {}))
+      .catch(() => onLogin({}));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clerkLoaded, isSignedIn]);
 
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
@@ -3329,38 +3360,41 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
     setLoading(true);
 
     try {
-      const data = await apiCall("/auth/login", {
-        method: "POST",
-        body: JSON.stringify({
-          email: email.trim().toLowerCase(),
-          password: pass,
-          clientHour: new Date().getHours(),
-        }),
+      const result = await signIn.create({
+        identifier: email.trim().toLowerCase(),
+        password: pass,
       });
 
-      const d = data.data || data;
-
-      if (data.success) {
-        storeAuth(d.token, d.user);
-        
-        // Update global user state
-        if (d.user) {
-          setUser(u => ({...u, ...d.user}));
+      if (result.status === 'complete') {
+        await setActive({ session: result.createdSessionId });
+        // Fetch Prisma user profile now that Clerk session is active
+        try {
+          const profileRes = await apiCall("/users/profile");
+          const u = profileRes?.data?.user || {};
+          if (u.id) setUser(prev => ({...prev, ...u}));
+          onLogin(u);
+        } catch(_) {
+          onLogin({});
         }
-
-        onLogin(d.user);
       } else {
-        setErrors({ general: data.message || "Login failed" });
+        setErrors({ general: "Login incomplete — please try again." });
       }
     } catch (e) {
       console.error(e);
-      if (e.code === "EMAIL_NOT_CONFIRMED") {
+      const clerkErr = e?.errors?.[0];
+      if (clerkErr?.code === 'session_exists' || e?.status === 422) {
+        // Already signed in
+        onLogin({});
+      } else if (clerkErr?.code === 'form_identifier_not_found' || clerkErr?.code === 'form_password_incorrect' || clerkErr?.code === 'not_found') {
+        setErrors({ general: "Incorrect email or password." });
+      } else if (clerkErr?.code === 'strategy_for_user_invalid' || clerkErr?.code === 'verification_failed') {
         setErrors({ general: "Please verify your email before logging in." });
+        if (onEmailVerify) onEmailVerify(email.trim().toLowerCase());
       } else {
-        setErrors({ general: e.message || "Incorrect email or password." });
+        setErrors({ general: clerkErr?.longMessage || clerkErr?.message || e?.message || "Incorrect email or password." });
       }
-    } finally { 
-      setLoading(false); 
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -3456,6 +3490,7 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
   const [loading,   setLoading]   = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const { signUp } = useClerkSignUp();
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -3485,27 +3520,26 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
     setErrors({}); setLoading(true);
 
     try {
-      const data = await apiCall("/auth/signup", {
-        method: "POST",
-        body:   JSON.stringify({
-          name:     f.name.trim(),
-          username: f.username.trim().toLowerCase(),
-          email:    f.email.trim().toLowerCase(),
-          password: f.password,
-        }),
+      await signUp.create({
+        emailAddress: f.email.trim().toLowerCase(),
+        password:     f.password,
+        username:     f.username.trim().toLowerCase(),
+        firstName:    f.name.split(' ')[0],
+        lastName:     f.name.split(' ').slice(1).join(' ') || undefined,
       });
-
-      if (data.success && typeof localStorage !== "undefined") {
-        localStorage.setItem("vtrx_pending_email", f.email.trim().toLowerCase());
-        if (data.data?.verificationId)  localStorage.setItem("vtrx_verification_id", data.data.verificationId);
-        if (data.data?.emailAddressId)  localStorage.setItem("vtrx_email_address_id", data.data.emailAddressId);
-      }
-
+      await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
       onContinue(f.email.trim().toLowerCase(), f.password);
     } catch (e) {
-      setErrors({ general: e.message || "Signup failed. Please try again." });
-    } finally { 
-      setLoading(false); 
+      const clerkErr = e?.errors?.[0];
+      if (clerkErr?.code === 'form_identifier_exists') {
+        setErrors({ general: "An account with this email already exists." });
+      } else if (clerkErr?.code === 'form_password_pwned' || clerkErr?.code?.includes('password')) {
+        setErrors({ general: clerkErr?.longMessage || clerkErr?.message || "Password does not meet requirements." });
+      } else {
+        setErrors({ general: clerkErr?.longMessage || clerkErr?.message || e?.message || "Signup failed. Please try again." });
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -3588,50 +3622,29 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
 }
 
 function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
-  const email = emailProp || (typeof localStorage !== "undefined" ? localStorage.getItem("vtrx_pending_email") || "" : "");
-  const [code, setCode] = React.useState("");
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState("");
-  const [resent,    setResent]    = React.useState(false);
+  const email = emailProp || "";
+  const { signUp, setActive } = useClerkSignUp();
+  const [code,      setCode]      = React.useState("");
+  const [loading,   setLoading]   = React.useState(false);
+  const [error,     setError]     = React.useState("");
   const [resending, setResending] = React.useState(false);
   const [cooldown,  setCooldown]  = React.useState(0);
-  // Keep both IDs in state — updated atomically on resend so verify() always has the fresh pair
-  const [verificationId, setVerificationId] = React.useState(
-    typeof localStorage !== "undefined" ? localStorage.getItem("vtrx_verification_id") || "" : ""
-  );
-  const [emailAddressId, setEmailAddressId] = React.useState(
-    typeof localStorage !== "undefined" ? localStorage.getItem("vtrx_email_address_id") || "" : ""
-  );
 
   const verify = async () => {
-    if (code.length !== 6) {
-      setError("Please enter the full 6-digit code");
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-
+    if (code.length !== 6) { setError("Please enter the full 6-digit code"); return; }
+    setLoading(true); setError("");
     try {
-      const response = await apiCall("/auth/confirm-email", {
-        method: "POST",
-        body: JSON.stringify({ email, code: code.trim(), verificationId, emailAddressId }),
-      });
-
-      if (response && response.success === true) {
-        if (typeof localStorage !== "undefined") {
-          localStorage.removeItem("vtrx_verification_id");
-          localStorage.removeItem("vtrx_email_address_id");
-        }
+      const result = await signUp.attemptEmailAddressVerification({ code });
+      if (result.status === 'complete') {
+        await setActive({ session: result.createdSessionId });
         onVerified();
       } else {
-        throw new Error(response?.message || "Invalid verification code");
+        throw new Error("Verification incomplete — please try again");
       }
     } catch (e) {
-      setError(e.message || "Invalid or expired code. Please try again.");
-    } finally {
-      setLoading(false);
-    }
+      const clerkErr = e?.errors?.[0];
+      setError(clerkErr?.longMessage || clerkErr?.message || e?.message || "Invalid or expired code. Please try again.");
+    } finally { setLoading(false); }
   };
 
   React.useEffect(() => {
@@ -3642,28 +3655,16 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
 
   const resend = async () => {
     if (cooldown > 0 || resending) return;
-    setResending(true);
-    setError("");
+    setResending(true); setError("");
     try {
-      const res = await apiCall("/auth/resend-code", { method:"POST", body:JSON.stringify({ email, emailAddressId }) });
-      const newVerId  = res?.data?.verificationId  || "";
-      const newAddrId = res?.data?.emailAddressId  || emailAddressId;
-      setVerificationId(newVerId);
-      setEmailAddressId(newAddrId);
-      if (typeof localStorage !== "undefined") {
-        if (newVerId)  localStorage.setItem("vtrx_verification_id",  newVerId);
-        else           localStorage.removeItem("vtrx_verification_id");
-        if (newAddrId) localStorage.setItem("vtrx_email_address_id", newAddrId);
-      }
-      setResent(true);
+      await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
       setError("New code sent — check your inbox (and spam folder).");
       setCooldown(60);
-      setTimeout(() => { setResent(false); setError(""); }, 5000);
+      setTimeout(() => setError(""), 5000);
     } catch (e) {
-      setError(e.message || "Failed to resend code. Please try again.");
-    } finally {
-      setResending(false);
-    }
+      const clerkErr = e?.errors?.[0];
+      setError(clerkErr?.message || e?.message || "Failed to resend code. Please try again.");
+    } finally { setResending(false); }
   };
 
   return (
@@ -3686,17 +3687,17 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
 
       {error && <div style={{ fontFamily:FONT,fontSize:13,color:"#EF4444",marginBottom:16,textAlign:"center",fontWeight:600 }}>{error}</div>}
 
-      <button 
-        onClick={verify} 
-        disabled={loading || code.length !== 6} 
+      <button
+        onClick={verify}
+        disabled={loading || code.length !== 6}
         style={{ width:"100%",padding:"16px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1.5,cursor:loading?"not-allowed":"pointer",opacity:loading||code.length!==6?0.7:1,marginBottom:16,boxShadow:`0 4px 24px ${PRIMARY}44` }}
       >
         {loading ? "VERIFYING..." : "VERIFY EMAIL"}
       </button>
 
       <button onClick={resend} disabled={cooldown > 0 || resending}
-        style={{ background:"none",border:"none",fontFamily:FONT,fontSize:13,color:resent?"#22C55E":cooldown>0?"#555":PRIMARY,cursor:cooldown>0||resending?"default":"pointer",marginBottom:12,opacity:cooldown>0?0.6:1 }}>
-        {resending ? "Sending..." : resent ? "Code sent!" : cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}
+        style={{ background:"none",border:"none",fontFamily:FONT,fontSize:13,color:cooldown>0?"#555":PRIMARY,cursor:cooldown>0||resending?"default":"pointer",marginBottom:12,opacity:cooldown>0?0.6:1 }}>
+        {resending ? "Sending..." : cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}
       </button>
       <button onClick={onBack} style={{ background:"none",border:"none",fontFamily:FONT,fontSize:13,color:"#555",cursor:"pointer" }}>
         Back to Sign Up
@@ -9643,6 +9644,8 @@ function SplashScreen() {
 function VTRXAppInner({ setPaymentPlan }) {
 
   const { user, setUser, profileImg, isPremium, setIsPremium } = useUser();
+  const { isLoaded: clerkLoaded, isSignedIn, getToken } = useClerkAuth();
+  const { signOut: clerkSignOut } = useClerk();
 
   // ── Phase / onboarding state ──────────────────────────────────────────────
   const [phase, setPhase]           = useState("splash");
@@ -9661,7 +9664,7 @@ function VTRXAppInner({ setPaymentPlan }) {
       return;
     }
     // Save onboarding profile to backend
-    if (!DEMO_MODE && getAuthToken()) {
+    if (!DEMO_MODE && isSignedIn) {
       try {
         await apiCall("/users/profile", {
           method: "PUT",
@@ -9687,6 +9690,10 @@ function VTRXAppInner({ setPaymentPlan }) {
       } catch(_e){}
       // Fire-and-forget: generate free AI onboarding analysis + schedule 5-min notification
       apiCall("/ai/onboarding-analysis", { method: "POST" }).catch(() => {});
+    }
+    if (!isSignedIn) {
+      setPhase("login");
+      return;
     }
     setPhase("dashboard");
   };
@@ -9756,9 +9763,8 @@ function VTRXAppInner({ setPaymentPlan }) {
   // Fetch today's AI-generated daily workout (ymove-first).
   // Cache the result in localStorage keyed by userId+date so re-mounts don't burn API quota.
   useEffect(()=>{
-    const token  = getAuthToken();
     const userId = liveUser?.id;
-    if (!token || !userId) return;
+    if (!isSignedIn || !userId) return;
 
     const today    = new Date().toLocaleDateString('en-CA');
     const cacheKey = `vtrx_daily_workout_${userId}`;
@@ -9784,7 +9790,11 @@ function VTRXAppInner({ setPaymentPlan }) {
   }, [liveUser?.id]);
 
   // Load real data on mount — also drives splash → onboarding/dashboard transition
+  const _splashRanRef = useRef(false);
   useEffect(()=>{
+    if (!clerkLoaded || _splashRanRef.current) return;
+    _splashRanRef.current = true;
+
     const MIN_SPLASH_MS = 2500;
     const splashStart   = Date.now();
     const afterSplash   = (nextPhase) => {
@@ -9794,8 +9804,7 @@ function VTRXAppInner({ setPaymentPlan }) {
     };
 
     if (DEMO_MODE) { afterSplash("onboarding"); return; }
-    const token = getAuthToken();
-    if (!token) { afterSplash("onboarding"); return; }
+    if (!isSignedIn) { afterSplash("onboarding"); return; }
 
     apiCall("/users/profile").then(res=>{
       if (res?.data?.user) {
@@ -9847,7 +9856,7 @@ function VTRXAppInner({ setPaymentPlan }) {
         }
       }).catch(()=>{});
     }).catch(()=>{ afterSplash("onboarding"); });
-  }, []);
+  }, [clerkLoaded, isSignedIn]);
 
   // ── Handle Stripe redirect on app load ─────────────────────────────────────
   useEffect(()=>{
@@ -9873,18 +9882,25 @@ function VTRXAppInner({ setPaymentPlan }) {
     return () => { _openPaymentSheet = null; };
   }, []);
 
+  // Register Clerk token getter as module-level bridge for apiCall()
+  useEffect(()=>{
+    _getClerkToken = () => getToken();
+    return () => { _getClerkToken = null; };
+  }, [getToken]);
+
+  useEffect(() => { _isSignedIn = isSignedIn; return () => { _isSignedIn = false; }; }, [isSignedIn]);
+
   // When any protected API call returns 401, clear auth and send to login.
   // The 500ms delay avoids false logouts during navigation where a 401 can
   // transiently fire before the new route establishes a fresh token context.
   useEffect(()=>{
     _onSessionExpired = () => {
-      setTimeout(() => {
-        if (!getAuthToken()) {
-          setUser({ name:"", age:"", gender:"", weight:"", height:"", goal:"", level:"", days:5 });
-          setIsPremium(false);
-          setPhase("login");
-        }
-      }, 500);
+      clerkSignOut().catch(()=>{}).finally(() => {
+        clearAuth();
+        setUser({ name:"", age:"", gender:"", weight:"", height:"", goal:"", level:"", days:5 });
+        setIsPremium(false);
+        setPhase("login");
+      });
     };
     return () => { _onSessionExpired = null; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -10026,30 +10042,28 @@ function VTRXAppInner({ setPaymentPlan }) {
   if (phase==="emailVerify") return (
     <EmailVerifyScreen
       email={pendingEmail}
-      onVerified={async ()=>{
-        // Auto-login after email verification so the user has a token for all subsequent API calls
-        if (pendingEmail && pendingPassword) {
-          try {
-            const loginRes = await apiCall("/auth/login", { method:"POST", body: JSON.stringify({ email: pendingEmail, password: pendingPassword }) });
-            if (loginRes?.data?.token) { storeAuth(loginRes.data.token, loginRes.data.user || {}); }
-            if (loginRes?.data?.user)  { setUser(u=>({...u, ...loginRes.data.user})); }
-            setPendingPassword(""); // clear sensitive data immediately
-            setPhase("preferences"); setScreen(2);
-          } catch(_) {
-            // Auto-login failed — send to login so the user can authenticate manually
-            setPendingPassword("");
-            setPhase("login");
-          }
-        } else {
-          // Password no longer in memory (page was refreshed before verifying) — send to login
-          setPhase("login");
-        }
+      onVerified={()=>{
+        // Clerk already established the session in EmailVerifyScreen via setActive()
+        setPendingPassword("");
+        setPhase("preferences"); setScreen(2);
       }}
       onBack={()=>setPhase("login")}
     />
   );
   if (phase==="login") return (
-    <LoginScreen onLogin={goToDashboard} onSignUp={()=>{ setPhase("preferences"); setScreen(0); }} onForgot={()=>setPhase("forgot")}/>
+    <LoginScreen
+      onLogin={(u) => {
+        // u comes from /users/profile — use it directly to avoid stale user state
+        if (u?.goal && u?.fitnessLevel) {
+          setPhase("dashboard");
+        } else {
+          // No onboarding complete yet — send to body metrics (skip signup/verify)
+          setPhase("preferences"); setScreen(2);
+        }
+      }}
+      onSignUp={()=>{ setPhase("preferences"); setScreen(0); }}
+      onForgot={()=>setPhase("forgot")}
+      onEmailVerify={(email)=>{ setPendingEmail(email); setPhase("emailVerify"); }}/>
   );
   if (phase==="forgot") return (
     <ForgotPasswordPage onBack={()=>setPhase("login")}/>
@@ -10058,7 +10072,7 @@ function VTRXAppInner({ setPaymentPlan }) {
   if (phase==="preferences") {
     const SCREENS = [
       <SignUpScreen              key={0} onContinue={(email, password)=>{ if(email){ setPendingEmail(email); setPendingPassword(password||""); setPhase("emailVerify"); } else goNext(); }} onBack={()=>setPhase("onboarding")} onLogin={()=>setPhase("login")}/>,
-      <EmailVerifyScreen   key={1} onContinue={goNext} onBack={goPrev}/>,
+      <EmailVerifyScreen   key={1} email={pendingEmail} onVerified={goNext} onBack={goPrev}/>,
       <BodyScreen                key={2} onContinue={goNext} onBack={goPrev}/>,
       <WorkoutScreen             key={3} onContinue={goNext} onBack={goPrev}/>,
       <NutritionScreen           key={4} onContinue={goNext} onBack={goPrev}/>,
@@ -10071,7 +10085,7 @@ function VTRXAppInner({ setPaymentPlan }) {
   // ── Dashboard ─────────────────────────────────────────────────────────────
   const handleLogout = async () => {
     try {
-      await apiCall("/auth/logout", { method: "POST", body: JSON.stringify({}) });
+      await clerkSignOut();
     } catch(_e){} finally {
       resetAnalytics();
       clearAuth();
