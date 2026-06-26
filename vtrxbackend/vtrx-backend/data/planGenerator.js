@@ -457,9 +457,10 @@ function validatePlan(plan) {
  * @param {object}   library       Resolved exercise library from resolveLibrary()
  * @param {string[]} muscleGroups  Target muscle groups for this session
  * @param {number}   [maxEx=5]     Hard cap on number of exercises
+ * @param {number}   [weekNum=1]   Current week number (used to vary exercise selection)
  * @returns {{ exercises, durationMins, calories, type, sets }}
  */
-function generateSession(userProfile, library, muscleGroups, maxEx = 5) {
+function generateSession(userProfile, library, muscleGroups, maxEx = 5, weekNum = 1) {
   const { goal, level, equipTier, sex, duration, weightLbs } = normaliseProfile(userProfile);
 
   const goalRules    = GOAL_RULES[goal]   || GOAL_RULES.stay_active;
@@ -478,7 +479,7 @@ function generateSession(userProfile, library, muscleGroups, maxEx = 5) {
     const available = getAvailableExercises(library, muscleGroup, allowedTiers, levelRules.difficultiesAllowed);
     if (available.length === 0) continue;
 
-    const selected = selectExercisesForWeek(available, levelRules.exercisesPerMuscleGroup, 1, goalRules.compoundFirst);
+    const selected = selectExercisesForWeek(available, levelRules.exercisesPerMuscleGroup, weekNum, goalRules.compoundFirst);
     for (const ex of selected) {
       if (exercises.length >= cap) break;
       const midReps = Math.floor((goalRules.repsPerSet.min + goalRules.repsPerSet.max) / 2);
@@ -502,7 +503,7 @@ function generateSession(userProfile, library, muscleGroups, maxEx = 5) {
   if (goalRules.cardioFinisher && exercises.length < cap) {
     const cardioAvail = getAvailableExercises(library, 'cardio', allowedTiers, levelRules.difficultiesAllowed);
     if (cardioAvail.length > 0) {
-      const [finisher] = selectExercisesForWeek(cardioAvail, 1, 1, false);
+      const [finisher] = selectExercisesForWeek(cardioAvail, 1, weekNum, false);
       if (finisher) {
         exercises.push({
           ymoveId:         finisher.ymoveId || null,

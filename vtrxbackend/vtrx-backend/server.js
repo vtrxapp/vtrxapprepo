@@ -40,12 +40,25 @@ const allowedOrigins = [
   'http://localhost:3000',
 ].filter(Boolean);
 
+// ALLOWED_VERCEL_ORIGINS (optional, comma-separated list of exact Vercel origin URLs,
+// e.g. "https://vtrx-app.vercel.app,https://vtrx-staging.vercel.app").
+// When set, ONLY those specific Vercel origins are allowed — the *.vercel.app wildcard
+// is disabled. If not set, ANY *.vercel.app subdomain is allowed (legacy behaviour).
+const allowedVercelOrigins = process.env.ALLOWED_VERCEL_ORIGINS
+  ? process.env.ALLOWED_VERCEL_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
+  : null;
+
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (mobile apps, Postman)
     if (!origin) return callback(null, true);
-    // Allow any vercel.app subdomain
-    if (origin.endsWith('.vercel.app') || allowedOrigins.includes(origin)) {
+    // Check static allowed origins (FRONTEND_URL, localhost)
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    // Vercel origin check — restricted to specific list when ALLOWED_VERCEL_ORIGINS is set
+    if (allowedVercelOrigins) {
+      if (allowedVercelOrigins.includes(origin)) return callback(null, true);
+    } else if (origin.endsWith('.vercel.app')) {
+      // Fallback: allow any *.vercel.app when the env var is not configured
       return callback(null, true);
     }
     callback(new Error('Not allowed by CORS'));
@@ -78,9 +91,12 @@ const aiLimiter = rateLimit({
 });
 
 app.use('/api/', limiter);
-app.use('/api/auth/login',  authLimiter);
-app.use('/api/auth/signup', authLimiter);
-app.use('/api/ai/',         aiLimiter);
+app.use('/api/auth/login',           authLimiter);
+app.use('/api/auth/signup',          authLimiter);
+app.use('/api/auth/forgot-password', authLimiter);
+app.use('/api/auth/reset-password',  authLimiter);
+app.use('/api/auth/resend-code',     authLimiter);
+app.use('/api/ai/',                  aiLimiter);
 
 // ── CRITICAL: Stripe webhook needs raw body ───────────────────────────────────
 // Must be registered BEFORE express.json() parses the body

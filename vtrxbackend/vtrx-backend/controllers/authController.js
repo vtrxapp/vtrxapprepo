@@ -87,7 +87,7 @@ const confirmEmail = async (req, res) => {
   }
 
   try {
-    logger.info(`confirmEmail called with verificationId: ${verificationId} | emailAddressId: ${emailAddressId} | code: ${code}`);
+    logger.info(`confirmEmail called with verificationId: ${verificationId} | emailAddressId: ${emailAddressId}`);
 
     await clerk.confirmSignUp({ email, code, verificationId, emailAddressId });
 
@@ -216,13 +216,14 @@ const resendVerificationCode = async (req, res) => {
 
   try {
     const result = await clerk.resendConfirmationCode({ email, emailAddressId });
-    res.json({ success: true, message: 'Verification code resent. Check your inbox.', data: { verificationId: result.verificationId || null, emailAddressId: result.emailAddressId || null } });
+    res.json({ success: true, message: 'If this email is registered and unverified, a new code has been sent.', data: { verificationId: result.verificationId || null, emailAddressId: result.emailAddressId || null } });
   } catch (error) {
     if (error.name === 'LimitExceededException') {
       return res.status(429).json({ success: false, message: 'Too many attempts. Please wait a few minutes.' });
     }
     if (error.name === 'UserNotFoundException') {
-      return res.status(404).json({ success: false, message: 'No account found with this email.' });
+      // Never reveal whether an email exists — always return 200 with a generic message
+      return res.status(200).json({ success: true, message: 'If this email is registered and unverified, a new code has been sent.' });
     }
     logger.error('Resend code error:', error);
     res.status(500).json({ success: false, message: 'Could not resend code. Please try again.' });

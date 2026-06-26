@@ -8,7 +8,7 @@ const ymove     = require('../services/ymoveService');
 const logger    = require('../utils/logger');
 const notif     = require('../services/notificationService');
 const pine      = require('../services/pineconeService');
-const { resolveLibrary }     = require('../data/exerciseLibrary');
+const { resolveLibrary, invalidateCache } = require('../data/exerciseLibrary');
 const { generateSession }    = require('../data/planGenerator');
 const { PLAN_TEMPLATES }     = require('../data/planTemplates');
 
@@ -33,10 +33,14 @@ const getWorkouts = async (req, res) => {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Optionally enrich with Ymove content
+    // Optionally enrich with Ymove content — wrapped so ymove outages never block DB results
     let ymoveWorkouts = [];
     if (source === 'ymove' || source === 'all') {
-      ymoveWorkouts = (await ymove.getWorkouts({ type, difficulty })).workouts || [];
+      try {
+        ymoveWorkouts = (await ymove.getWorkouts({ type, difficulty })).workouts || [];
+      } catch (_ymoveErr) {
+        ymoveWorkouts = [];
+      }
     }
 
     res.json({
@@ -111,12 +115,21 @@ const logWorkout = async (req, res) => {
     return res.status(400).json({ success: false, message: 'Workout type is required' });
   }
 
+  if (duration === undefined || duration === null) {
+    return res.status(400).json({ success: false, message: 'duration is required' });
+  }
+
+  const parsedDuration = parseInt(duration);
+  if (isNaN(parsedDuration)) {
+    return res.status(400).json({ success: false, message: 'duration must be a valid number' });
+  }
+
   // Enforce minimum duration by workout type
   const workoutType = type.toLowerCase();
-  if (duration !== undefined) {
-    const durationMins = parseInt(duration);
+  {
+    const durationMins = parsedDuration;
     const minMins      = workoutType === 'cardio' ? 5 : 10;
-    if (!isNaN(durationMins) && durationMins < minMins) {
+    if (durationMins < minMins) {
       return res.status(400).json({
         success: false,
         message: `${workoutType === 'cardio' ? 'Cardio' : 'Strength/HIIT'} workouts under ${minMins} minutes are not logged`,
@@ -133,21 +146,36 @@ const logWorkout = async (req, res) => {
   }
 
   try {
-    // 1. Create the workout log
+    // 1. Resolve exerciseIds — findOrCreate for any exercise missing an ID
+    const resolvedExercises = exercises
+      ? await Promise.all(exercises.map(async (ex) => {
+          if (ex.exerciseId) return ex;
+          // findOrCreate by name so FK constraints are never violated
+          const dbEx = await prisma.exercise.findFirst({
+            where: { name: { equals: ex.name, mode: 'insensitive' } },
+          });
+          const exerciseId = dbEx?.id ?? (await prisma.exercise.create({
+            data: { name: ex.name, muscleGroup: ex.muscleGroup || 'full_body' },
+          })).id;
+          return { ...ex, exerciseId };
+        }))
+      : [];
+
+    // 2. Create the workout log
     const workoutLog = await prisma.workoutLog.create({
       data: {
         userId:               req.user.id,
         workoutId:            workoutId || null,
         name,
         type:                 workoutType,
-        duration:             parseInt(duration),
+        duration:             parsedDuration,
         caloriesBurned:       caloriesBurned ? parseInt(caloriesBurned) : null,
         volume:               volume ? parseFloat(volume) : null,
         notes,
         energyLevel:          energyLevel || null,
         completionPercentage: completionPercentage != null ? parseInt(completionPercentage) : null,
         sets: {
-          create: exercises?.flatMap(ex =>
+          create: resolvedExercises.flatMap(ex =>
             (ex.sets || []).map(set => ({
               exerciseId: ex.exerciseId,
               setNumber:  set.setNumber,
@@ -156,7 +184,7 @@ const logWorkout = async (req, res) => {
               duration:   set.duration ? parseInt(set.duration) : null,
               completed:  set.completed !== false,
             }))
-          ) || [],
+          ),
         },
       },
       include: { sets: true },
@@ -167,8 +195,8 @@ const logWorkout = async (req, res) => {
 
     // 3. Detect personal records
     const newPRs = [];
-    if (exercises?.length) {
-      for (const ex of exercises) {
+    if (resolvedExercises?.length) {
+      for (const ex of resolvedExercises) {
         if (!ex.name) continue;
         for (const set of (ex.sets || [])) {
           const weight = set.weight ? parseFloat(set.weight) : null;
@@ -275,6 +303,15 @@ const getAISummary = async (req, res) => {
   const { logId } = req.params;
 
   try {
+    // Verify ownership via WorkoutLog before returning the summary
+    const workoutLog = await prisma.workoutLog.findUnique({ where: { id: logId } });
+    if (!workoutLog) {
+      return res.status(404).json({ success: false, message: 'Workout log not found' });
+    }
+    if (workoutLog.userId !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+
     const summary = await prisma.aISummary.findUnique({
       where: { workoutLogId: logId },
     });
@@ -367,7 +404,7 @@ const generateAndSaveAISummary = async ({
   }
 
   const recentMoodLogs = await prisma.moodLog.findMany({
-    where: { userId, createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } },
+    where: { userId, loggedAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } },
     orderBy: { loggedAt: 'desc' },
     take: 7,
     select: { mood: true },
@@ -533,7 +570,7 @@ const getRecommendation = async (req, res) => {
   const user = req.user;
 
   try {
-    const adaptation = ENERGY_ADAPTATION[energyLevel] || ENERGY_ADAPTATION.okay;
+    const adaptation = { ...(ENERGY_ADAPTATION[energyLevel] || ENERGY_ADAPTATION.okay) };
     const goal       = (user.goal || 'general fitness').toLowerCase();
     const level      = user.fitnessLevel || 'Intermediate';
     const equipment  = user.equipment    || [];
@@ -578,8 +615,8 @@ const getRecommendation = async (req, res) => {
     if (adaptation.preferredTypes) workoutType = adaptation.preferredTypes[0];
 
     const targetDuration = Math.round(
-      (user.workoutTime
-        ? parseInt((user.workoutTime || '45').match(/\d+/)?.[0]) || 45
+      (user.sessionDuration
+        ? parseInt((user.sessionDuration || '45').match(/\d+/)?.[0]) || 45
         : 45) * adaptation.durationFactor
     );
 
@@ -746,10 +783,19 @@ const saveVideoProgress = async (req, res) => {
   }
 
   try {
+    // If ymoveId is not provided but exerciseId is, look up the exercise's ymoveId.
+    // Never store exerciseId in the ymoveId column — they are different namespaces.
+    let resolvedYmoveId = ymoveId || null;
+    if (!resolvedYmoveId && exerciseId) {
+      const ex = await prisma.exercise.findUnique({ where: { id: exerciseId }, select: { ymoveId: true } });
+      if (ex?.ymoveId) resolvedYmoveId = ex.ymoveId;
+    }
+    if (!resolvedYmoveId) {
+      return res.status(400).json({ success: false, message: 'ymoveId is required for video progress tracking' });
+    }
+
     const progress = await prisma.videoProgress.upsert({
-      where: ymoveId
-        ? { userId_ymoveId: { userId: req.user.id, ymoveId } }
-        : { userId_ymoveId: { userId: req.user.id, ymoveId: exerciseId } },
+      where: { userId_ymoveId: { userId: req.user.id, ymoveId: resolvedYmoveId } },
       update: {
         positionSecs: positionSecs ?? 0,
         durationSecs: durationSecs ?? null,
@@ -757,7 +803,7 @@ const saveVideoProgress = async (req, res) => {
       },
       create: {
         userId:      req.user.id,
-        ymoveId:     ymoveId || exerciseId,
+        ymoveId:     resolvedYmoveId,
         exerciseId:  exerciseId || null,
         positionSecs: positionSecs ?? 0,
         durationSecs: durationSecs ?? null,
@@ -809,7 +855,7 @@ const getUpcomingWorkouts = async (req, res) => {
       where: { isPublic: true },
       include: {
         exercises: {
-          where:   { exercise: { videoUrl: { not: null } } },
+          where:   { exercise: { ymoveId: { not: null } } },
           include: { exercise: true },
           orderBy: { order: 'asc' },
           take: 12,
@@ -1121,7 +1167,7 @@ const autoGenerateWeekSchedule = async (userId, weekStart) => {
         },
       });
       entries.push(entry);
-    } catch (_) {}
+    } catch (err) { logger.warn(`autoGenerateWeekSchedule: failed to upsert entry — ${err.message}`); }
   }
   return entries;
 };
@@ -1212,6 +1258,14 @@ const replaceScheduleEntry = async (req, res) => {
       where: { id, userId: req.user.id },
     });
     if (!entry) return res.status(404).json({ success: false, message: 'Not found' });
+
+    // Verify the target workout is accessible to this user
+    const targetWorkout = await prisma.workout.findFirst({
+      where: { id: workoutId, OR: [{ isPublic: true }, { userId: req.user.id }] },
+    });
+    if (!targetWorkout) {
+      return res.status(403).json({ success: false, message: 'Workout not found or not accessible' });
+    }
 
     await prisma.workoutSchedule.update({ where: { id }, data: { workoutId } });
     res.json({ success: true });
@@ -1341,7 +1395,7 @@ const debugYmoveExercise = async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message, stack: err.stack });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -1352,12 +1406,18 @@ const syncYmoveExercises = async (req, res) => {
   if (!ymove.isConfigured()) {
     return res.status(503).json({ success: false, message: 'YMOVE_API_KEY not configured' });
   }
-  // Restrict to admin users — check isAdmin flag, ADMIN_USER_IDS env var, or ADMIN_SECRET header
+  // Restrict to admin users — check ADMIN_USER_IDS env var or ADMIN_SECRET header.
+  // Note: req.user?.isAdmin always returns undefined (no isAdmin field in User schema).
   const adminIds     = (process.env.ADMIN_USER_IDS || '').split(',').filter(Boolean);
   const adminSecret  = process.env.ADMIN_SECRET;
+
+  // Guard: if neither env var is set, the endpoint is unconfigured and must be blocked.
+  if (!adminIds.length && !adminSecret) {
+    return res.status(503).json({ success: false, message: 'Admin access not configured on this server' });
+  }
+
   const secretHeader = req.headers['x-admin-secret'];
-  const isAdmin = req.user?.isAdmin
-    || adminIds.includes(req.user?.id)
+  const isAdmin = adminIds.includes(req.user?.id)
     || (adminSecret && secretHeader === adminSecret);
   if (!isAdmin) {
     return res.status(403).json({ success: false, message: 'Admin only' });
@@ -1429,6 +1489,8 @@ const syncYmoveExercises = async (req, res) => {
     }
 
     logger.info(`ymove sync complete: ${upserted} upserted, ${skipped} skipped`);
+    // Invalidate the exercise library cache so next plan generation picks up new ymoveIds
+    invalidateCache();
     res.json({ success: true, data: { synced: upserted, skipped } });
   } catch (error) {
     logger.error('syncYmoveExercises error:', error);
@@ -1671,6 +1733,10 @@ const generateDailyWorkout = async (req, res) => {
     }
     logger.info(`[generate-daily] library size after supplement: ${library.length}`);
 
+    // Guard: if ymove returned no exercises (service down), return 503 early
+    if (!library || library.length === 0) {
+      return res.status(503).json({ success: false, message: 'Exercise library temporarily unavailable. Please try again in a moment.' });
+    }
 
     // 5. Filter by user equipment if specified
     let filtered = library;
@@ -1755,22 +1821,19 @@ Rules:
       }
     }
 
-    // 8. Enrich each selected exercise serially to respect ymove rate limits.
+    // 8. Enrich each selected exercise in parallel to minimise latency.
     // The list endpoint (getExercises) does not return videoUrl or exercise-specific
-    // thumbnailUrl; getExerciseById (one call per exercise, serial) fills both.
-    const enriched = [];
-    for (const ex of validated) {
+    // thumbnailUrl; getExerciseById (one call per exercise) fills both.
+    const enriched = await Promise.all(validated.map(async (ex) => {
       if (!ex.ymoveId) {
         logger.warn(`[generate-daily] "${ex.name}" has no ymoveId — cannot enrich`);
-        enriched.push(ex);
-        continue;
+        return ex;
       }
       try {
         const detail = await ymove.getExerciseById(ex.ymoveId);
         if (!detail) {
           logger.warn(`[generate-daily] "${ex.name}" ymoveId=${ex.ymoveId} → no detail from ymove`);
-          enriched.push(ex);
-          continue;
+          return ex;
         }
         const primaryVideo = Array.isArray(detail.videos)
           ? (detail.videos.find(v => v.isPrimary) || detail.videos[0])
@@ -1780,28 +1843,76 @@ Rules:
         const thumbnailUrl = detail.thumbnailUrl || detail.thumbnail_url || detail.gifUrl
           || primaryVideo?.thumbnailUrl || ex.thumbnailUrl || null;
         logger.info(`[generate-daily] "${ex.name}" ymoveId=${ex.ymoveId} video=${videoUrl ? 'YES' : 'NO'} hls=${hlsUrl ? 'YES' : 'NO'} thumb=${thumbnailUrl ? 'YES' : 'NO'}`);
-        enriched.push({ ...ex, videoUrl, hlsUrl, thumbnailUrl });
+        return { ...ex, videoUrl, hlsUrl, thumbnailUrl };
       } catch (enrichErr) {
         logger.warn(`[generate-daily] failed to enrich "${ex.name}" (${ex.ymoveId}): ${enrichErr.message}`);
-        enriched.push(ex);
+        return ex;
       }
-    }
+    }));
 
     // 9. MET-based calorie calculation (server-side, stable)
     const MET = { STRENGTH: 4.0, HIIT: 8.0, CARDIO: 6.0 };
-    const met      = MET[workoutType] || 4.0;
-    const calories = Math.round(met * weightKg * (durationMins / 60));
+    const met          = MET[workoutType] || 4.0;
+    const totalCalories = Math.round(met * weightKg * (durationMins / 60));
+    const totalDuration = durationMins;
 
-    logger.info(`generateDailyWorkout: user=${userId} day=${dayNumber} type=${workoutType} exercises=${enriched.length} calories=${calories}`);
+    logger.info(`generateDailyWorkout: user=${userId} day=${dayNumber} type=${workoutType} exercises=${enriched.length} calories=${totalCalories}`);
+
+    // 10. Save workout to DB so clients can reference it when logging
+    let workoutId = null;
+    try {
+      const resolvedExercisesForDB = await Promise.all(enriched.map(async (ex) => {
+        let dbEx = ex.ymoveId
+          ? await prisma.exercise.findFirst({ where: { ymoveId: String(ex.ymoveId) } })
+          : null;
+        if (!dbEx) {
+          dbEx = await prisma.exercise.findFirst({ where: { name: { equals: ex.name, mode: 'insensitive' } } });
+        }
+        if (!dbEx) {
+          dbEx = await prisma.exercise.create({
+            data: { name: ex.name, muscleGroup: ex.muscleGroup || 'full_body', ymoveId: ex.ymoveId ? String(ex.ymoveId) : null },
+          });
+        }
+        return { ...ex, dbExerciseId: dbEx.id };
+      }));
+
+      const savedWorkout = await prisma.workout.create({
+        data: {
+          userId: req.user.id,
+          name:   _buildDailyWorkoutName(targetMuscleGroups, dayNumber),
+          type:   workoutType || 'STRENGTH',
+          duration: totalDuration || 40,
+          calories: Math.round(totalCalories || 0),
+          difficulty: user?.fitnessLevel || 'intermediate',
+          isPublic: false,
+          exercises: {
+            create: resolvedExercisesForDB.map((ex, idx) => ({
+              exerciseId:  ex.dbExerciseId,
+              name:        ex.name,
+              sets:        ex.sets || 3,
+              reps:        ex.reps != null ? String(ex.reps) : (ex.durationSecs ? `${ex.durationSecs}s` : '10'),
+              order:       idx + 1,
+              restSeconds: ex.restSecs || ex.restSeconds || 60,
+              notes:       ex.muscleGroup || '',
+            })),
+          },
+        },
+      });
+      workoutId = savedWorkout.id;
+    } catch (dbErr) {
+      logger.error('generateDailyWorkout: failed to save workout to DB:', dbErr.message);
+      // Don't fail the request — just return without workoutId
+    }
 
     res.json({
       success: true,
       data: {
         workout: {
+          id:           workoutId,
           name:         _buildDailyWorkoutName(targetMuscleGroups, dayNumber),
           type:         workoutType,
-          duration:     durationMins,
-          calories,
+          duration:     totalDuration,
+          calories:     totalCalories,
           difficulty:   level,
           day:          dayNumber,
           daysPerWeek,
@@ -1848,8 +1959,13 @@ const generateSessionForDay = async (req, res) => {
     const muscleGroups = sessionTpl?.muscleGroups || ['chest', 'back', 'legs', 'core'];
 
     // Resolve library and generate session (max 5 exercises)
+    // Derive week number from total completed workouts to vary exercise selection across weeks
+    const totalCompletedForWeek = await prisma.workoutLog.count({
+      where: { userId: req.user.id, OR: [{ completionPercentage: { gte: 50 } }, { completionPercentage: null }] },
+    });
+    const scheduleWeekNum = Math.floor(totalCompletedForWeek / (user?.daysPerWeek || 3)) + 1;
     const library = await resolveLibrary(prisma);
-    const session  = generateSession(user, library, muscleGroups, 5);
+    const session  = generateSession(user, library, muscleGroups, 5, scheduleWeekNum);
 
     // Resolve/create Exercise DB records for each generated exercise
     const enriched = [];
