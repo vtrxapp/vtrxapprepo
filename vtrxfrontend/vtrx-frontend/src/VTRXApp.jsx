@@ -2303,11 +2303,16 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
         {/* Full-screen portrait video behind everything */}
         <VideoPlayer ref={videoPlayerRef} {...videoProps} fillContainer portraitMode />
 
-        {/* Play button — true screen center, only when video not yet playing */}
+        {/* Play button — centered in the visible video area, only when not yet playing.
+            The content panel below (height:68%) covers the bottom of the screen once
+            open, so "true screen center" would sit under it — keep the button centered
+            in whatever strip is actually visible: the full screen when closed, or the
+            remaining 32% above the panel when open. */}
         {!portraitPlaying && (
           <div
-            style={{ position:"absolute", top:"50%", left:"50%",
+            style={{ position:"absolute", top: panelOpen ? "16%" : "50%", left:"50%",
                      transform:"translate(-50%,-50%)",
+                     transition:"top 0.38s cubic-bezier(0.32,0.72,0,1)",
                      zIndex:16, cursor:"pointer" }}
             onClick={() => {
               videoPlayerRef.current?.togglePlay();
