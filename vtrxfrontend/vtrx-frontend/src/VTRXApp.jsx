@@ -43,22 +43,43 @@ const apiCall = async (endpoint, options = {}) => {
     return { success:true, data:{} };
   }
   const { skipAuthRedirect, ...fetchOptions } = options;
-  const token = _getClerkToken ? await _getClerkToken() : null;
-  const res   = await fetch(`${API_URL}${endpoint}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(token && { Authorization: `Bearer ${token}` }),
-      ...fetchOptions.headers,
-    },
-    ...fetchOptions,
-  });
-  const data = await res.json();
+
+  const attempt = async () => {
+    const token = _getClerkToken ? await _getClerkToken() : null;
+    const res   = await fetch(`${API_URL}${endpoint}`, {
+      headers: {
+        "Content-Type": "application/json",
+        ...(token && { Authorization: `Bearer ${token}` }),
+        ...fetchOptions.headers,
+      },
+      ...fetchOptions,
+    });
+    const data = await res.json();
+    return { res, data };
+  };
+
+  // The backend can restart mid-session (e.g. host idle/sleep cycling) — a request
+  // landing during that window fails with a raw network error or a spurious 401 that
+  // looks identical to a real expired session. Retry once after a short delay before
+  // treating it as either, so a several-second restart doesn't sign the user out.
+  let res, data;
+  try {
+    ({ res, data } = await attempt());
+  } catch (_networkErr) {
+    await new Promise(r => setTimeout(r, 2000));
+    ({ res, data } = await attempt());
+  }
+  if (!data.success && res.status === 401 && !endpoint.startsWith('/auth/')) {
+    await new Promise(r => setTimeout(r, 2000));
+    ({ res, data } = await attempt());
+  }
+
   if (!data.success && res.status >= 400) {
     // Expired or invalid token on a protected route — clear session and go to login.
     // Callers making their own first authenticated call right after establishing a
     // session (e.g. LoginScreen fetching the profile immediately post-login) pass
-    // skipAuthRedirect so a transient 401 there doesn't force a full sign-out loop —
-    // that call already has its own local error handling.
+    // skipAuthRedirect so a 401 there doesn't force a full sign-out loop — that call
+    // already has its own local error handling.
     if (res.status === 401 && !endpoint.startsWith('/auth/') && !skipAuthRedirect) {
       clearAuth();
       if (_onSessionExpired) _onSessionExpired();
@@ -3894,7 +3915,7 @@ function WorkoutTypeIcon({ type }) {
 function WorkoutScreen({ onContinue, onBack }) {
   const { user, setUser } = useUser();
   const[goal,setGoal]=useState("");const[level,setLevel]=useState("");const[style,setStyle]=useState([]);const[days,setDays]=useState("");const[time,setTime]=useState("");const[location,setLocation]=useState("");const[equip,setEquip]=useState([]);
-  return <Shell bg="https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=800&q=80" overlay="linear-gradient(180deg,rgba(0,0,0,0.55) 0%,rgba(0,0,0,0.55) 30%,rgba(0,0,0,0.85) 100%)"><NavBar title="Customize Workout" step={2} total={3} onBack={onBack} onSkip={onContinue}/><div style={{ flex:1,overflowY:"auto",padding:"0 24px 24px" }}><Q n="1" text="What is your primary goal?" sub="(Select one)"/><ChipGroup options={["Build Muscle","Lose Weight","Stay Active","Improve Endurance","Get Toned"]} value={goal} onChange={setGoal}/><Q n="2" text="What is your experience level?" sub="(Select one)"/><ChipGroup options={["Beginner","Intermediate","Advanced","Professional"]} value={level} onChange={setLevel}/><Q n="3" text="What is your preferred workout style?" sub="(Pick 1–3)"/><ChipGroup options={["Strength Training","Cardio","HIIT","Bodyweight","Functional Fitness"]} value={style} onChange={setStyle} multi/><Q n="4" text="How many times do you want to work out each week?"/><ChipGroup options={["1–2 Days/Week","3–4 Days/Week","5+ Days/Week"]} value={days} onChange={setDays}/><Q n="5" text="Where do you usually work out?" sub="(Select one)"/><ChipGroup options={["Full Gym","Home","Outdoors","Mix of both"]} value={location} onChange={setLocation}/><Q n="6" text="What equipment do you have access to?" sub="(Select all that apply)"/><ChipGroup options={["Dumbbells","Barbell & Plates","Pull-up Bar","Resistance Bands","Kettlebells","Bench","Cable Machine","No Equipment"]} value={equip} onChange={setEquip} multi/><Q n="7" text="How much time can you dedicate to fitness daily?"/><ChipGroup options={["15–30 minutes","30–45 minutes","45–60 minutes","60+ minutes"]} value={time} onChange={setTime}/><div style={{marginTop:28}}><CTA label="CONTINUE" onClick={()=>{ const newPrefs={goal:goal||user.goal, fitnessLevel:level||user.fitnessLevel, workoutTime:time, workoutLocation:location, location:location, workoutStyle:style, equipment:equip, daysPerWeek:parseInt(days)||user.daysPerWeek}; setUser(u=>({...u,...newPrefs})); if(getAuthToken()){apiCall('/users/profile',{method:'PUT',body:JSON.stringify({goal:newPrefs.goal,fitnessLevel:newPrefs.fitnessLevel,daysPerWeek:newPrefs.daysPerWeek,equipment:newPrefs.equipment,location:newPrefs.location,sessionDuration:time,preferredStyles:Array.isArray(style)?style:[style].filter(Boolean)})}).catch(()=>{}); } onContinue(); }}/></div></div></Shell>;
+  return <Shell bg="https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=800&q=80" overlay="linear-gradient(180deg,rgba(0,0,0,0.55) 0%,rgba(0,0,0,0.55) 30%,rgba(0,0,0,0.85) 100%)"><NavBar title="Customize Workout" step={2} total={3} onBack={onBack} onSkip={onContinue}/><div style={{ flex:1,overflowY:"auto",padding:"0 24px 24px" }}><Q n="1" text="What is your primary goal?" sub="(Select one)"/><ChipGroup options={["Build Muscle","Lose Weight","Stay Active","Improve Endurance","Get Toned"]} value={goal} onChange={setGoal}/><Q n="2" text="What is your experience level?" sub="(Select one)"/><ChipGroup options={["Beginner","Intermediate","Advanced","Professional"]} value={level} onChange={setLevel}/><Q n="3" text="What is your preferred workout style?" sub="(Pick 1–3)"/><ChipGroup options={["Strength Training","Cardio","HIIT","Bodyweight","Functional Fitness"]} value={style} onChange={setStyle} multi/><Q n="4" text="How many times do you want to work out each week?"/><ChipGroup options={["1–2 Days/Week","3–4 Days/Week","5+ Days/Week"]} value={days} onChange={setDays}/><Q n="5" text="Where do you usually work out?" sub="(Select one)"/><ChipGroup options={["Full Gym","Home","Outdoors","Mix of both"]} value={location} onChange={setLocation}/><Q n="6" text="What equipment do you have access to?" sub="(Select all that apply)"/><ChipGroup options={["Dumbbells","Barbell & Plates","Pull-up Bar","Resistance Bands","Kettlebells","Bench","Cable Machine","No Equipment"]} value={equip} onChange={setEquip} multi/><Q n="7" text="How much time can you dedicate to fitness daily?"/><ChipGroup options={["15–30 minutes","30–45 minutes","45–60 minutes","60+ minutes"]} value={time} onChange={setTime}/><div style={{marginTop:28}}><CTA label="CONTINUE" onClick={()=>{ const newPrefs={goal:goal||user.goal, fitnessLevel:level||user.fitnessLevel, workoutTime:time, workoutLocation:location, location:location, workoutStyle:style, equipment:equip, daysPerWeek:parseInt(days)||user.daysPerWeek}; setUser(u=>({...u,...newPrefs})); if(getAuthToken()){apiCall('/users/profile',{method:'PUT',skipAuthRedirect:true,body:JSON.stringify({goal:newPrefs.goal,fitnessLevel:newPrefs.fitnessLevel,daysPerWeek:newPrefs.daysPerWeek,equipment:newPrefs.equipment,location:newPrefs.location,sessionDuration:time,preferredStyles:Array.isArray(style)?style:[style].filter(Boolean)})}).catch(()=>{}); } onContinue(); }}/></div></div></Shell>;
 }
 function NutritionScreen({ onContinue, onBack }) {
   const { setUser } = useUser();
@@ -3903,7 +3924,7 @@ function NutritionScreen({ onContinue, onBack }) {
   const TRACK_MAP = {"Yes, both":"yes_both","Only Calories":"only_calories","No, but I'd like to":"no_but_interested","No, not interested":"no_not_interested"};
   const DIET_MAP  = {"Vegan":"vegan","Vegetarian":"vegetarian","Gluten Free":"gluten_free","Dairy-Free":"dairy_free","No Peanuts":"no_peanuts","Other?":"other"};
   const MEALS_MAP = {"2 meals":"2","3 meals":"3","4+ meals":"4_plus","It varies":"varies"};
-  return <Shell bg="https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=800&q=80" overlay="linear-gradient(180deg,rgba(0,10,20,0.45) 0%,rgba(0,10,20,0.55) 30%,rgba(0,10,20,0.9) 100%)"><NavBar title="Customize Nutrition" step={3} total={3} onBack={onBack} onSkip={onContinue}/><div style={{ flex:1,overflowY:"auto",padding:"0 24px 24px" }}><Q n="1" text="Would you like meal suggestions based on your goals?"/><ChipGroup options={["Yes","No"]} value={want} onChange={setWant}/><Q n="2" text="What's your main nutrition goal?"/><ChipGroup options={["Lose Fat","Build Muscle","Maintain","Eat clean","Improve Energy"]} value={nutGoal} onChange={setNutGoal}/><Q n="3" text="Do you track your calories or macros?"/><ChipGroup options={["Yes, both","Only Calories","No, but I'd like to","No, not interested"]} value={track} onChange={setTrack}/><Q n="4" text="Do you have any dietary preferences or restrictions?"/><ChipGroup options={["Vegan","Vegetarian","Gluten Free","Dairy-Free","No Peanuts","Other?"]} value={diet} onChange={setDiet} multi/><Q n="5" text="How many meals do you eat daily?"/><ChipGroup options={["2 meals","3 meals","4+ meals","It varies"]} value={meals} onChange={setMeals}/><div style={{marginTop:28}}><CTA label="CONTINUE" onClick={()=>{ const prefs={ wantsMealSuggestions:want==="Yes", nutritionGoal:GOAL_MAP[nutGoal]||nutGoal||"maintain", trackingPreference:TRACK_MAP[track]||track||"no_not_interested", dietaryRestrictions:diet.map(d=>DIET_MAP[d]||d.toLowerCase().replace(/\s+/g,"_")), mealsPerDay:MEALS_MAP[meals]||meals||"3" }; setUser(u=>({...u,...prefs})); if(getAuthToken()){apiCall('/users/profile',{method:'PUT',body:JSON.stringify(prefs)}).catch(()=>{});} onContinue(); }}/></div></div></Shell>;
+  return <Shell bg="https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=800&q=80" overlay="linear-gradient(180deg,rgba(0,10,20,0.45) 0%,rgba(0,10,20,0.55) 30%,rgba(0,10,20,0.9) 100%)"><NavBar title="Customize Nutrition" step={3} total={3} onBack={onBack} onSkip={onContinue}/><div style={{ flex:1,overflowY:"auto",padding:"0 24px 24px" }}><Q n="1" text="Would you like meal suggestions based on your goals?"/><ChipGroup options={["Yes","No"]} value={want} onChange={setWant}/><Q n="2" text="What's your main nutrition goal?"/><ChipGroup options={["Lose Fat","Build Muscle","Maintain","Eat clean","Improve Energy"]} value={nutGoal} onChange={setNutGoal}/><Q n="3" text="Do you track your calories or macros?"/><ChipGroup options={["Yes, both","Only Calories","No, but I'd like to","No, not interested"]} value={track} onChange={setTrack}/><Q n="4" text="Do you have any dietary preferences or restrictions?"/><ChipGroup options={["Vegan","Vegetarian","Gluten Free","Dairy-Free","No Peanuts","Other?"]} value={diet} onChange={setDiet} multi/><Q n="5" text="How many meals do you eat daily?"/><ChipGroup options={["2 meals","3 meals","4+ meals","It varies"]} value={meals} onChange={setMeals}/><div style={{marginTop:28}}><CTA label="CONTINUE" onClick={()=>{ const prefs={ wantsMealSuggestions:want==="Yes", nutritionGoal:GOAL_MAP[nutGoal]||nutGoal||"maintain", trackingPreference:TRACK_MAP[track]||track||"no_not_interested", dietaryRestrictions:diet.map(d=>DIET_MAP[d]||d.toLowerCase().replace(/\s+/g,"_")), mealsPerDay:MEALS_MAP[meals]||meals||"3" }; setUser(u=>({...u,...prefs})); if(getAuthToken()){apiCall('/users/profile',{method:'PUT',skipAuthRedirect:true,body:JSON.stringify(prefs)}).catch(()=>{});} onContinue(); }}/></div></div></Shell>;
 }
 function PricingScreen({ onContinue, onBack }) {
   const subscribe = (plan) => {
@@ -9814,11 +9835,16 @@ function VTRXAppInner({ setPaymentPlan }) {
       setScreen(0);
       return;
     }
-    // Save onboarding profile to backend
+    // Save onboarding profile to backend.
+    // skipAuthRedirect: this is the final step of onboarding — a transient 401 here
+    // must not force a full sign-out (the user has just finished setup and has this
+    // data locally in state regardless; better to proceed to the dashboard than to
+    // bounce them all the way back to login).
     if (!DEMO_MODE && isSignedIn) {
       try {
         await apiCall("/users/profile", {
           method: "PUT",
+          skipAuthRedirect: true,
           body: JSON.stringify({
             ...(user.name && { name: user.name }),
             gender:               user.gender,
@@ -9840,7 +9866,7 @@ function VTRXAppInner({ setPaymentPlan }) {
         });
       } catch(_e){}
       // Fire-and-forget: generate free AI onboarding analysis + schedule 5-min notification
-      apiCall("/ai/onboarding-analysis", { method: "POST" }).catch(() => {});
+      apiCall("/ai/onboarding-analysis", { method: "POST", skipAuthRedirect: true }).catch(() => {});
     }
     if (!isSignedIn) {
       setPhase("login");
@@ -9957,7 +9983,11 @@ function VTRXAppInner({ setPaymentPlan }) {
     if (DEMO_MODE) { afterSplash("onboarding"); return; }
     if (!isSignedIn) { afterSplash("onboarding"); return; }
 
-    apiCall("/users/profile").then(res=>{
+    // skipAuthRedirect: this is the initial app-load fetch, fired on every page
+    // load/refresh for an already-signed-in user. It already falls back to
+    // onboarding on failure below — a transient 401 here shouldn't force an
+    // actual Clerk sign-out for a user who is genuinely still signed in.
+    apiCall("/users/profile", { skipAuthRedirect: true }).then(res=>{
       if (res?.data?.user) {
         const u = res.data.user;
         setUser(prev=>({...prev,
