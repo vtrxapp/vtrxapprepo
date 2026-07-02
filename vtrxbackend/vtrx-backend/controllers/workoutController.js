@@ -1838,7 +1838,7 @@ const generateSessionForDay = async (req, res) => {
     const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
     const dayOfWeek = DAY_NAMES[new Date(entry.scheduledDate).getDay()];
     const frequency = parseInt(user?.daysPerWeek || 3);
-    const days      = frequency <= 2 ? 2 : frequency <= 3 ? 3 : frequency <= 4 ? 4 : 5;
+    const days      = frequency <= 2 ? 2 : frequency <= 3 ? 3 : frequency <= 4 ? 4 : frequency <= 5 ? 5 : 6;
     const schedule  = SCHEDULES[days] || SCHEDULES[3];
 
     const dayEntry   = schedule.find(([d]) => d === dayOfWeek);
@@ -1847,8 +1847,9 @@ const generateSessionForDay = async (req, res) => {
     const tpl        = SESSIONS[sessionKey] || SESSIONS.FULL_BODY_A;
     const movements  = tpl.movements;
 
-    // Generate session (max 5 exercises)
-    const session = generateSession(user, movements, 5);
+    // Generate session — always the template's full movement list (each template
+    // already guarantees >= MIN_EXERCISES_PER_SESSION)
+    const session = generateSession(user, movements, movements.length);
 
     // Resolve/create Exercise DB records for each generated exercise
     const enriched = [];

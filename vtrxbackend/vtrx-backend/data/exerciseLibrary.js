@@ -35,6 +35,18 @@ const TRICEP_PUSHDOWN = {
   none:       ex('Diamond Push-Up',            'Triceps', false, false, 10),
 };
 
+const INCLINE_PRESS = {
+  gym:        ex('Incline Barbell Press',  'Chest',     true,  false, 8),
+  dumbbells:  ex('Incline Dumbbell Press', 'Chest',     true,  false, 10),
+  none:       ex('Decline Push-Up',        'Chest',     true,  false, 10),
+};
+
+const LATERAL_RAISE = {
+  gym:        ex('Cable Lateral Raise',    'Shoulders', false, false, 15),
+  dumbbells:  ex('Dumbbell Lateral Raise', 'Shoulders', false, false, 15),
+  none:       ex('Plank Shoulder Taps',    'Shoulders', false, false, 16),
+};
+
 // ── PULL movements ────────────────────────────────────────────────────────────
 const LAT_PULLDOWN = {
   gym:        ex('Lat Pulldown',      'Back', true,  false, 10),
@@ -52,6 +64,18 @@ const BICEP_CURL = {
   gym:        ex('EZ Bar Curl',        'Biceps', false, false, 12),
   dumbbells:  ex('Dumbbell Bicep Curl','Biceps', false, false, 12),
   none:       ex('Isometric Curl',     'Biceps', false, false, 15),
+};
+
+const FACE_PULL = {
+  gym:        ex('Cable Face Pull',        'Back', false, false, 15),
+  dumbbells:  ex('Dumbbell Rear Delt Fly', 'Back', false, false, 15),
+  none:       ex('Prone Y-Raise',          'Back', false, false, 15),
+};
+
+const SUPERMAN = {
+  gym:        ex('Back Extension',  'Back', false, false, 15),
+  dumbbells:  ex('Superman Hold',   'Back', false, true,  null, 30),
+  none:       ex('Superman Hold',   'Back', false, true,  null, 30),
 };
 
 // ── LEGS movements ────────────────────────────────────────────────────────────
@@ -95,8 +119,8 @@ const CRUNCHES = {
 // ── Exported movement map ─────────────────────────────────────────────────────
 // planGenerator.js picks from this map by movement key + equipment tier.
 module.exports = {
-  BENCH, SHOULDER_PRESS, TRICEP_PUSHDOWN,
-  LAT_PULLDOWN, ROW, BICEP_CURL,
+  BENCH, SHOULDER_PRESS, TRICEP_PUSHDOWN, INCLINE_PRESS, LATERAL_RAISE,
+  LAT_PULLDOWN, ROW, BICEP_CURL, FACE_PULL, SUPERMAN,
   SQUAT, RDL, LUNGE, CALF_RAISE,
   PLANK, CRUNCHES,
 };

@@ -2,9 +2,12 @@
 // data/planGenerator.js — VTRX MVP Workout Plan Generator
 //
 // Deterministic: same user profile always produces the same plan.
-// 3 splits: Full Body (≤3 days), Upper/Lower (4 days), Push/Pull/Legs (5 days).
+// 3 splits: Full Body (2-3 days), Upper/Lower (4 days), Push/Pull/Legs (5-6 days).
+// Every non-rest session has at least MIN_EXERCISES_PER_SESSION exercises.
 // No AI, no randomness, no external calls.
 // ─────────────────────────────────────────────────────────────────────────────
+
+const MIN_EXERCISES_PER_SESSION = 5;
 
 const lib = require('./exerciseLibrary');
 
@@ -94,13 +97,13 @@ const SESSIONS = {
   },
   PUSH: {
     name:      'Push',
-    movements: ['BENCH', 'SHOULDER_PRESS', 'TRICEP_PUSHDOWN'],
-    duration:  40,
+    movements: ['BENCH', 'INCLINE_PRESS', 'SHOULDER_PRESS', 'LATERAL_RAISE', 'TRICEP_PUSHDOWN'],
+    duration:  45,
   },
   PULL: {
     name:      'Pull',
-    movements: ['LAT_PULLDOWN', 'ROW', 'BICEP_CURL'],
-    duration:  40,
+    movements: ['LAT_PULLDOWN', 'ROW', 'FACE_PULL', 'BICEP_CURL', 'SUPERMAN'],
+    duration:  45,
   },
   LEGS: {
     name:      'Legs',
@@ -153,6 +156,15 @@ const SCHEDULES = {
     ['Saturday',  'REST'],
     ['Sunday',    'REST'],
   ],
+  6: [
+    ['Monday',    'PUSH'],
+    ['Tuesday',   'PULL'],
+    ['Wednesday', 'LEGS'],
+    ['Thursday',  'PUSH'],
+    ['Friday',    'PULL'],
+    ['Saturday',  'LEGS'],
+    ['Sunday',    'REST'],
+  ],
 };
 
 // ── Human-readable plan name ──────────────────────────────────────────────────
@@ -174,7 +186,7 @@ function estimateCalories(durationMins, goal, weightLbs) {
 // ─────────────────────────────────────────────────────────────────────────────
 function generatePlan(userProfile) {
   const daysRaw  = parseInt(userProfile.daysPerWeek || userProfile.days || 3);
-  const days     = daysRaw <= 2 ? 2 : daysRaw <= 3 ? 3 : daysRaw <= 4 ? 4 : 5;
+  const days     = daysRaw <= 2 ? 2 : daysRaw <= 3 ? 3 : daysRaw <= 4 ? 4 : daysRaw <= 5 ? 5 : 6;
   const goal     = normaliseGoal(userProfile.goal);
   const level    = normaliseLevel(userProfile.fitnessLevel || userProfile.level);
   const tier     = resolveEquipmentTier(userProfile.equipment);
@@ -248,9 +260,8 @@ function validatePlan(plan) {
     for (const session of (week.sessions || [])) {
       if (session.isRestDay) continue;
       const exList = session.exercises || [];
-      if (exList.length === 0) {
-        errors.push(`Week ${week.weekNumber} ${session.dayOfWeek}: no exercises`);
-        continue;
+      if (exList.length < MIN_EXERCISES_PER_SESSION) {
+        errors.push(`Week ${week.weekNumber} ${session.dayOfWeek} (${session.sessionName}): only ${exList.length} exercises, need >= ${MIN_EXERCISES_PER_SESSION}`);
       }
       for (const ex of exList) {
         totalExercises++;
