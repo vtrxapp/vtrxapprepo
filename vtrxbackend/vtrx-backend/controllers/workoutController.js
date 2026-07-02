@@ -949,13 +949,36 @@ const getExerciseVideoUrl = async (req, res) => {
         if (res.exercises.length > 0) { exercises = res.exercises; break; }
       }
 
-      // Prefer exact name match, then partial match.
+      // Prefer exact name match, then a careful partial match.
       // NEVER fall back to exercises[0] — that attaches the wrong exercise's video.
-      const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      const nameLower = norm(searchName);
-      const match =
-        exercises.find(e => norm(e.title || e.name) === nameLower) ||
-        exercises.find(e => norm(e.title || e.name).includes(nameLower) || nameLower.includes(norm(e.title || e.name)));
+      //
+      // Word-based, not character-substring: the old norm() stripped spaces
+      // entirely, so "Plank" (-> "plank") matched ymove's "Plank Jack"
+      // (-> "plankjack") via raw .includes() — a dynamic jumping variant, not
+      // the static hold we asked for. Compare tokenised words instead, and
+      // never let a fuzzy match silently introduce a movement-changing word
+      // (jump/jack/burpee/etc) that wasn't in our own query.
+      const wordsOf = s => (s || '').toLowerCase().match(/[a-z0-9]+/g) || [];
+      const VARIANT_MODIFIERS = new Set([
+        'jack', 'jacks', 'jump', 'jumps', 'jumping', 'hop', 'hops', 'hopping',
+        'burpee', 'burpees', 'climber', 'climbers', 'walkout', 'walkouts',
+        'explosive', 'plyo', 'plyometric', 'tap', 'taps', 'punch', 'punches',
+        'kick', 'kicks', 'twist', 'twists', 'reach', 'reaches', 'rocker', 'rockers',
+      ]);
+      const queryWords    = wordsOf(searchName);
+      const queryWordSet  = new Set(queryWords);
+      const exactMatch = e => {
+        const w = wordsOf(e.title || e.name);
+        return w.length === queryWords.length && w.every((word, i) => word === queryWords[i]);
+      };
+      const safeFuzzyMatch = e => {
+        const w    = wordsOf(e.title || e.name);
+        const wSet = new Set(w);
+        if (!queryWords.every(word => wSet.has(word))) return false; // must contain every query word
+        const extraWords = w.filter(word => !queryWordSet.has(word));
+        return !extraWords.some(word => VARIANT_MODIFIERS.has(word)); // no smuggled-in variant word
+      };
+      const match = exercises.find(exactMatch) || exercises.find(safeFuzzyMatch);
       // No exercises[0] fallback — if nothing matches, we return 404 below.
 
       if (match) {
@@ -1997,7 +2020,7 @@ const generateSessionForDay = async (req, res) => {
             exerciseId: ex.dbId,
             order:      i,
             sets:       ex.sets,
-            reps:       String(ex.reps ?? (ex.defaultDurationSecs ? `${ex.defaultDurationSecs}s` : '10')),
+            reps:       String(ex.reps ?? (ex.durationSecs ? `${ex.durationSecs}s` : '10')),
             restSecs:   ex.restSeconds || 60,
           })),
         },
