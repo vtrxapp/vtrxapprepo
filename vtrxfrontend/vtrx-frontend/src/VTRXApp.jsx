@@ -7975,7 +7975,7 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
   const [selectedRecipe, setSelectedRecipe] = useState(null); // recipe object
   const [saveMsg, setSaveMsg]         = useState("");
   const [swapTarget, setSwapTarget]   = useState(null);
-  const [bannerOpen, setBannerOpen]   = useState(true); // AI banner collapsed state
+  const [bannerOpen, setBannerOpen]   = useState(false); // VTRX Smart Nutrition — collapsed by default
   const [checkedGrocery, setCheckedGrocery] = useState([]);
   const [selectedDay, setSelectedDay] = useState(new Date().getDay()===0?6:new Date().getDay()-1);
   // mealSwaps[dayIdx][slotLabel] = recipe object override for that slot
@@ -7996,6 +7996,10 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
   // ── Onboarding nutrition summary ──────────────────────────────────────────────
   const [onboardingNutrition, setOnboardingNutrition] = useState(null);
   const [onboardingNutritionLoading, setOnboardingNutritionLoading] = useState(false);
+  // True once we've checked at least once and the AI analysis isn't ready yet (it
+  // generates in the background after onboarding). Keeps the card visible with a
+  // "still preparing" message instead of disappearing once the initial fetch settles.
+  const [onboardingNutritionPending, setOnboardingNutritionPending] = useState(false);
   const [onboardingNutritionTwText, setOnboardingNutritionTwText] = useState("");
   const [onboardingNutritionTwDone, setOnboardingNutritionTwDone] = useState(false);
   const [nutritionSummaryExpanded, setNutritionSummaryExpanded] = useState(true);
@@ -8012,13 +8016,41 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
     return () => { _backHandler = null; };
   }, [selectedRecipe, showProfile, showUpgrade]);
 
+  // The AI analysis generates in the background after onboarding (a couple of
+  // OpenAI calls) — landing on this page before it finishes used to make the
+  // summary fetch resolve with nothing and the whole card vanish. Now it keeps
+  // retrying a few times with backoff so the card fills in if generation
+  // finishes while the user is still on the page, instead of just disappearing.
   useEffect(() => {
     if (!getAuthToken()) return;
-    setOnboardingNutritionLoading(true);
-    apiCall('/ai/onboarding-analysis')
-      .then(res => { if (res?.data?.nutritionSummary) setOnboardingNutrition(res.data.nutritionSummary); })
-      .catch(() => {})
-      .finally(() => setOnboardingNutritionLoading(false));
+    let cancelled = false;
+    let attempt = 0;
+    const RETRY_DELAYS_MS = [8000, 15000, 30000];
+
+    const fetchAnalysis = () => {
+      setOnboardingNutritionLoading(true);
+      apiCall('/ai/onboarding-analysis')
+        .then(res => {
+          if (cancelled) return;
+          const summary = res?.data?.nutritionSummary;
+          if (summary) {
+            setOnboardingNutrition(summary);
+            setOnboardingNutritionPending(false);
+            return;
+          }
+          setOnboardingNutritionPending(true);
+          if (attempt < RETRY_DELAYS_MS.length) {
+            const delay = RETRY_DELAYS_MS[attempt];
+            attempt++;
+            setTimeout(() => { if (!cancelled) fetchAnalysis(); }, delay);
+          }
+        })
+        .catch(() => { if (!cancelled) setOnboardingNutritionPending(true); })
+        .finally(() => { if (!cancelled) setOnboardingNutritionLoading(false); });
+    };
+
+    fetchAnalysis();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -8399,7 +8431,7 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
             )}
 
             {/* ── FREE AI NUTRITION SUMMARY ────────────────────────────────── */}
-            {(onboardingNutrition || onboardingNutritionLoading) && (
+            {(onboardingNutrition || onboardingNutritionLoading || onboardingNutritionPending) && (
               <div style={{ background:`linear-gradient(135deg,#0a1a0e,#0d2015)`,border:`1px solid #22C55E33`,borderRadius:18,marginBottom:14,overflow:"hidden" }}>
                 <div onClick={()=>setNutritionSummaryExpanded(e=>!e)}
                   style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 14px",cursor:"pointer" }}>
@@ -8424,8 +8456,12 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
                 </div>
                 {nutritionSummaryExpanded && (
                   <div style={{ padding:"0 14px 14px" }}>
-                    {onboardingNutritionLoading ? (
-                      <div style={{ fontFamily:FONT,fontSize:13,color:"#555",textAlign:"center",padding:"12px 0" }}>Preparing your nutrition analysis…</div>
+                    {!onboardingNutrition ? (
+                      <div style={{ fontFamily:FONT,fontSize:13,color:"#555",textAlign:"center",padding:"12px 0" }}>
+                        {onboardingNutritionLoading
+                          ? "Preparing your nutrition analysis…"
+                          : "Still generating your personalised analysis — check back in a few minutes, or we'll notify you when it's ready."}
+                      </div>
                     ) : (
                       <>
                         <div style={{ fontFamily:FONT,fontSize:13,color:"#ccc",lineHeight:1.75,borderLeft:"2px solid #22C55E44",paddingLeft:12,marginBottom:14 }}>
