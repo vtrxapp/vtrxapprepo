@@ -42,19 +42,45 @@ const apiCall = async (endpoint, options = {}) => {
     if (endpoint === "/workouts/log")        return { success:true };
     return { success:true, data:{} };
   }
-  const token = _getClerkToken ? await _getClerkToken() : null;
-  const res   = await fetch(`${API_URL}${endpoint}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(token && { Authorization: `Bearer ${token}` }),
-      ...options.headers,
-    },
-    ...options,
-  });
-  const data = await res.json();
+  const { skipAuthRedirect, ...fetchOptions } = options;
+
+  const attempt = async () => {
+    const token = _getClerkToken ? await _getClerkToken() : null;
+    const res   = await fetch(`${API_URL}${endpoint}`, {
+      headers: {
+        "Content-Type": "application/json",
+        ...(token && { Authorization: `Bearer ${token}` }),
+        ...fetchOptions.headers,
+      },
+      ...fetchOptions,
+    });
+    const data = await res.json();
+    return { res, data };
+  };
+
+  // The backend can restart mid-session (e.g. host idle/sleep cycling) — a request
+  // landing during that window fails with a raw network error or a spurious 401 that
+  // looks identical to a real expired session. Retry once after a short delay before
+  // treating it as either, so a several-second restart doesn't sign the user out.
+  let res, data;
+  try {
+    ({ res, data } = await attempt());
+  } catch (_networkErr) {
+    await new Promise(r => setTimeout(r, 2000));
+    ({ res, data } = await attempt());
+  }
+  if (!data.success && res.status === 401 && !endpoint.startsWith('/auth/')) {
+    await new Promise(r => setTimeout(r, 2000));
+    ({ res, data } = await attempt());
+  }
+
   if (!data.success && res.status >= 400) {
-    // Expired or invalid token on a protected route — clear session and go to login
-    if (res.status === 401 && !endpoint.startsWith('/auth/')) {
+    // Expired or invalid token on a protected route — clear session and go to login.
+    // Callers making their own first authenticated call right after establishing a
+    // session (e.g. LoginScreen fetching the profile immediately post-login) pass
+    // skipAuthRedirect so a 401 there doesn't force a full sign-out loop — that call
+    // already has its own local error handling.
+    if (res.status === 401 && !endpoint.startsWith('/auth/') && !skipAuthRedirect) {
       clearAuth();
       if (_onSessionExpired) _onSessionExpired();
     }
@@ -71,8 +97,9 @@ const storeAuth = (token, user) => {
 };
 const clearAuth = () => {
   if (typeof localStorage === "undefined") return;
-  localStorage.removeItem("vtrx_token");
-  localStorage.removeItem("vtrx_user");
+  Object.keys(localStorage)
+    .filter(k => k.startsWith('vtrx_'))
+    .forEach(k => localStorage.removeItem(k));
 };
 
 const getAuthToken = () => _isSignedIn ? 'clerk_active' : null;
@@ -1094,7 +1121,11 @@ function generateWorkoutTitle(exercises) {
 function normaliseExercise(ex) {
   // ymove /workouts/generate nests the exercise inside an 'exercise' key;
   // flatten it before normalising so all fields are at the top level
-  const src = (ex.exercise && typeof ex.exercise === 'object') ? { ...ex.exercise, sets: ex.sets, reps: ex.reps, restSecs: ex.restSeconds ?? ex.restSecs } : ex;
+  const src = (ex.exercise && typeof ex.exercise === 'object')
+    ? { ...ex.exercise, sets: ex.sets, reps: ex.reps, restSecs: ex.restSeconds ?? ex.restSecs,
+        isTimedExercise: ex.isTimedExercise ?? ex.exercise.isTimedExercise,
+        durationSecs:    ex.durationSecs    ?? ex.exercise.durationSecs }
+    : ex;
 
   // video URL: direct field, or primary video from videos array
   const primaryVideo = Array.isArray(src.videos)
@@ -1102,23 +1133,29 @@ function normaliseExercise(ex) {
     : null;
   const videoUrl = src.videoUrl || primaryVideo?.videoUrl || null;
   const thumbUrl = src.thumbnailUrl || primaryVideo?.thumbnailUrl || src.img || null;
+  const isTimedExercise = !!src.isTimedExercise;
 
   return {
-    id:           src.id           || null,
-    name:         src.title        || src.name         || 'Exercise',
-    sets:         src.sets         || 3,
-    reps:         src.reps         || '8-12',
-    muscles:      src.muscleGroup  || src.muscles || '',
-    equipment:    src.equipment    || null,
-    cal:          src.cal          || 0,
-    img:          thumbUrl,
+    id:              src.id              || null,
+    name:            src.title           || src.name         || 'Exercise',
+    sets:            src.sets            || 3,
+    isTimedExercise,
+    durationSecs:    src.durationSecs    || null,
+    // A timed exercise (e.g. Plank) has no rep target — encode it as "30s" so
+    // the existing parseReps()/summary-card display (which already special-cases
+    // strings ending in "s") shows the hold time instead of defaulting to '8-12'
+    reps:            isTimedExercise ? `${src.durationSecs || 30}s` : (src.reps || '8-12'),
+    muscles:         src.muscleGroup     || src.muscles || '',
+    equipment:       src.equipment       || null,
+    cal:             src.cal             || 0,
+    img:             thumbUrl,
     videoUrl,
-    hlsUrl:       src.hlsUrl       || null,
-    ymoveId:      src.ymoveId      || null,
-    thumbnailUrl: thumbUrl,
-    restSecs:     src.restSecs     || src.restSeconds || 60,
-    instructions: src.instructions || null,
-    description:  src.description  || null,
+    hlsUrl:          src.hlsUrl          || null,
+    ymoveId:         src.ymoveId         || null,
+    thumbnailUrl:    thumbUrl,
+    restSecs:        src.restSecs        || src.restSeconds || 60,
+    instructions:    src.instructions    || null,
+    description:     src.description     || null,
   };
 }
 
@@ -1288,9 +1325,9 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onStop, onExercise, co
                     {skipped && <div style={{ fontFamily:FONT,fontSize:10,color:"#F97316",marginTop:2,fontWeight:600 }}>Skipped</div>}
                   </div>
                   <div style={{ padding:"0 12px 0 4px",display:"flex",flexDirection:"column",gap:6,alignItems:"center" }}>
-                    <button onClick={(e)=>{e.stopPropagation(); if(started && !skipped) toggleEx(i);}}
-                      style={{ width:34,height:34,borderRadius:"50%",background:done?"#22C55E":started?"#2a2a2a":"#1e1e1e",border:done?`2px solid #22C55E`:started?`2px solid ${PRIMARY}`:`2px solid #333`,display:"flex",alignItems:"center",justifyContent:"center",cursor:started&&!skipped?"pointer":"default",transition:"all 0.2s",opacity:skipped?0.3:1 }}>
-                      <svg width="14" height="11" viewBox="0 0 14 11" fill="none" stroke={done?"#fff":started?"#555":"#333"} strokeWidth="2.5"><polyline points="1,5.5 5,9.5 13,1"/></svg>
+                    <button onClick={(e)=>{e.stopPropagation(); if(!skipped) toggleEx(i);}}
+                      style={{ width:34,height:34,borderRadius:"50%",background:done?"#22C55E":"#f0f0f0",border:done?"2px solid #22C55E":"2px solid #d0d0d0",display:"flex",alignItems:"center",justifyContent:"center",cursor:skipped?"default":"pointer",transition:"all 0.2s",opacity:skipped?0.3:1 }}>
+                      <svg width="14" height="11" viewBox="0 0 14 11" fill="none" stroke={done?"#fff":"#999"} strokeWidth="2.5"><polyline points="1,5.5 5,9.5 13,1"/></svg>
                     </button>
                     {!done && (
                       <button onClick={(e)=>{e.stopPropagation(); setCompletedEx(p => p.includes(`skip_${i}`) ? p.filter(x=>x!==`skip_${i}`) : [...p,`skip_${i}`]);}}
@@ -1330,11 +1367,36 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onStop, onExercise, co
 // ─────────────────────────────────────────────────────────────────────────────
 // ── SWIPEABLE SET ROW ────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
-function SwipeableSet({ set:s, index:i, activeSet, onUpdate, onComplete, onDelete }) {
+function SwipeableSet({ set:s, index:i, activeSet, onUpdate, onComplete, onDelete, isTimed=false, targetDurationSecs=30 }) {
   const [offsetX, setOffsetX] = useState(0);
   const [swiping, setSwiping] = useState(false);
   const startX = useRef(null);
   const THRESHOLD = 80;
+
+  // ── Hold timer (timed exercises only) — counts elapsed seconds live while
+  // held down, writing into the same "reps" field a manual entry would use ──
+  const [timerRunning, setTimerRunning] = useState(false);
+  const timerIntervalRef = useRef(null);
+
+  useEffect(() => {
+    if (!timerRunning) return;
+    timerIntervalRef.current = setInterval(() => {
+      onUpdate("reps", String((parseInt(s.reps) || 0) + 1));
+    }, 1000);
+    return () => clearInterval(timerIntervalRef.current);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timerRunning]);
+
+  // Stop an active timer if the set gets marked done or deleted out from under it
+  useEffect(() => { if (s.done) setTimerRunning(false); }, [s.done]);
+
+  const toggleTimer = () => {
+    if (s.done) return;
+    setTimerRunning(r => {
+      if (!r) onUpdate("reps", String(parseInt(s.reps) || 0)); // starting fresh from current value
+      return !r;
+    });
+  };
 
   const onTouchStart = e => { startX.current = e.touches[0].clientX; setSwiping(true); };
   const onTouchMove  = e => {
@@ -1365,17 +1427,32 @@ function SwipeableSet({ set:s, index:i, activeSet, onUpdate, onComplete, onDelet
         <div style={{ display:"flex",alignItems:"center",gap:12 }}>
           <div style={{ flexShrink:0,width:52 }}>
             <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:s.done?"#22C55E":i===activeSet?"#fff":"#444" }}>Set {i+1}</div>
-            <div style={{ fontFamily:FONT,fontSize:10,color:"#444",marginTop:1 }}>8–12 reps</div>
+            <div style={{ fontFamily:FONT,fontSize:10,color:"#444",marginTop:1 }}>{isTimed ? `${targetDurationSecs}s hold` : "8–12 reps"}</div>
           </div>
+          {!isTimed && (
+            <div style={{ flex:1 }}>
+              <div style={{ fontFamily:FONT,fontSize:10,color:"#888888",marginBottom:4,letterSpacing:0.5 }}>Weight (lbs)</div>
+              <input type="text" inputMode="decimal" pattern="[0-9]*\.?[0-9]*" placeholder="—" value={s.weight} onChange={e=>onUpdate("weight",e.target.value)} disabled={s.done}
+                style={{ width:"100%",background:s.done?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.06)",border:`1px solid ${s.done?"#22C55E33":i===activeSet?`${PRIMARY}55`:"#2a2a2a"}`,borderRadius:10,padding:"10px 12px",fontFamily:FONT,fontWeight:700,fontSize:16,color:s.done?"#22C55E":"#fff",outline:"none",textAlign:"center" }}/>
+            </div>
+          )}
           <div style={{ flex:1 }}>
-            <div style={{ fontFamily:FONT,fontSize:10,color:"#888888",marginBottom:4,letterSpacing:0.5 }}>Weight (lbs)</div>
-            <input type="text" inputMode="decimal" pattern="[0-9]*\.?[0-9]*" placeholder="—" value={s.weight} onChange={e=>onUpdate("weight",e.target.value)} disabled={s.done}
-              style={{ width:"100%",background:s.done?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.06)",border:`1px solid ${s.done?"#22C55E33":i===activeSet?`${PRIMARY}55`:"#2a2a2a"}`,borderRadius:10,padding:"10px 12px",fontFamily:FONT,fontWeight:700,fontSize:16,color:s.done?"#22C55E":"#fff",outline:"none",textAlign:"center" }}/>
-          </div>
-          <div style={{ flex:1 }}>
-            <div style={{ fontFamily:FONT,fontSize:10,color:"#888888",marginBottom:4,letterSpacing:0.5 }}>Reps</div>
-            <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder="—" value={s.reps} onChange={e=>onUpdate("reps",e.target.value)} disabled={s.done}
-              style={{ width:"100%",background:s.done?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.06)",border:`1px solid ${s.done?"#22C55E33":i===activeSet?`${PRIMARY}55`:"#2a2a2a"}`,borderRadius:10,padding:"10px 12px",fontFamily:FONT,fontWeight:700,fontSize:16,color:s.done?"#22C55E":"#fff",outline:"none",textAlign:"center" }}/>
+            <div style={{ fontFamily:FONT,fontSize:10,color:"#888888",marginBottom:4,letterSpacing:0.5 }}>{isTimed ? "Duration (sec)" : "Reps"}</div>
+            {isTimed ? (
+              <div style={{ display:"flex",alignItems:"center",gap:6 }}>
+                <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder="—" value={s.reps} onChange={e=>onUpdate("reps",e.target.value)} disabled={s.done || timerRunning}
+                  style={{ flex:1,minWidth:0,background:s.done?"rgba(34,197,94,0.08)":timerRunning?"rgba(0,163,255,0.12)":"rgba(255,255,255,0.06)",border:`1px solid ${s.done?"#22C55E33":timerRunning?PRIMARY:i===activeSet?`${PRIMARY}55`:"#2a2a2a"}`,borderRadius:10,padding:"10px 8px",fontFamily:FONT,fontWeight:700,fontSize:16,color:s.done?"#22C55E":"#fff",outline:"none",textAlign:"center" }}/>
+                <button onClick={toggleTimer} disabled={s.done} title={timerRunning?"Stop timer":"Start timer"}
+                  style={{ width:36,height:36,borderRadius:"50%",background:timerRunning?"#EF4444":PRIMARY,border:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:s.done?"default":"pointer",flexShrink:0,transition:"all 0.2s",boxShadow:timerRunning?"0 0 12px rgba(239,68,68,0.5)":`0 0 12px ${PRIMARY}44` }}>
+                  {timerRunning
+                    ? <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+                    : <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21"/></svg>}
+                </button>
+              </div>
+            ) : (
+              <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder="—" value={s.reps} onChange={e=>onUpdate("reps",e.target.value)} disabled={s.done}
+                style={{ width:"100%",background:s.done?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.06)",border:`1px solid ${s.done?"#22C55E33":i===activeSet?`${PRIMARY}55`:"#2a2a2a"}`,borderRadius:10,padding:"10px 12px",fontFamily:FONT,fontWeight:700,fontSize:16,color:s.done?"#22C55E":"#fff",outline:"none",textAlign:"center" }}/>
+            )}
           </div>
           <button onClick={onComplete} disabled={s.done}
             style={{ width:44,height:44,borderRadius:"50%",background:s.done?"#22C55E":i===activeSet?PRIMARY:"#1a1a1a",border:`2px solid ${s.done?"#22C55E":i===activeSet?PRIMARY:"#333"}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:s.done?"default":"pointer",flexShrink:0,transition:"all 0.2s",boxShadow:s.done?"0 0 12px rgba(34,197,94,0.4)":i===activeSet?`0 0 12px ${PRIMARY}44`:"none" }}>
@@ -2086,10 +2163,13 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
   const completedSets = sets.filter(s=>s.done).length;
   const allDone = completedSets === sets.length;
 
-  // Can only mark set done if weight AND reps are filled
+  // Can only mark set done once its target is filled — a timed exercise (e.g.
+  // Plank) only needs a duration logged, not a bodyweight-irrelevant weight
   const canComplete = (i) => {
     const s = sets[i];
-    return s && String(s.weight).trim() !== "" && String(s.reps).trim() !== "";
+    if (!s) return false;
+    if (ex.isTimedExercise) return String(s.reps).trim() !== "";
+    return String(s.weight).trim() !== "" && String(s.reps).trim() !== "";
   };
 
   const markSetDone = (i) => {
@@ -2201,11 +2281,14 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
       <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"16px",marginBottom:14 }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16 }}>
           <div style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff" }}>Log Your Sets</div>
-          <div style={{ fontFamily:FONT,fontSize:11,color:"#888888" }}>Target: 8–12 reps</div>
+          <div style={{ fontFamily:FONT,fontSize:11,color:"#888888" }}>
+            {ex.isTimedExercise ? `Target: ${ex.durationSecs || 30}s hold` : "Target: 8–12 reps"}
+          </div>
         </div>
         {sets.map((s,i)=>(
           <SwipeableSet key={i}
             set={s} index={i} activeSet={activeSet}
+            isTimed={ex.isTimedExercise} targetDurationSecs={ex.durationSecs || 30}
             onUpdate={(field,val)=>updateSet(i,field,val)}
             onComplete={()=>!s.done&&markSetDone(i)}
             onDelete={i>=MIN_SETS&&!s.done ? ()=>setSets(p=>p.filter((_,j)=>j!==i)) : null}
@@ -2680,15 +2763,21 @@ function AISummaryPage({ energyKey, logId, onBack }) {
               )}
             </>
           ) : (
-            /* Analysis not ready yet */
+            /* No workout logged yet */
             <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"40px 24px",textAlign:"center",marginTop:20 }}>
-              <div style={{ width:64,height:64,borderRadius:"50%",background:"linear-gradient(135deg,#7C3AED,#4C1D95)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",boxShadow:"0 0 24px rgba(124,58,237,0.4)" }}>
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              <div style={{ width:64,height:64,borderRadius:"50%",background:"rgba(124,58,237,0.12)",border:"1.5px solid rgba(124,58,237,0.35)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px" }}>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
               </div>
-              <div style={{ fontFamily:FONT,fontWeight:900,fontSize:18,color:"#fff",marginBottom:10 }}>Analysis Being Prepared</div>
-              <div style={{ fontFamily:FONT,fontSize:13,color:"#888",lineHeight:1.7 }}>
-                Your personalised AI coaching plan is being generated. You'll get a notification when it's ready — usually within a few minutes of signing up.
+              <div style={{ fontFamily:FONT,fontWeight:900,fontSize:18,color:"#fff",marginBottom:10 }}>No Workouts Logged Yet</div>
+              <div style={{ fontFamily:FONT,fontSize:13,color:"#888",lineHeight:1.7,marginBottom:24 }}>
+                Complete your first workout to unlock your personalised VTRX analysis — strength scores, progress tracking, and coaching insights all in one place.
               </div>
+              <button
+                onClick={() => onBack()}
+                style={{ padding:"13px 32px",borderRadius:50,background:"linear-gradient(135deg,#7C3AED,#4C1D95)",border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",letterSpacing:0.8,boxShadow:"0 4px 20px rgba(124,58,237,0.35)" }}
+              >
+                START A WORKOUT
+              </button>
             </div>
           )}
         </div>
@@ -3321,8 +3410,10 @@ function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
 
   React.useEffect(() => {
     if (!clerkLoaded || !isSignedIn) return;
-    // Already signed in (e.g., after password reset) — fetch profile and route
-    apiCall("/users/profile")
+    // Already signed in (e.g., after password reset) — fetch profile and route.
+    // skipAuthRedirect: a 401 here (fresh session, first authenticated call) should
+    // route to onboarding via the catch below, not force a full Clerk sign-out.
+    apiCall("/users/profile", { skipAuthRedirect: true })
       .then(res => onLogin(res?.data?.user || {}))
       .catch(() => onLogin({}));
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3373,9 +3464,12 @@ function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
 
       if (result.status === 'complete') {
         await setActive({ session: result.createdSessionId });
-        // Fetch Prisma user profile now that Clerk session is active
+        // Fetch Prisma user profile now that Clerk session is active.
+        // skipAuthRedirect: this is the first authenticated call of a fresh session —
+        // a 401 here must not trigger a full Clerk sign-out (that's what was bouncing
+        // users straight back to the login screen after a successful login).
         try {
-          const profileRes = await apiCall("/users/profile");
+          const profileRes = await apiCall("/users/profile", { skipAuthRedirect: true });
           const u = profileRes?.data?.user || {};
           if (u.id) setUser(prev => ({...prev, ...u}));
           onLogin(u);
@@ -3882,7 +3976,7 @@ function WorkoutTypeIcon({ type }) {
 function WorkoutScreen({ onContinue, onBack }) {
   const { user, setUser } = useUser();
   const[goal,setGoal]=useState("");const[level,setLevel]=useState("");const[style,setStyle]=useState([]);const[days,setDays]=useState("");const[time,setTime]=useState("");const[location,setLocation]=useState("");const[equip,setEquip]=useState([]);
-  return <Shell bg="https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=800&q=80" overlay="linear-gradient(180deg,rgba(0,0,0,0.55) 0%,rgba(0,0,0,0.55) 30%,rgba(0,0,0,0.85) 100%)"><NavBar title="Customize Workout" step={2} total={3} onBack={onBack} onSkip={onContinue}/><div style={{ flex:1,overflowY:"auto",padding:"0 24px 24px" }}><Q n="1" text="What is your primary goal?" sub="(Select one)"/><ChipGroup options={["Build Muscle","Lose Weight","Stay Active","Improve Endurance","Get Toned"]} value={goal} onChange={setGoal}/><Q n="2" text="What is your experience level?" sub="(Select one)"/><ChipGroup options={["Beginner","Intermediate","Advanced","Professional"]} value={level} onChange={setLevel}/><Q n="3" text="What is your preferred workout style?" sub="(Pick 1–3)"/><ChipGroup options={["Strength Training","Cardio","HIIT","Bodyweight","Functional Fitness"]} value={style} onChange={setStyle} multi/><Q n="4" text="How many times do you want to work out each week?"/><ChipGroup options={["1–2 Days/Week","3–4 Days/Week","5+ Days/Week"]} value={days} onChange={setDays}/><Q n="5" text="Where do you usually work out?" sub="(Select one)"/><ChipGroup options={["Full Gym","Home","Outdoors","Mix of both"]} value={location} onChange={setLocation}/><Q n="6" text="What equipment do you have access to?" sub="(Select all that apply)"/><ChipGroup options={["Dumbbells","Barbell & Plates","Pull-up Bar","Resistance Bands","Kettlebells","Bench","Cable Machine","No Equipment"]} value={equip} onChange={setEquip} multi/><Q n="7" text="How much time can you dedicate to fitness daily?"/><ChipGroup options={["15–30 minutes","30–45 minutes","45–60 minutes","60+ minutes"]} value={time} onChange={setTime}/><div style={{marginTop:28}}><CTA label="CONTINUE" onClick={()=>{ const newPrefs={goal:goal||user.goal, fitnessLevel:level||user.fitnessLevel, workoutTime:time, workoutLocation:location, location:location, workoutStyle:style, equipment:equip, daysPerWeek:parseInt(days)||user.daysPerWeek}; setUser(u=>({...u,...newPrefs})); if(getAuthToken()){apiCall('/users/profile',{method:'PUT',body:JSON.stringify({goal:newPrefs.goal,fitnessLevel:newPrefs.fitnessLevel,daysPerWeek:newPrefs.daysPerWeek,equipment:newPrefs.equipment,location:newPrefs.location,sessionDuration:time,preferredStyles:Array.isArray(style)?style:[style].filter(Boolean)})}).catch(()=>{}); } onContinue(); }}/></div></div></Shell>;
+  return <Shell bg="https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=800&q=80" overlay="linear-gradient(180deg,rgba(0,0,0,0.55) 0%,rgba(0,0,0,0.55) 30%,rgba(0,0,0,0.85) 100%)"><NavBar title="Customize Workout" step={2} total={3} onBack={onBack} onSkip={onContinue}/><div style={{ flex:1,overflowY:"auto",padding:"0 24px 24px" }}><Q n="1" text="What is your primary goal?" sub="(Select one)"/><ChipGroup options={["Build Muscle","Lose Weight","Stay Active","Improve Endurance","Get Toned"]} value={goal} onChange={setGoal}/><Q n="2" text="What is your experience level?" sub="(Select one)"/><ChipGroup options={["Beginner","Intermediate","Advanced","Professional"]} value={level} onChange={setLevel}/><Q n="3" text="What is your preferred workout style?" sub="(Pick 1–3)"/><ChipGroup options={["Strength Training","Cardio","HIIT","Bodyweight","Functional Fitness"]} value={style} onChange={setStyle} multi/><Q n="4" text="How many times do you want to work out each week?"/><ChipGroup options={["1–2 Days/Week","3–4 Days/Week","5+ Days/Week"]} value={days} onChange={setDays}/><Q n="5" text="Where do you usually work out?" sub="(Select one)"/><ChipGroup options={["Full Gym","Home","Outdoors","Mix of both"]} value={location} onChange={setLocation}/><Q n="6" text="What equipment do you have access to?" sub="(Select all that apply)"/><ChipGroup options={["Dumbbells","Barbell & Plates","Pull-up Bar","Resistance Bands","Kettlebells","Bench","Cable Machine","No Equipment"]} value={equip} onChange={setEquip} multi/><Q n="7" text="How much time can you dedicate to fitness daily?"/><ChipGroup options={["15–30 minutes","30–45 minutes","45–60 minutes","60+ minutes"]} value={time} onChange={setTime}/><div style={{marginTop:28}}><CTA label="CONTINUE" onClick={()=>{ const newPrefs={goal:goal||user.goal, fitnessLevel:level||user.fitnessLevel, workoutTime:time, workoutLocation:location, location:location, workoutStyle:style, equipment:equip, daysPerWeek:parseInt(days)||user.daysPerWeek}; setUser(u=>({...u,...newPrefs})); if(getAuthToken()){apiCall('/users/profile',{method:'PUT',skipAuthRedirect:true,body:JSON.stringify({goal:newPrefs.goal,fitnessLevel:newPrefs.fitnessLevel,daysPerWeek:newPrefs.daysPerWeek,equipment:newPrefs.equipment,location:newPrefs.location,sessionDuration:time,preferredStyles:Array.isArray(style)?style:[style].filter(Boolean)})}).catch(()=>{}); } onContinue(); }}/></div></div></Shell>;
 }
 function NutritionScreen({ onContinue, onBack }) {
   const { setUser } = useUser();
@@ -3891,7 +3985,7 @@ function NutritionScreen({ onContinue, onBack }) {
   const TRACK_MAP = {"Yes, both":"yes_both","Only Calories":"only_calories","No, but I'd like to":"no_but_interested","No, not interested":"no_not_interested"};
   const DIET_MAP  = {"Vegan":"vegan","Vegetarian":"vegetarian","Gluten Free":"gluten_free","Dairy-Free":"dairy_free","No Peanuts":"no_peanuts","Other?":"other"};
   const MEALS_MAP = {"2 meals":"2","3 meals":"3","4+ meals":"4_plus","It varies":"varies"};
-  return <Shell bg="https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=800&q=80" overlay="linear-gradient(180deg,rgba(0,10,20,0.45) 0%,rgba(0,10,20,0.55) 30%,rgba(0,10,20,0.9) 100%)"><NavBar title="Customize Nutrition" step={3} total={3} onBack={onBack} onSkip={onContinue}/><div style={{ flex:1,overflowY:"auto",padding:"0 24px 24px" }}><Q n="1" text="Would you like meal suggestions based on your goals?"/><ChipGroup options={["Yes","No"]} value={want} onChange={setWant}/><Q n="2" text="What's your main nutrition goal?"/><ChipGroup options={["Lose Fat","Build Muscle","Maintain","Eat clean","Improve Energy"]} value={nutGoal} onChange={setNutGoal}/><Q n="3" text="Do you track your calories or macros?"/><ChipGroup options={["Yes, both","Only Calories","No, but I'd like to","No, not interested"]} value={track} onChange={setTrack}/><Q n="4" text="Do you have any dietary preferences or restrictions?"/><ChipGroup options={["Vegan","Vegetarian","Gluten Free","Dairy-Free","No Peanuts","Other?"]} value={diet} onChange={setDiet} multi/><Q n="5" text="How many meals do you eat daily?"/><ChipGroup options={["2 meals","3 meals","4+ meals","It varies"]} value={meals} onChange={setMeals}/><div style={{marginTop:28}}><CTA label="CONTINUE" onClick={()=>{ const prefs={ wantsMealSuggestions:want==="Yes", nutritionGoal:GOAL_MAP[nutGoal]||nutGoal||"maintain", trackingPreference:TRACK_MAP[track]||track||"no_not_interested", dietaryRestrictions:diet.map(d=>DIET_MAP[d]||d.toLowerCase().replace(/\s+/g,"_")), mealsPerDay:MEALS_MAP[meals]||meals||"3" }; setUser(u=>({...u,...prefs})); if(getAuthToken()){apiCall('/users/profile',{method:'PUT',body:JSON.stringify(prefs)}).catch(()=>{});} onContinue(); }}/></div></div></Shell>;
+  return <Shell bg="https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=800&q=80" overlay="linear-gradient(180deg,rgba(0,10,20,0.45) 0%,rgba(0,10,20,0.55) 30%,rgba(0,10,20,0.9) 100%)"><NavBar title="Customize Nutrition" step={3} total={3} onBack={onBack} onSkip={onContinue}/><div style={{ flex:1,overflowY:"auto",padding:"0 24px 24px" }}><Q n="1" text="Would you like meal suggestions based on your goals?"/><ChipGroup options={["Yes","No"]} value={want} onChange={setWant}/><Q n="2" text="What's your main nutrition goal?"/><ChipGroup options={["Lose Fat","Build Muscle","Maintain","Eat clean","Improve Energy"]} value={nutGoal} onChange={setNutGoal}/><Q n="3" text="Do you track your calories or macros?"/><ChipGroup options={["Yes, both","Only Calories","No, but I'd like to","No, not interested"]} value={track} onChange={setTrack}/><Q n="4" text="Do you have any dietary preferences or restrictions?"/><ChipGroup options={["Vegan","Vegetarian","Gluten Free","Dairy-Free","No Peanuts","Other?"]} value={diet} onChange={setDiet} multi/><Q n="5" text="How many meals do you eat daily?"/><ChipGroup options={["2 meals","3 meals","4+ meals","It varies"]} value={meals} onChange={setMeals}/><div style={{marginTop:28}}><CTA label="CONTINUE" onClick={()=>{ const prefs={ wantsMealSuggestions:want==="Yes", nutritionGoal:GOAL_MAP[nutGoal]||nutGoal||"maintain", trackingPreference:TRACK_MAP[track]||track||"no_not_interested", dietaryRestrictions:diet.map(d=>DIET_MAP[d]||d.toLowerCase().replace(/\s+/g,"_")), mealsPerDay:MEALS_MAP[meals]||meals||"3" }; setUser(u=>({...u,...prefs})); if(getAuthToken()){apiCall('/users/profile',{method:'PUT',skipAuthRedirect:true,body:JSON.stringify(prefs)}).catch(()=>{});} onContinue(); }}/></div></div></Shell>;
 }
 function PricingScreen({ onContinue, onBack }) {
   const subscribe = (plan) => {
@@ -9143,7 +9237,7 @@ function NutriRegenPage({ onBack, onNavigate }) {
 
 // MY PLAN PAGE — AI-generated 4-week personalised workout programme
 // ─────────────────────────────────────────────────────────────────────────────
-function MyPlanPage({ onBack }) {
+function MyPlanPage({ onBack, onNavigate }) {
   const [plan,            setPlan]            = useState(null);
   const [weekNumber,      setWeekNumber]      = useState(1);
   const [selectedSession, setSelectedSession] = useState(null);
@@ -9169,8 +9263,26 @@ function MyPlanPage({ onBack }) {
     setLoading(true); setError(null);
     try {
       const res = await apiCall('/workouts/active-plan');
-      if (res?.data?.plan) applyPlan(res.data);
-    } catch(_) { setError('Could not load your plan.'); }
+      if (res?.data?.plan) {
+        if (!Array.isArray(res.data.plan.weeks) || res.data.plan.weeks.length === 0) {
+          setPlan(null); // treat malformed plan as no plan
+        } else {
+          applyPlan(res.data);
+        }
+      }
+    } catch(err) {
+      const status = err?.status || err?.response?.status;
+      if (status === 401) {
+        // Session expired — apiCall already handles this globally, just clear state
+        setError(null);
+      } else if (status === 404) {
+        // No plan exists — show the generate plan CTA, not an error
+        setPlan(null);
+        setError(null);
+      } else {
+        setError('Could not load your plan. Check your connection and try again.');
+      }
+    }
     setLoading(false);
   };
 
@@ -9308,12 +9420,13 @@ function MyPlanPage({ onBack }) {
             <div style={{ fontFamily:FONT,fontWeight:800,fontSize:11,color:"#555",letterSpacing:1.5,marginBottom:10 }}>SESSION DETAIL</div>
 
             {(selectedSession.exercises||[]).map((ex,i)=>{
+              const normEx      = normaliseExercise({ ...ex, muscles: ex.muscleGroup, restSecs: ex.restSeconds });
               const isEx        = expandedEx===i;
               const vUrl        = exVideos[ex.name];
-              const repsDisplay = ex.isTimedExercise ? `${ex.durationSecs}s` : `${ex.reps} reps`;
+              const repsDisplay = ex.isTimedExercise ? `${ex.durationSecs ?? 30}s` : `${normEx.reps ?? '—'} reps`;
               const repsLabel   = ex.isTimedExercise ? 'TIME' : 'REPS';
-              const repsValue   = ex.isTimedExercise ? `${ex.durationSecs}s` : ex.reps;
-              const muscle      = (ex.muscleGroup||'').split('_').map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
+              const repsValue   = ex.isTimedExercise ? `${ex.durationSecs ?? 30}s` : (normEx.reps ?? '—');
+              const muscle      = (normEx.muscles||'').split('_').map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
               return (
                 <div key={i} style={{ background:CARD,borderRadius:14,marginBottom:8,border:`1.5px solid ${isEx?PRIMARY:BORDER}`,overflow:"hidden",transition:"border-color 0.18s" }}>
                   <div onClick={()=>{ const next=isEx?null:i; setExpandedEx(next); if(next!==null) fetchExVideo(ex.name); }}
@@ -9323,7 +9436,7 @@ function MyPlanPage({ onBack }) {
                     </div>
                     <div style={{ flex:1 }}>
                       <div style={{ fontFamily:FONT,fontWeight:800,fontSize:13,color:"#fff",marginBottom:2 }}>{ex.name}</div>
-                      <div style={{ fontFamily:FONT,fontSize:11,color:"#555" }}>{ex.sets} sets × {repsDisplay} · {ex.restSeconds}s rest</div>
+                      <div style={{ fontFamily:FONT,fontSize:11,color:"#555" }}>{normEx.sets} sets × {repsDisplay} · {normEx.restSecs}s rest</div>
                     </div>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={isEx?PRIMARY:"#444"} strokeWidth="2"
                       style={{ transform:isEx?"rotate(90deg)":"rotate(0)",transition:"transform 0.18s" }}>
@@ -9333,7 +9446,7 @@ function MyPlanPage({ onBack }) {
                   {isEx&&(
                     <div style={{ padding:"0 15px 14px",borderTop:`1px solid ${BORDER}` }}>
                       <div style={{ display:"flex",gap:7,marginTop:12,marginBottom:12 }}>
-                        {[{l:"SETS",v:ex.sets},{l:repsLabel,v:repsValue},{l:"REST",v:`${ex.restSeconds}s`},{l:"MUSCLE",v:muscle}].map(s=>(
+                        {[{l:"SETS",v:normEx.sets},{l:repsLabel,v:repsValue},{l:"REST",v:`${normEx.restSecs}s`},{l:"MUSCLE",v:muscle}].map(s=>(
                           <div key={s.l} style={{ flex:1,background:CARD2,borderRadius:10,padding:"8px 4px",textAlign:"center" }}>
                             <div style={{ fontFamily:FONT,fontSize:9,color:"#444",letterSpacing:1.2,marginBottom:3 }}>{s.l}</div>
                             <div style={{ fontFamily:FONT,fontWeight:800,fontSize:13,color:PRIMARY }}>{s.v}</div>
@@ -9351,7 +9464,21 @@ function MyPlanPage({ onBack }) {
               );
             })}
 
-            <button style={{ width:"100%",padding:"15px",borderRadius:16,background:PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",letterSpacing:0.3,boxShadow:`0 4px 20px ${PRIMARY}40`,marginBottom:14 }}>
+            <button onClick={()=>{
+              const workoutObj = {
+                id: null,
+                name: selectedSession.sessionName,
+                type: selectedSession.type || 'STRENGTH',
+                duration: selectedSession.durationMins,
+                calories: selectedSession.calories,
+                exercises: (selectedSession.exercises || []).map(ex => normaliseExercise({
+                  ...ex,
+                  muscles: ex.muscleGroup,
+                  restSecs: ex.restSeconds,
+                })),
+              };
+              onNavigate("workoutDetail", workoutObj);
+            }} style={{ width:"100%",padding:"15px",borderRadius:16,background:PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",letterSpacing:0.3,boxShadow:`0 4px 20px ${PRIMARY}40`,marginBottom:14 }}>
               Start Session
             </button>
           </div>
@@ -9772,11 +9899,16 @@ function VTRXAppInner({ setPaymentPlan }) {
       setScreen(0);
       return;
     }
-    // Save onboarding profile to backend
+    // Save onboarding profile to backend.
+    // skipAuthRedirect: this is the final step of onboarding — a transient 401 here
+    // must not force a full sign-out (the user has just finished setup and has this
+    // data locally in state regardless; better to proceed to the dashboard than to
+    // bounce them all the way back to login).
     if (!DEMO_MODE && isSignedIn) {
       try {
         await apiCall("/users/profile", {
           method: "PUT",
+          skipAuthRedirect: true,
           body: JSON.stringify({
             ...(user.name && { name: user.name }),
             gender:               user.gender,
@@ -9798,7 +9930,7 @@ function VTRXAppInner({ setPaymentPlan }) {
         });
       } catch(_e){}
       // Fire-and-forget: generate free AI onboarding analysis + schedule 5-min notification
-      apiCall("/ai/onboarding-analysis", { method: "POST" }).catch(() => {});
+      apiCall("/ai/onboarding-analysis", { method: "POST", skipAuthRedirect: true }).catch(() => {});
     }
     if (!isSignedIn) {
       setPhase("login");
@@ -9915,7 +10047,11 @@ function VTRXAppInner({ setPaymentPlan }) {
     if (DEMO_MODE) { afterSplash("onboarding"); return; }
     if (!isSignedIn) { afterSplash("onboarding"); return; }
 
-    apiCall("/users/profile").then(res=>{
+    // skipAuthRedirect: this is the initial app-load fetch, fired on every page
+    // load/refresh for an already-signed-in user. It already falls back to
+    // onboarding on failure below — a transient 401 here shouldn't force an
+    // actual Clerk sign-out for a user who is genuinely still signed in.
+    apiCall("/users/profile", { skipAuthRedirect: true }).then(res=>{
       if (res?.data?.user) {
         const u = res.data.user;
         setUser(prev=>({...prev,
@@ -10264,7 +10400,7 @@ function VTRXAppInner({ setPaymentPlan }) {
   if (phase !== "dashboard") return null;
 
   // Inner pages
-  if (innerPage==="myPlan")        return <MyPlanPage onBack={goBack}/>;
+  if (innerPage==="myPlan")        return <MyPlanPage onBack={goBack} onNavigate={navigate}/>;
   if (innerPage==="upgrade")       return <UpgradePlanPage onBack={goBack}/>;
   if (innerPage==="aiSummary")     return <AISummaryPage energyKey={energyKey} workoutDone={workoutDone} logId={lastWorkoutLogId} onBack={goBack}/>;
   if (innerPage==="nutrition")     return <NutritionPage meal={MEALS[mealIdx % MEALS.length]} onBack={goBack}/>;

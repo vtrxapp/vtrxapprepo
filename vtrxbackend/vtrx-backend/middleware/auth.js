@@ -38,6 +38,10 @@ const protect = async (req, res, next) => {
     try {
       payload = await verifyToken(token, { secretKey: process.env.CLERK_SECRET_KEY });
     } catch (err) {
+      // Log the real reason — e.g. token-expired vs a key/instance mismatch between
+      // the frontend's publishable key and this server's CLERK_SECRET_KEY, which
+      // otherwise looks identical (a generic 401) from the client.
+      logger.warn(`Clerk verifyToken failed: ${err.reason || err.message}`);
       return res.status(401).json({ success: false, message: 'Invalid or expired token' });
     }
 

@@ -56,20 +56,23 @@ function normaliseLevel(raw) {
 }
 
 // ── Pick one exercise from the movement map ───────────────────────────────────
+// Field names on the returned object (isTimedExercise / durationSecs) match
+// the convention the frontend already reads (see MyPlanPage) — not the
+// isTimed / defaultDurationSecs names used internally by exerciseLibrary.js.
 function pickExercise(movementKey, tier, sets, goal) {
   const movement = lib[movementKey];
   if (!movement) return null;
   const ex = movement[tier] || movement.none;
   if (!ex) return null;
   return {
-    name:               ex.name,
-    muscleGroup:        ex.muscleGroup,
+    name:            ex.name,
+    muscleGroup:     ex.muscleGroup,
     sets,
-    reps:               ex.isTimed ? null : ex.defaultReps,
-    restSeconds:        getRestSeconds(goal),
-    isCompound:         ex.isCompound,
-    isTimed:            ex.isTimed,
-    defaultDurationSecs: ex.defaultDurationSecs || null,
+    reps:            ex.isTimed ? null : ex.defaultReps,
+    restSeconds:     getRestSeconds(goal),
+    isCompound:      ex.isCompound,
+    isTimedExercise: ex.isTimed,
+    durationSecs:    ex.defaultDurationSecs || null,
   };
 }
 
@@ -265,10 +268,10 @@ function validatePlan(plan) {
       }
       for (const ex of exList) {
         totalExercises++;
-        if (!ex.name)                                    errors.push(`Week ${week.weekNumber}: exercise missing name`);
-        if (!ex.sets || ex.sets < 1)                    errors.push(`${ex.name}: sets must be >= 1`);
-        if (!ex.isTimed && (!ex.reps || ex.reps < 1))  errors.push(`${ex.name}: non-timed exercise missing reps`);
-        if (ex.isTimed && !ex.defaultDurationSecs)      errors.push(`${ex.name}: timed exercise missing defaultDurationSecs`);
+        if (!ex.name)                                            errors.push(`Week ${week.weekNumber}: exercise missing name`);
+        if (!ex.sets || ex.sets < 1)                            errors.push(`${ex.name}: sets must be >= 1`);
+        if (!ex.isTimedExercise && (!ex.reps || ex.reps < 1))  errors.push(`${ex.name}: non-timed exercise missing reps`);
+        if (ex.isTimedExercise && !ex.durationSecs)             errors.push(`${ex.name}: timed exercise missing durationSecs`);
       }
     }
   }
