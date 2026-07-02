@@ -42,19 +42,24 @@ const apiCall = async (endpoint, options = {}) => {
     if (endpoint === "/workouts/log")        return { success:true };
     return { success:true, data:{} };
   }
+  const { skipAuthRedirect, ...fetchOptions } = options;
   const token = _getClerkToken ? await _getClerkToken() : null;
   const res   = await fetch(`${API_URL}${endpoint}`, {
     headers: {
       "Content-Type": "application/json",
       ...(token && { Authorization: `Bearer ${token}` }),
-      ...options.headers,
+      ...fetchOptions.headers,
     },
-    ...options,
+    ...fetchOptions,
   });
   const data = await res.json();
   if (!data.success && res.status >= 400) {
-    // Expired or invalid token on a protected route — clear session and go to login
-    if (res.status === 401 && !endpoint.startsWith('/auth/')) {
+    // Expired or invalid token on a protected route — clear session and go to login.
+    // Callers making their own first authenticated call right after establishing a
+    // session (e.g. LoginScreen fetching the profile immediately post-login) pass
+    // skipAuthRedirect so a transient 401 there doesn't force a full sign-out loop —
+    // that call already has its own local error handling.
+    if (res.status === 401 && !endpoint.startsWith('/auth/') && !skipAuthRedirect) {
       clearAuth();
       if (_onSessionExpired) _onSessionExpired();
     }
@@ -3323,8 +3328,10 @@ function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
 
   React.useEffect(() => {
     if (!clerkLoaded || !isSignedIn) return;
-    // Already signed in (e.g., after password reset) — fetch profile and route
-    apiCall("/users/profile")
+    // Already signed in (e.g., after password reset) — fetch profile and route.
+    // skipAuthRedirect: a 401 here (fresh session, first authenticated call) should
+    // route to onboarding via the catch below, not force a full Clerk sign-out.
+    apiCall("/users/profile", { skipAuthRedirect: true })
       .then(res => onLogin(res?.data?.user || {}))
       .catch(() => onLogin({}));
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3375,9 +3382,12 @@ function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
 
       if (result.status === 'complete') {
         await setActive({ session: result.createdSessionId });
-        // Fetch Prisma user profile now that Clerk session is active
+        // Fetch Prisma user profile now that Clerk session is active.
+        // skipAuthRedirect: this is the first authenticated call of a fresh session —
+        // a 401 here must not trigger a full Clerk sign-out (that's what was bouncing
+        // users straight back to the login screen after a successful login).
         try {
-          const profileRes = await apiCall("/users/profile");
+          const profileRes = await apiCall("/users/profile", { skipAuthRedirect: true });
           const u = profileRes?.data?.user || {};
           if (u.id) setUser(prev => ({...prev, ...u}));
           onLogin(u);
