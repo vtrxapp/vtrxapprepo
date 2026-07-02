@@ -108,6 +108,7 @@ let _backHandler = null;
 const _weightsCache   = { data: null, fetchedAt: 0 };
 const _nutritionCache = {};          // keyed by "filter_userId"
 const _savedCache     = { data: null, fetchedAt: 0 };
+const _categorizedCache = { data: null, fetchedAt: 0 };
 const _videoUrlCache  = new Map();   // key: ymoveId|name → { videoUrl, hlsUrl, cachedAt }
 const CACHE_TTL_MS    = 30 * 60 * 1000;   // 30 min
 const VIDEO_TTL_MS    = 12 * 60 * 60 * 1000; // 12 h
@@ -7867,6 +7868,9 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
   const [loadingRecipes, setLoadingRecipes] = useState(false);
   const [totalRecipes,   setTotalRecipes]   = useState(0);
   const [recipePage,     setRecipePage]     = useState(1);
+  // Categorized recipe sections (11 fixed categories, <=10 recipes each) — default Discover view
+  const [categorized,        setCategorized]        = useState([]);
+  const [categorizedLoading, setCategorizedLoading]  = useState(false);
   const [savedRecipes,   setSavedRecipes]   = useState([]);
   const [savedSet,       setSavedSet]       = useState(new Set());
   const [selectedRecipe, setSelectedRecipe] = useState(null); // recipe object
@@ -8008,6 +8012,29 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[filter, currentUser?.id]);
 
+  // Fetch categorized recipe sections (11 fixed categories, <=10 each) once —
+  // this is the default Discover view shown when there's no active search/filter.
+  useEffect(()=>{
+    if (!getAuthToken()) return;
+    const now = Date.now();
+    if (_categorizedCache.data && (now - _categorizedCache.fetchedAt) < CACHE_TTL_MS) {
+      setCategorized(_categorizedCache.data);
+      return;
+    }
+    setCategorizedLoading(true);
+    apiCall('/nutrition/recipes/categorized')
+      .then(d=>{
+        const cats = (d?.data?.categories || [])
+          .map(c => ({ ...c, recipes: (c.recipes||[]).map(normalizeRecipe) }))
+          .filter(c => c.recipes.length > 0);
+        setCategorized(cats);
+        _categorizedCache.data = cats;
+        _categorizedCache.fetchedAt = Date.now();
+      })
+      .catch(()=>{})
+      .finally(()=>setCategorizedLoading(false));
+  },[]);
+
   // Fetch saved recipes once on mount
   useEffect(()=>{
     if (!getAuthToken()) return;
@@ -8112,6 +8139,37 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
   const recommendedIds = new Set(recommended.map(r => String(r.id)));
   // Main grid excludes already-recommended recipes so users never see the same recipe twice
   const filteredGrid = filtered.filter(r => !recommendedIds.has(String(r.id)));
+
+  // Fixed-width tile for horizontal-scroll category rows (mirrors the "Recommended" tile style)
+  const renderCategoryTile = (r, i) => {
+    const isSaved = savedSet.has(String(r.id));
+    return (
+      <div key={r.id||i} onClick={()=>setSelectedRecipe(r)}
+        style={{ width:160,minWidth:160,flexShrink:0,background:"#fff",borderRadius:14,overflow:"hidden",cursor:"pointer",border:`1px solid ${BORDER}` }}>
+        <div style={{ height:110,overflow:"hidden",position:"relative" }}>
+          {r.img
+            ? <img src={r.img} alt="" width={160} height={110} loading="lazy" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+            : <div style={{ width:"100%",height:"100%",background:"linear-gradient(135deg,#1a1a2e,#16213e)",display:"flex",alignItems:"center",justifyContent:"center",padding:"8px" }}>
+                <span style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#fff",textAlign:"center",lineHeight:1.3 }}>{r.name}</span>
+              </div>
+          }
+          <button onClick={e=>{ e.stopPropagation(); toggleSave(r); }} style={{ position:"absolute",top:8,right:8,width:28,height:28,borderRadius:"50%",background:"rgba(0,0,0,0.5)",border:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill={isSaved?"#00A3FF":"none"} stroke="#fff" strokeWidth="2"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>
+          </button>
+        </div>
+        <div style={{ padding:"10px" }}>
+          <div style={{ fontFamily:FONT,fontSize:12,fontWeight:700,color:"#111",marginBottom:4,lineHeight:1.3 }}>{r.name}</div>
+          <div style={{ display:"flex",gap:6 }}>
+            <span style={{ fontFamily:FONT,fontSize:10,color:"#EF4444",fontWeight:600 }}>{r.cal} cal</span>
+            <span style={{ fontFamily:FONT,fontSize:10,color:PRIMARY,fontWeight:600 }}>{r.protein}g protein</span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+  // Categorized sections are the default Discover view; an active search or a
+  // non-"All" filter pill switches to the existing flat filtered grid below.
+  const showCategorizedSections = !search && filter === "All";
 
   // ── Meal Plan helpers ─────────────────────────────────────────────────────────
   const MEAL_SLOTS = ['breakfast','lunch','snack','dinner'];
@@ -8431,66 +8489,109 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
                 </button>
               ))}
             </div>
-            {/* Recipe grid */}
-            {loadingRecipes && (
-              <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12 }}>
-                {Array.from({length:10}).map((_,i)=>(
-                  <div key={i} style={{ background:CARD,borderRadius:14,overflow:"hidden",border:`1px solid ${BORDER}` }}>
-                    <div style={{ height:110,background:"#1e1e1e" }}/>
-                    <div style={{ padding:"10px" }}>
-                      <div style={{ height:13,background:"#1e1e1e",borderRadius:4,marginBottom:6,width:"75%" }}/>
-                      <div style={{ height:10,background:"#1e1e1e",borderRadius:4,width:"45%" }}/>
+            {/* Categorized sections — default Discover view (11 fixed categories, <=10 each) */}
+            {showCategorizedSections && (
+              <div>
+                {categorizedLoading && categorized.length === 0 && (
+                  <div style={{ display:"flex",flexDirection:"column",gap:20 }}>
+                    {Array.from({length:3}).map((_,s)=>(
+                      <div key={s}>
+                        <div style={{ height:14,width:120,background:"#1e1e1e",borderRadius:4,marginBottom:10 }}/>
+                        <div style={{ display:"flex",gap:12,overflow:"hidden" }}>
+                          {Array.from({length:3}).map((_,i)=>(
+                            <div key={i} style={{ width:160,minWidth:160,background:CARD,borderRadius:14,overflow:"hidden",border:`1px solid ${BORDER}` }}>
+                              <div style={{ height:110,background:"#1e1e1e" }}/>
+                              <div style={{ padding:"10px" }}>
+                                <div style={{ height:13,background:"#1e1e1e",borderRadius:4,marginBottom:6,width:"75%" }}/>
+                                <div style={{ height:10,background:"#1e1e1e",borderRadius:4,width:"45%" }}/>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {!categorizedLoading && categorized.length === 0 && (
+                  <div style={{ textAlign:"center",padding:"40px 16px" }}>
+                    <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#fff",marginBottom:8 }}>No recipes available yet</div>
+                    <div style={{ fontFamily:FONT,fontSize:12,color:"#555",lineHeight:1.65 }}>Check back soon — new recipes are added regularly.</div>
+                  </div>
+                )}
+                {categorized.map(cat => (
+                  <div key={cat.key} style={{ marginBottom:20 }}>
+                    <div style={{ fontFamily:FONT,fontWeight:900,fontSize:15,color:"#fff",marginBottom:10 }}>{cat.label}</div>
+                    <div style={{ display:"flex",gap:12,overflowX:"auto",paddingBottom:4,scrollbarWidth:"none",msOverflowStyle:"none" }}>
+                      {cat.recipes.map((r,i) => renderCategoryTile(r,i))}
                     </div>
                   </div>
                 ))}
               </div>
             )}
-            {!loadingRecipes && filteredGrid.length===0 && (
-              <div style={{ textAlign:"center",padding:"40px 16px" }}>
-                <div style={{ width:52,height:52,borderRadius:"50%",background:`${PRIMARY}18`,border:`1px solid ${PRIMARY}33`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px" }}>
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.8"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>
-                </div>
-                <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#fff",marginBottom:8 }}>
-                  {search ? `No results for "${search}"` : `No ${filter !== "All" ? filter.toLowerCase() : ""} recipes found`}
-                </div>
-                <div style={{ fontFamily:FONT,fontSize:12,color:"#555",lineHeight:1.65,marginBottom:20,maxWidth:260,margin:"0 auto 20px" }}>
-                  {search ? "Try a different search term." : "Try a different filter or update your dietary preferences in Settings."}
-                </div>
-                {!search && (
-                  <button onClick={()=>setShowProfile(true)}
-                    style={{ padding:"12px 28px",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:700,fontSize:13,color:"#fff",cursor:"pointer" }}>
-                    Update Preferences
-                  </button>
-                )}
-              </div>
-            )}
-            <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12 }}>
-              {filteredGrid.map((r,i)=>{
-                const isSaved = savedSet.has(String(r.id));
-                return (
-                  <div key={r.id||i} onClick={()=>setSelectedRecipe(r)} style={{ background:"#fff",borderRadius:14,overflow:"hidden",cursor:"pointer",border:`1px solid ${BORDER}` }}>
-                    <div style={{ height:110,overflow:"hidden",position:"relative" }}>
-                      {r.img
-                        ? <img src={r.img} alt="" width={160} height={110} loading="lazy" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
-                        : <div style={{ width:"100%",height:"100%",background:"linear-gradient(135deg,#1a1a2e,#16213e)",display:"flex",alignItems:"center",justifyContent:"center",padding:"8px" }}>
-                            <span style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#fff",textAlign:"center",lineHeight:1.3 }}>{r.name}</span>
-                          </div>
-                      }
-                      <button onClick={e=>{ e.stopPropagation(); toggleSave(r); }} style={{ position:"absolute",top:8,right:8,width:28,height:28,borderRadius:"50%",background:"rgba(0,0,0,0.5)",border:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill={isSaved?"#00A3FF":"none"} stroke="#fff" strokeWidth="2"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>
-                      </button>
-                    </div>
-                    <div style={{ padding:"10px" }}>
-                      <div style={{ fontFamily:FONT,fontSize:12,fontWeight:700,color:"#111",marginBottom:4,lineHeight:1.3 }}>{r.name}</div>
-                      <div style={{ display:"flex",gap:6 }}>
-                        <span style={{ fontFamily:FONT,fontSize:10,color:"#EF4444",fontWeight:600 }}>{r.cal} cal</span>
-                        <span style={{ fontFamily:FONT,fontSize:10,color:PRIMARY,fontWeight:600 }}>{r.protein}g protein</span>
+            {/* Flat filtered grid — shown while searching or a specific filter pill is active */}
+            {!showCategorizedSections && (
+              <>
+                {loadingRecipes && (
+                  <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12 }}>
+                    {Array.from({length:10}).map((_,i)=>(
+                      <div key={i} style={{ background:CARD,borderRadius:14,overflow:"hidden",border:`1px solid ${BORDER}` }}>
+                        <div style={{ height:110,background:"#1e1e1e" }}/>
+                        <div style={{ padding:"10px" }}>
+                          <div style={{ height:13,background:"#1e1e1e",borderRadius:4,marginBottom:6,width:"75%" }}/>
+                          <div style={{ height:10,background:"#1e1e1e",borderRadius:4,width:"45%" }}/>
+                        </div>
                       </div>
-                    </div>
+                    ))}
                   </div>
-                );
-              })}
-            </div>
+                )}
+                {!loadingRecipes && filteredGrid.length===0 && (
+                  <div style={{ textAlign:"center",padding:"40px 16px" }}>
+                    <div style={{ width:52,height:52,borderRadius:"50%",background:`${PRIMARY}18`,border:`1px solid ${PRIMARY}33`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px" }}>
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.8"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>
+                    </div>
+                    <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#fff",marginBottom:8 }}>
+                      {search ? `No results for "${search}"` : `No ${filter !== "All" ? filter.toLowerCase() : ""} recipes found`}
+                    </div>
+                    <div style={{ fontFamily:FONT,fontSize:12,color:"#555",lineHeight:1.65,marginBottom:20,maxWidth:260,margin:"0 auto 20px" }}>
+                      {search ? "Try a different search term." : "Try a different filter or update your dietary preferences in Settings."}
+                    </div>
+                    {!search && (
+                      <button onClick={()=>setShowProfile(true)}
+                        style={{ padding:"12px 28px",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:700,fontSize:13,color:"#fff",cursor:"pointer" }}>
+                        Update Preferences
+                      </button>
+                    )}
+                  </div>
+                )}
+                <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12 }}>
+                  {filteredGrid.map((r,i)=>{
+                    const isSaved = savedSet.has(String(r.id));
+                    return (
+                      <div key={r.id||i} onClick={()=>setSelectedRecipe(r)} style={{ background:"#fff",borderRadius:14,overflow:"hidden",cursor:"pointer",border:`1px solid ${BORDER}` }}>
+                        <div style={{ height:110,overflow:"hidden",position:"relative" }}>
+                          {r.img
+                            ? <img src={r.img} alt="" width={160} height={110} loading="lazy" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+                            : <div style={{ width:"100%",height:"100%",background:"linear-gradient(135deg,#1a1a2e,#16213e)",display:"flex",alignItems:"center",justifyContent:"center",padding:"8px" }}>
+                                <span style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#fff",textAlign:"center",lineHeight:1.3 }}>{r.name}</span>
+                              </div>
+                          }
+                          <button onClick={e=>{ e.stopPropagation(); toggleSave(r); }} style={{ position:"absolute",top:8,right:8,width:28,height:28,borderRadius:"50%",background:"rgba(0,0,0,0.5)",border:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill={isSaved?"#00A3FF":"none"} stroke="#fff" strokeWidth="2"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>
+                          </button>
+                        </div>
+                        <div style={{ padding:"10px" }}>
+                          <div style={{ fontFamily:FONT,fontSize:12,fontWeight:700,color:"#111",marginBottom:4,lineHeight:1.3 }}>{r.name}</div>
+                          <div style={{ display:"flex",gap:6 }}>
+                            <span style={{ fontFamily:FONT,fontSize:10,color:"#EF4444",fontWeight:600 }}>{r.cal} cal</span>
+                            <span style={{ fontFamily:FONT,fontSize:10,color:PRIMARY,fontWeight:600 }}>{r.protein}g protein</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
 
           </div>
         )}
