@@ -1121,7 +1121,11 @@ function generateWorkoutTitle(exercises) {
 function normaliseExercise(ex) {
   // ymove /workouts/generate nests the exercise inside an 'exercise' key;
   // flatten it before normalising so all fields are at the top level
-  const src = (ex.exercise && typeof ex.exercise === 'object') ? { ...ex.exercise, sets: ex.sets, reps: ex.reps, restSecs: ex.restSeconds ?? ex.restSecs } : ex;
+  const src = (ex.exercise && typeof ex.exercise === 'object')
+    ? { ...ex.exercise, sets: ex.sets, reps: ex.reps, restSecs: ex.restSeconds ?? ex.restSecs,
+        isTimedExercise: ex.isTimedExercise ?? ex.exercise.isTimedExercise,
+        durationSecs:    ex.durationSecs    ?? ex.exercise.durationSecs }
+    : ex;
 
   // video URL: direct field, or primary video from videos array
   const primaryVideo = Array.isArray(src.videos)
@@ -1129,23 +1133,29 @@ function normaliseExercise(ex) {
     : null;
   const videoUrl = src.videoUrl || primaryVideo?.videoUrl || null;
   const thumbUrl = src.thumbnailUrl || primaryVideo?.thumbnailUrl || src.img || null;
+  const isTimedExercise = !!src.isTimedExercise;
 
   return {
-    id:           src.id           || null,
-    name:         src.title        || src.name         || 'Exercise',
-    sets:         src.sets         || 3,
-    reps:         src.reps         || '8-12',
-    muscles:      src.muscleGroup  || src.muscles || '',
-    equipment:    src.equipment    || null,
-    cal:          src.cal          || 0,
-    img:          thumbUrl,
+    id:              src.id              || null,
+    name:            src.title           || src.name         || 'Exercise',
+    sets:            src.sets            || 3,
+    isTimedExercise,
+    durationSecs:    src.durationSecs    || null,
+    // A timed exercise (e.g. Plank) has no rep target — encode it as "30s" so
+    // the existing parseReps()/summary-card display (which already special-cases
+    // strings ending in "s") shows the hold time instead of defaulting to '8-12'
+    reps:            isTimedExercise ? `${src.durationSecs || 30}s` : (src.reps || '8-12'),
+    muscles:         src.muscleGroup     || src.muscles || '',
+    equipment:       src.equipment       || null,
+    cal:             src.cal             || 0,
+    img:             thumbUrl,
     videoUrl,
-    hlsUrl:       src.hlsUrl       || null,
-    ymoveId:      src.ymoveId      || null,
-    thumbnailUrl: thumbUrl,
-    restSecs:     src.restSecs     || src.restSeconds || 60,
-    instructions: src.instructions || null,
-    description:  src.description  || null,
+    hlsUrl:          src.hlsUrl          || null,
+    ymoveId:         src.ymoveId         || null,
+    thumbnailUrl:    thumbUrl,
+    restSecs:        src.restSecs        || src.restSeconds || 60,
+    instructions:    src.instructions    || null,
+    description:     src.description     || null,
   };
 }
 
@@ -1357,11 +1367,36 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onStop, onExercise, co
 // ─────────────────────────────────────────────────────────────────────────────
 // ── SWIPEABLE SET ROW ────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
-function SwipeableSet({ set:s, index:i, activeSet, onUpdate, onComplete, onDelete }) {
+function SwipeableSet({ set:s, index:i, activeSet, onUpdate, onComplete, onDelete, isTimed=false, targetDurationSecs=30 }) {
   const [offsetX, setOffsetX] = useState(0);
   const [swiping, setSwiping] = useState(false);
   const startX = useRef(null);
   const THRESHOLD = 80;
+
+  // ── Hold timer (timed exercises only) — counts elapsed seconds live while
+  // held down, writing into the same "reps" field a manual entry would use ──
+  const [timerRunning, setTimerRunning] = useState(false);
+  const timerIntervalRef = useRef(null);
+
+  useEffect(() => {
+    if (!timerRunning) return;
+    timerIntervalRef.current = setInterval(() => {
+      onUpdate("reps", String((parseInt(s.reps) || 0) + 1));
+    }, 1000);
+    return () => clearInterval(timerIntervalRef.current);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timerRunning]);
+
+  // Stop an active timer if the set gets marked done or deleted out from under it
+  useEffect(() => { if (s.done) setTimerRunning(false); }, [s.done]);
+
+  const toggleTimer = () => {
+    if (s.done) return;
+    setTimerRunning(r => {
+      if (!r) onUpdate("reps", String(parseInt(s.reps) || 0)); // starting fresh from current value
+      return !r;
+    });
+  };
 
   const onTouchStart = e => { startX.current = e.touches[0].clientX; setSwiping(true); };
   const onTouchMove  = e => {
@@ -1392,17 +1427,32 @@ function SwipeableSet({ set:s, index:i, activeSet, onUpdate, onComplete, onDelet
         <div style={{ display:"flex",alignItems:"center",gap:12 }}>
           <div style={{ flexShrink:0,width:52 }}>
             <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:s.done?"#22C55E":i===activeSet?"#fff":"#444" }}>Set {i+1}</div>
-            <div style={{ fontFamily:FONT,fontSize:10,color:"#444",marginTop:1 }}>8–12 reps</div>
+            <div style={{ fontFamily:FONT,fontSize:10,color:"#444",marginTop:1 }}>{isTimed ? `${targetDurationSecs}s hold` : "8–12 reps"}</div>
           </div>
+          {!isTimed && (
+            <div style={{ flex:1 }}>
+              <div style={{ fontFamily:FONT,fontSize:10,color:"#888888",marginBottom:4,letterSpacing:0.5 }}>Weight (lbs)</div>
+              <input type="text" inputMode="decimal" pattern="[0-9]*\.?[0-9]*" placeholder="—" value={s.weight} onChange={e=>onUpdate("weight",e.target.value)} disabled={s.done}
+                style={{ width:"100%",background:s.done?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.06)",border:`1px solid ${s.done?"#22C55E33":i===activeSet?`${PRIMARY}55`:"#2a2a2a"}`,borderRadius:10,padding:"10px 12px",fontFamily:FONT,fontWeight:700,fontSize:16,color:s.done?"#22C55E":"#fff",outline:"none",textAlign:"center" }}/>
+            </div>
+          )}
           <div style={{ flex:1 }}>
-            <div style={{ fontFamily:FONT,fontSize:10,color:"#888888",marginBottom:4,letterSpacing:0.5 }}>Weight (lbs)</div>
-            <input type="text" inputMode="decimal" pattern="[0-9]*\.?[0-9]*" placeholder="—" value={s.weight} onChange={e=>onUpdate("weight",e.target.value)} disabled={s.done}
-              style={{ width:"100%",background:s.done?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.06)",border:`1px solid ${s.done?"#22C55E33":i===activeSet?`${PRIMARY}55`:"#2a2a2a"}`,borderRadius:10,padding:"10px 12px",fontFamily:FONT,fontWeight:700,fontSize:16,color:s.done?"#22C55E":"#fff",outline:"none",textAlign:"center" }}/>
-          </div>
-          <div style={{ flex:1 }}>
-            <div style={{ fontFamily:FONT,fontSize:10,color:"#888888",marginBottom:4,letterSpacing:0.5 }}>Reps</div>
-            <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder="—" value={s.reps} onChange={e=>onUpdate("reps",e.target.value)} disabled={s.done}
-              style={{ width:"100%",background:s.done?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.06)",border:`1px solid ${s.done?"#22C55E33":i===activeSet?`${PRIMARY}55`:"#2a2a2a"}`,borderRadius:10,padding:"10px 12px",fontFamily:FONT,fontWeight:700,fontSize:16,color:s.done?"#22C55E":"#fff",outline:"none",textAlign:"center" }}/>
+            <div style={{ fontFamily:FONT,fontSize:10,color:"#888888",marginBottom:4,letterSpacing:0.5 }}>{isTimed ? "Duration (sec)" : "Reps"}</div>
+            {isTimed ? (
+              <div style={{ display:"flex",alignItems:"center",gap:6 }}>
+                <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder="—" value={s.reps} onChange={e=>onUpdate("reps",e.target.value)} disabled={s.done || timerRunning}
+                  style={{ flex:1,minWidth:0,background:s.done?"rgba(34,197,94,0.08)":timerRunning?"rgba(0,163,255,0.12)":"rgba(255,255,255,0.06)",border:`1px solid ${s.done?"#22C55E33":timerRunning?PRIMARY:i===activeSet?`${PRIMARY}55`:"#2a2a2a"}`,borderRadius:10,padding:"10px 8px",fontFamily:FONT,fontWeight:700,fontSize:16,color:s.done?"#22C55E":"#fff",outline:"none",textAlign:"center" }}/>
+                <button onClick={toggleTimer} disabled={s.done} title={timerRunning?"Stop timer":"Start timer"}
+                  style={{ width:36,height:36,borderRadius:"50%",background:timerRunning?"#EF4444":PRIMARY,border:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:s.done?"default":"pointer",flexShrink:0,transition:"all 0.2s",boxShadow:timerRunning?"0 0 12px rgba(239,68,68,0.5)":`0 0 12px ${PRIMARY}44` }}>
+                  {timerRunning
+                    ? <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+                    : <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21"/></svg>}
+                </button>
+              </div>
+            ) : (
+              <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder="—" value={s.reps} onChange={e=>onUpdate("reps",e.target.value)} disabled={s.done}
+                style={{ width:"100%",background:s.done?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.06)",border:`1px solid ${s.done?"#22C55E33":i===activeSet?`${PRIMARY}55`:"#2a2a2a"}`,borderRadius:10,padding:"10px 12px",fontFamily:FONT,fontWeight:700,fontSize:16,color:s.done?"#22C55E":"#fff",outline:"none",textAlign:"center" }}/>
+            )}
           </div>
           <button onClick={onComplete} disabled={s.done}
             style={{ width:44,height:44,borderRadius:"50%",background:s.done?"#22C55E":i===activeSet?PRIMARY:"#1a1a1a",border:`2px solid ${s.done?"#22C55E":i===activeSet?PRIMARY:"#333"}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:s.done?"default":"pointer",flexShrink:0,transition:"all 0.2s",boxShadow:s.done?"0 0 12px rgba(34,197,94,0.4)":i===activeSet?`0 0 12px ${PRIMARY}44`:"none" }}>
@@ -2113,10 +2163,13 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
   const completedSets = sets.filter(s=>s.done).length;
   const allDone = completedSets === sets.length;
 
-  // Can only mark set done if weight AND reps are filled
+  // Can only mark set done once its target is filled — a timed exercise (e.g.
+  // Plank) only needs a duration logged, not a bodyweight-irrelevant weight
   const canComplete = (i) => {
     const s = sets[i];
-    return s && String(s.weight).trim() !== "" && String(s.reps).trim() !== "";
+    if (!s) return false;
+    if (ex.isTimedExercise) return String(s.reps).trim() !== "";
+    return String(s.weight).trim() !== "" && String(s.reps).trim() !== "";
   };
 
   const markSetDone = (i) => {
@@ -2228,11 +2281,14 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
       <div style={{ background:CARD,borderRadius:18,border:`1px solid ${BORDER}`,padding:"16px",marginBottom:14 }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16 }}>
           <div style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff" }}>Log Your Sets</div>
-          <div style={{ fontFamily:FONT,fontSize:11,color:"#888888" }}>Target: 8–12 reps</div>
+          <div style={{ fontFamily:FONT,fontSize:11,color:"#888888" }}>
+            {ex.isTimedExercise ? `Target: ${ex.durationSecs || 30}s hold` : "Target: 8–12 reps"}
+          </div>
         </div>
         {sets.map((s,i)=>(
           <SwipeableSet key={i}
             set={s} index={i} activeSet={activeSet}
+            isTimed={ex.isTimedExercise} targetDurationSecs={ex.durationSecs || 30}
             onUpdate={(field,val)=>updateSet(i,field,val)}
             onComplete={()=>!s.done&&markSetDone(i)}
             onDelete={i>=MIN_SETS&&!s.done ? ()=>setSets(p=>p.filter((_,j)=>j!==i)) : null}
