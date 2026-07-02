@@ -8347,9 +8347,12 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
             {/* VTRX Smart Nutrition */}
             {(() => {
               const nFact = DAILY_NUTRITION_FACTS[selectedDay] || DAILY_NUTRITION_FACTS[0];
-              // Find one recipe whose tags match the fact's focus tag
+              // Find one recipe whose tags match the fact's focus tag.
+              // recipeTag is absent on non-food facts (Hydration, Micronutrients) —
+              // fall back to '' so .toLowerCase() never runs on undefined.
+              const recipeTagLower = (nFact.recipeTag || '').toLowerCase();
               const recipeMatch = displayRecipes.find(r =>
-                (r.tags||[]).some(t => t.toLowerCase().includes(nFact.recipeTag.toLowerCase()))
+                (r.tags||[]).some(t => t.toLowerCase().includes(recipeTagLower))
               ) || displayRecipes[0] || normalizeRecipe(RECIPES[0]);
               // Today's macros from meal plan (premium)
               const todayMacros = MEAL_SLOTS.reduce((acc, slot) => {
