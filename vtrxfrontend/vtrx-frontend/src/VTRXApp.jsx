@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, createContext, useContext, useImperativeHandle, forwardRef } from "react";
+import { useAuth as useClerkAuth, useSignUp as useClerkSignUp, useSignIn as useClerkSignIn, useClerk } from '@clerk/clerk-react';
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, PaymentRequestButtonElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { getNotificationToken, onForegroundMessage, isPushSupported } from "./firebase";
@@ -41,7 +42,7 @@ const apiCall = async (endpoint, options = {}) => {
     if (endpoint === "/workouts/log")        return { success:true };
     return { success:true, data:{} };
   }
-  const token = typeof localStorage !== "undefined" ? localStorage.getItem("vtrx_token") : null;
+  const token = _getClerkToken ? await _getClerkToken() : null;
   const res   = await fetch(`${API_URL}${endpoint}`, {
     headers: {
       "Content-Type": "application/json",
@@ -75,9 +76,7 @@ const clearAuth = () => {
     .forEach(k => localStorage.removeItem(k));
 };
 
-const getAuthToken = () => {
-  try { return typeof localStorage !== "undefined" ? localStorage.getItem("vtrx_token") : null; } catch(_e){ return null; }
-};
+const getAuthToken = () => _isSignedIn ? 'clerk_active' : null;
 const getCachedUser = () => {
   try { return JSON.parse(localStorage.getItem("vtrx_user") || "null"); } catch(_e){ return null; }
 };
@@ -97,6 +96,9 @@ const useUser = () => useContext(UserCtx);
 // VTRXAppInner registers a handler; apiCall fires it when a 401 is received on
 // any non-auth route so the user is sent back to login automatically.
 let _onSessionExpired = null;
+// Clerk token bridge — VTRXAppInner registers getToken(); apiCall() calls it
+let _getClerkToken = null;
+let _isSignedIn = false;
 
 // ── Browser back-button bridge ────────────────────────────────────────────────
 // Child hubs (WeightsHub, NutritionHub) set this when they have a sub-page open
@@ -107,6 +109,7 @@ let _backHandler = null;
 const _weightsCache   = { data: null, fetchedAt: 0 };
 const _nutritionCache = {};          // keyed by "filter_userId"
 const _savedCache     = { data: null, fetchedAt: 0 };
+const _categorizedCache = { data: null, fetchedAt: 0 };
 const _videoUrlCache  = new Map();   // key: ymoveId|name → { videoUrl, hlsUrl, cachedAt }
 const CACHE_TTL_MS    = 30 * 60 * 1000;   // 30 min
 const VIDEO_TTL_MS    = 12 * 60 * 60 * 1000; // 12 h
@@ -3202,18 +3205,23 @@ function ForgotPasswordPage({ onBack }) {
   const [confirmPass, setConfirmPass] = useState("");
   const [err, setErr]             = useState("");
   const [loading, setLoading]     = useState(false);
-  const [verificationId, setVerificationId] = useState("");
-  const [emailAddressId, setEmailAddressId] = useState("");
+  const { signIn, setActive } = useClerkSignIn();
 
   const sendCode = async () => {
     if (!email.trim()) { setErr("Please enter your email."); return; }
     setErr(""); setLoading(true);
     try {
-      const res = await apiCall("/auth/forgot-password", { method:"POST", body:JSON.stringify({ email:email.trim().toLowerCase() }) });
-      if (res?.data?.verificationId) setVerificationId(res.data.verificationId);
-      if (res?.data?.emailAddressId) setEmailAddressId(res.data.emailAddressId);
+      await signIn.create({
+        strategy: 'reset_password_email_code',
+        identifier: email.trim().toLowerCase(),
+      });
       setStep("code");
-    } catch (e) { setErr(e.message || "Failed to send code."); }
+    } catch (e) {
+      const clerkErr = e?.errors?.[0];
+      // Treat "user not found" as success to avoid email enumeration
+      if (clerkErr?.code === 'form_identifier_not_found') { setStep("code"); }
+      else { setErr(clerkErr?.longMessage || clerkErr?.message || e?.message || "Failed to send code."); }
+    }
     finally { setLoading(false); }
   };
 
@@ -3228,9 +3236,22 @@ function ForgotPasswordPage({ onBack }) {
     if (newPass !== confirmPass) { setErr("Passwords do not match."); return; }
     setErr(""); setLoading(true);
     try {
-      await apiCall("/auth/reset-password", { method:"POST", body:JSON.stringify({ email:email.trim().toLowerCase(), code:code.trim(), newPassword:newPass, verificationId, emailAddressId }) });
+      const result = await signIn.attemptFirstFactor({
+        strategy: 'reset_password_email_code',
+        code: code.trim(),
+        password: newPass,
+      });
+      if (result.status === 'complete') {
+        await setActive({ session: result.createdSessionId });
+      }
       setStep("done");
-    } catch (e) { setErr(e.message || "Failed to reset password."); }
+    } catch (e) {
+      const clerkErr = e?.errors?.[0];
+      if (clerkErr?.code === 'form_code_incorrect') { setErr("Incorrect code. Please try again."); }
+      else if (clerkErr?.code === 'form_code_expired') { setErr("Code expired. Please request a new one."); }
+      else if (clerkErr?.code?.includes('password')) { setErr(clerkErr?.longMessage || clerkErr?.message || "Password does not meet requirements."); }
+      else { setErr(clerkErr?.longMessage || clerkErr?.message || e?.message || "Failed to reset password."); }
+    }
     finally { setLoading(false); }
   };
 
@@ -3297,6 +3318,17 @@ function ForgotPasswordPage({ onBack }) {
 
 function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
   const { setUser } = useUser();   // ← This was missing
+  const { signIn, setActive } = useClerkSignIn();
+  const { isLoaded: clerkLoaded, isSignedIn } = useClerkAuth();
+
+  React.useEffect(() => {
+    if (!clerkLoaded || !isSignedIn) return;
+    // Already signed in (e.g., after password reset) — fetch profile and route
+    apiCall("/users/profile")
+      .then(res => onLogin(res?.data?.user || {}))
+      .catch(() => onLogin({}));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clerkLoaded, isSignedIn]);
 
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
@@ -3336,39 +3368,41 @@ function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
     setLoading(true);
 
     try {
-      const data = await apiCall("/auth/login", {
-        method: "POST",
-        body: JSON.stringify({
-          email: email.trim().toLowerCase(),
-          password: pass,
-          clientHour: new Date().getHours(),
-        }),
+      const result = await signIn.create({
+        identifier: email.trim().toLowerCase(),
+        password: pass,
       });
 
-      const d = data.data || data;
-
-      if (data.success) {
-        storeAuth(d.token, d.user);
-        
-        // Update global user state
-        if (d.user) {
-          setUser(u => ({...u, ...d.user}));
+      if (result.status === 'complete') {
+        await setActive({ session: result.createdSessionId });
+        // Fetch Prisma user profile now that Clerk session is active
+        try {
+          const profileRes = await apiCall("/users/profile");
+          const u = profileRes?.data?.user || {};
+          if (u.id) setUser(prev => ({...prev, ...u}));
+          onLogin(u);
+        } catch(_) {
+          onLogin({});
         }
-
-        onLogin(d.user);
       } else {
-        setErrors({ general: data.message || "Login failed" });
+        setErrors({ general: "Login incomplete — please try again." });
       }
     } catch (e) {
       console.error(e);
-      if (e.code === "EMAIL_NOT_CONFIRMED") {
+      const clerkErr = e?.errors?.[0];
+      if (clerkErr?.code === 'session_exists' || e?.status === 422) {
+        // Already signed in
+        onLogin({});
+      } else if (clerkErr?.code === 'form_identifier_not_found' || clerkErr?.code === 'form_password_incorrect' || clerkErr?.code === 'not_found') {
+        setErrors({ general: "Incorrect email or password." });
+      } else if (clerkErr?.code === 'strategy_for_user_invalid' || clerkErr?.code === 'verification_failed') {
         setErrors({ general: "Please verify your email before logging in." });
         if (onEmailVerify) onEmailVerify(email.trim().toLowerCase());
       } else {
-        setErrors({ general: e.message || "Incorrect email or password." });
+        setErrors({ general: clerkErr?.longMessage || clerkErr?.message || e?.message || "Incorrect email or password." });
       }
-    } finally { 
-      setLoading(false); 
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -3464,6 +3498,7 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
   const [loading,   setLoading]   = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const { signUp } = useClerkSignUp();
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -3493,27 +3528,26 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
     setErrors({}); setLoading(true);
 
     try {
-      const data = await apiCall("/auth/signup", {
-        method: "POST",
-        body:   JSON.stringify({
-          name:     f.name.trim(),
-          username: f.username.trim().toLowerCase(),
-          email:    f.email.trim().toLowerCase(),
-          password: f.password,
-        }),
+      await signUp.create({
+        emailAddress: f.email.trim().toLowerCase(),
+        password:     f.password,
+        username:     f.username.trim().toLowerCase(),
+        firstName:    f.name.split(' ')[0],
+        lastName:     f.name.split(' ').slice(1).join(' ') || undefined,
       });
-
-      if (data.success && typeof localStorage !== "undefined") {
-        localStorage.setItem("vtrx_pending_email", f.email.trim().toLowerCase());
-        if (data.data?.verificationId)  localStorage.setItem("vtrx_verification_id", data.data.verificationId);
-        if (data.data?.emailAddressId)  localStorage.setItem("vtrx_email_address_id", data.data.emailAddressId);
-      }
-
+      await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
       onContinue(f.email.trim().toLowerCase(), f.password);
     } catch (e) {
-      setErrors({ general: e.message || "Signup failed. Please try again." });
-    } finally { 
-      setLoading(false); 
+      const clerkErr = e?.errors?.[0];
+      if (clerkErr?.code === 'form_identifier_exists') {
+        setErrors({ general: "An account with this email already exists." });
+      } else if (clerkErr?.code === 'form_password_pwned' || clerkErr?.code?.includes('password')) {
+        setErrors({ general: clerkErr?.longMessage || clerkErr?.message || "Password does not meet requirements." });
+      } else {
+        setErrors({ general: clerkErr?.longMessage || clerkErr?.message || e?.message || "Signup failed. Please try again." });
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -3596,50 +3630,29 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
 }
 
 function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
-  const email = emailProp || (typeof localStorage !== "undefined" ? localStorage.getItem("vtrx_pending_email") || "" : "");
-  const [code, setCode] = React.useState("");
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState("");
-  const [resent,    setResent]    = React.useState(false);
+  const email = emailProp || "";
+  const { signUp, setActive } = useClerkSignUp();
+  const [code,      setCode]      = React.useState("");
+  const [loading,   setLoading]   = React.useState(false);
+  const [error,     setError]     = React.useState("");
   const [resending, setResending] = React.useState(false);
   const [cooldown,  setCooldown]  = React.useState(0);
-  // Keep both IDs in state — updated atomically on resend so verify() always has the fresh pair
-  const [verificationId, setVerificationId] = React.useState(
-    typeof localStorage !== "undefined" ? localStorage.getItem("vtrx_verification_id") || "" : ""
-  );
-  const [emailAddressId, setEmailAddressId] = React.useState(
-    typeof localStorage !== "undefined" ? localStorage.getItem("vtrx_email_address_id") || "" : ""
-  );
 
   const verify = async () => {
-    if (code.length !== 6) {
-      setError("Please enter the full 6-digit code");
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-
+    if (code.length !== 6) { setError("Please enter the full 6-digit code"); return; }
+    setLoading(true); setError("");
     try {
-      const response = await apiCall("/auth/confirm-email", {
-        method: "POST",
-        body: JSON.stringify({ email, code: code.trim(), verificationId, emailAddressId }),
-      });
-
-      if (response && response.success === true) {
-        if (typeof localStorage !== "undefined") {
-          localStorage.removeItem("vtrx_verification_id");
-          localStorage.removeItem("vtrx_email_address_id");
-        }
+      const result = await signUp.attemptEmailAddressVerification({ code });
+      if (result.status === 'complete') {
+        await setActive({ session: result.createdSessionId });
         onVerified();
       } else {
-        throw new Error(response?.message || "Invalid verification code");
+        throw new Error("Verification incomplete — please try again");
       }
     } catch (e) {
-      setError(e.message || "Invalid or expired code. Please try again.");
-    } finally {
-      setLoading(false);
-    }
+      const clerkErr = e?.errors?.[0];
+      setError(clerkErr?.longMessage || clerkErr?.message || e?.message || "Invalid or expired code. Please try again.");
+    } finally { setLoading(false); }
   };
 
   React.useEffect(() => {
@@ -3650,28 +3663,16 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
 
   const resend = async () => {
     if (cooldown > 0 || resending) return;
-    setResending(true);
-    setError("");
+    setResending(true); setError("");
     try {
-      const res = await apiCall("/auth/resend-code", { method:"POST", body:JSON.stringify({ email, emailAddressId }) });
-      const newVerId  = res?.data?.verificationId  || "";
-      const newAddrId = res?.data?.emailAddressId  || emailAddressId;
-      setVerificationId(newVerId);
-      setEmailAddressId(newAddrId);
-      if (typeof localStorage !== "undefined") {
-        if (newVerId)  localStorage.setItem("vtrx_verification_id",  newVerId);
-        else           localStorage.removeItem("vtrx_verification_id");
-        if (newAddrId) localStorage.setItem("vtrx_email_address_id", newAddrId);
-      }
-      setResent(true);
+      await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
       setError("New code sent — check your inbox (and spam folder).");
       setCooldown(60);
-      setTimeout(() => { setResent(false); setError(""); }, 5000);
+      setTimeout(() => setError(""), 5000);
     } catch (e) {
-      setError(e.message || "Failed to resend code. Please try again.");
-    } finally {
-      setResending(false);
-    }
+      const clerkErr = e?.errors?.[0];
+      setError(clerkErr?.message || e?.message || "Failed to resend code. Please try again.");
+    } finally { setResending(false); }
   };
 
   return (
@@ -3694,17 +3695,17 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
 
       {error && <div style={{ fontFamily:FONT,fontSize:13,color:"#EF4444",marginBottom:16,textAlign:"center",fontWeight:600 }}>{error}</div>}
 
-      <button 
-        onClick={verify} 
-        disabled={loading || code.length !== 6} 
+      <button
+        onClick={verify}
+        disabled={loading || code.length !== 6}
         style={{ width:"100%",padding:"16px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1.5,cursor:loading?"not-allowed":"pointer",opacity:loading||code.length!==6?0.7:1,marginBottom:16,boxShadow:`0 4px 24px ${PRIMARY}44` }}
       >
         {loading ? "VERIFYING..." : "VERIFY EMAIL"}
       </button>
 
       <button onClick={resend} disabled={cooldown > 0 || resending}
-        style={{ background:"none",border:"none",fontFamily:FONT,fontSize:13,color:resent?"#22C55E":cooldown>0?"#555":PRIMARY,cursor:cooldown>0||resending?"default":"pointer",marginBottom:12,opacity:cooldown>0?0.6:1 }}>
-        {resending ? "Sending..." : resent ? "Code sent!" : cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}
+        style={{ background:"none",border:"none",fontFamily:FONT,fontSize:13,color:cooldown>0?"#555":PRIMARY,cursor:cooldown>0||resending?"default":"pointer",marginBottom:12,opacity:cooldown>0?0.6:1 }}>
+        {resending ? "Sending..." : cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}
       </button>
       <button onClick={onBack} style={{ background:"none",border:"none",fontFamily:FONT,fontSize:13,color:"#555",cursor:"pointer" }}>
         Back to Sign Up
@@ -7874,6 +7875,9 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
   const [loadingRecipes, setLoadingRecipes] = useState(false);
   const [totalRecipes,   setTotalRecipes]   = useState(0);
   const [recipePage,     setRecipePage]     = useState(1);
+  // Categorized recipe sections (11 fixed categories, <=10 recipes each) — default Discover view
+  const [categorized,        setCategorized]        = useState([]);
+  const [categorizedLoading, setCategorizedLoading]  = useState(false);
   const [savedRecipes,   setSavedRecipes]   = useState([]);
   const [savedSet,       setSavedSet]       = useState(new Set());
   const [selectedRecipe, setSelectedRecipe] = useState(null); // recipe object
@@ -8015,6 +8019,29 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[filter, currentUser?.id]);
 
+  // Fetch categorized recipe sections (11 fixed categories, <=10 each) once —
+  // this is the default Discover view shown when there's no active search/filter.
+  useEffect(()=>{
+    if (!getAuthToken()) return;
+    const now = Date.now();
+    if (_categorizedCache.data && (now - _categorizedCache.fetchedAt) < CACHE_TTL_MS) {
+      setCategorized(_categorizedCache.data);
+      return;
+    }
+    setCategorizedLoading(true);
+    apiCall('/nutrition/recipes/categorized')
+      .then(d=>{
+        const cats = (d?.data?.categories || [])
+          .map(c => ({ ...c, recipes: (c.recipes||[]).map(normalizeRecipe) }))
+          .filter(c => c.recipes.length > 0);
+        setCategorized(cats);
+        _categorizedCache.data = cats;
+        _categorizedCache.fetchedAt = Date.now();
+      })
+      .catch(()=>{})
+      .finally(()=>setCategorizedLoading(false));
+  },[]);
+
   // Fetch saved recipes once on mount
   useEffect(()=>{
     if (!getAuthToken()) return;
@@ -8119,6 +8146,37 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
   const recommendedIds = new Set(recommended.map(r => String(r.id)));
   // Main grid excludes already-recommended recipes so users never see the same recipe twice
   const filteredGrid = filtered.filter(r => !recommendedIds.has(String(r.id)));
+
+  // Fixed-width tile for horizontal-scroll category rows (mirrors the "Recommended" tile style)
+  const renderCategoryTile = (r, i) => {
+    const isSaved = savedSet.has(String(r.id));
+    return (
+      <div key={r.id||i} onClick={()=>setSelectedRecipe(r)}
+        style={{ width:160,minWidth:160,flexShrink:0,background:"#fff",borderRadius:14,overflow:"hidden",cursor:"pointer",border:`1px solid ${BORDER}` }}>
+        <div style={{ height:110,overflow:"hidden",position:"relative" }}>
+          {r.img
+            ? <img src={r.img} alt="" width={160} height={110} loading="lazy" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+            : <div style={{ width:"100%",height:"100%",background:"linear-gradient(135deg,#1a1a2e,#16213e)",display:"flex",alignItems:"center",justifyContent:"center",padding:"8px" }}>
+                <span style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#fff",textAlign:"center",lineHeight:1.3 }}>{r.name}</span>
+              </div>
+          }
+          <button onClick={e=>{ e.stopPropagation(); toggleSave(r); }} style={{ position:"absolute",top:8,right:8,width:28,height:28,borderRadius:"50%",background:"rgba(0,0,0,0.5)",border:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill={isSaved?"#00A3FF":"none"} stroke="#fff" strokeWidth="2"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>
+          </button>
+        </div>
+        <div style={{ padding:"10px" }}>
+          <div style={{ fontFamily:FONT,fontSize:12,fontWeight:700,color:"#111",marginBottom:4,lineHeight:1.3 }}>{r.name}</div>
+          <div style={{ display:"flex",gap:6 }}>
+            <span style={{ fontFamily:FONT,fontSize:10,color:"#EF4444",fontWeight:600 }}>{r.cal} cal</span>
+            <span style={{ fontFamily:FONT,fontSize:10,color:PRIMARY,fontWeight:600 }}>{r.protein}g protein</span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+  // Categorized sections are the default Discover view; an active search or a
+  // non-"All" filter pill switches to the existing flat filtered grid below.
+  const showCategorizedSections = !search && filter === "All";
 
   // ── Meal Plan helpers ─────────────────────────────────────────────────────────
   const MEAL_SLOTS = ['breakfast','lunch','snack','dinner'];
@@ -8438,66 +8496,109 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
                 </button>
               ))}
             </div>
-            {/* Recipe grid */}
-            {loadingRecipes && (
-              <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12 }}>
-                {Array.from({length:10}).map((_,i)=>(
-                  <div key={i} style={{ background:CARD,borderRadius:14,overflow:"hidden",border:`1px solid ${BORDER}` }}>
-                    <div style={{ height:110,background:"#1e1e1e" }}/>
-                    <div style={{ padding:"10px" }}>
-                      <div style={{ height:13,background:"#1e1e1e",borderRadius:4,marginBottom:6,width:"75%" }}/>
-                      <div style={{ height:10,background:"#1e1e1e",borderRadius:4,width:"45%" }}/>
+            {/* Categorized sections — default Discover view (11 fixed categories, <=10 each) */}
+            {showCategorizedSections && (
+              <div>
+                {categorizedLoading && categorized.length === 0 && (
+                  <div style={{ display:"flex",flexDirection:"column",gap:20 }}>
+                    {Array.from({length:3}).map((_,s)=>(
+                      <div key={s}>
+                        <div style={{ height:14,width:120,background:"#1e1e1e",borderRadius:4,marginBottom:10 }}/>
+                        <div style={{ display:"flex",gap:12,overflow:"hidden" }}>
+                          {Array.from({length:3}).map((_,i)=>(
+                            <div key={i} style={{ width:160,minWidth:160,background:CARD,borderRadius:14,overflow:"hidden",border:`1px solid ${BORDER}` }}>
+                              <div style={{ height:110,background:"#1e1e1e" }}/>
+                              <div style={{ padding:"10px" }}>
+                                <div style={{ height:13,background:"#1e1e1e",borderRadius:4,marginBottom:6,width:"75%" }}/>
+                                <div style={{ height:10,background:"#1e1e1e",borderRadius:4,width:"45%" }}/>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {!categorizedLoading && categorized.length === 0 && (
+                  <div style={{ textAlign:"center",padding:"40px 16px" }}>
+                    <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#fff",marginBottom:8 }}>No recipes available yet</div>
+                    <div style={{ fontFamily:FONT,fontSize:12,color:"#555",lineHeight:1.65 }}>Check back soon — new recipes are added regularly.</div>
+                  </div>
+                )}
+                {categorized.map(cat => (
+                  <div key={cat.key} style={{ marginBottom:20 }}>
+                    <div style={{ fontFamily:FONT,fontWeight:900,fontSize:15,color:"#fff",marginBottom:10 }}>{cat.label}</div>
+                    <div style={{ display:"flex",gap:12,overflowX:"auto",paddingBottom:4,scrollbarWidth:"none",msOverflowStyle:"none" }}>
+                      {cat.recipes.map((r,i) => renderCategoryTile(r,i))}
                     </div>
                   </div>
                 ))}
               </div>
             )}
-            {!loadingRecipes && filteredGrid.length===0 && (
-              <div style={{ textAlign:"center",padding:"40px 16px" }}>
-                <div style={{ width:52,height:52,borderRadius:"50%",background:`${PRIMARY}18`,border:`1px solid ${PRIMARY}33`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px" }}>
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.8"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>
-                </div>
-                <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#fff",marginBottom:8 }}>
-                  {search ? `No results for "${search}"` : `No ${filter !== "All" ? filter.toLowerCase() : ""} recipes found`}
-                </div>
-                <div style={{ fontFamily:FONT,fontSize:12,color:"#555",lineHeight:1.65,marginBottom:20,maxWidth:260,margin:"0 auto 20px" }}>
-                  {search ? "Try a different search term." : "Try a different filter or update your dietary preferences in Settings."}
-                </div>
-                {!search && (
-                  <button onClick={()=>setShowProfile(true)}
-                    style={{ padding:"12px 28px",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:700,fontSize:13,color:"#fff",cursor:"pointer" }}>
-                    Update Preferences
-                  </button>
-                )}
-              </div>
-            )}
-            <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12 }}>
-              {filteredGrid.map((r,i)=>{
-                const isSaved = savedSet.has(String(r.id));
-                return (
-                  <div key={r.id||i} onClick={()=>setSelectedRecipe(r)} style={{ background:"#fff",borderRadius:14,overflow:"hidden",cursor:"pointer",border:`1px solid ${BORDER}` }}>
-                    <div style={{ height:110,overflow:"hidden",position:"relative" }}>
-                      {r.img
-                        ? <img src={r.img} alt="" width={160} height={110} loading="lazy" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
-                        : <div style={{ width:"100%",height:"100%",background:"linear-gradient(135deg,#1a1a2e,#16213e)",display:"flex",alignItems:"center",justifyContent:"center",padding:"8px" }}>
-                            <span style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#fff",textAlign:"center",lineHeight:1.3 }}>{r.name}</span>
-                          </div>
-                      }
-                      <button onClick={e=>{ e.stopPropagation(); toggleSave(r); }} style={{ position:"absolute",top:8,right:8,width:28,height:28,borderRadius:"50%",background:"rgba(0,0,0,0.5)",border:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill={isSaved?"#00A3FF":"none"} stroke="#fff" strokeWidth="2"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>
-                      </button>
-                    </div>
-                    <div style={{ padding:"10px" }}>
-                      <div style={{ fontFamily:FONT,fontSize:12,fontWeight:700,color:"#111",marginBottom:4,lineHeight:1.3 }}>{r.name}</div>
-                      <div style={{ display:"flex",gap:6 }}>
-                        <span style={{ fontFamily:FONT,fontSize:10,color:"#EF4444",fontWeight:600 }}>{r.cal} cal</span>
-                        <span style={{ fontFamily:FONT,fontSize:10,color:PRIMARY,fontWeight:600 }}>{r.protein}g protein</span>
+            {/* Flat filtered grid — shown while searching or a specific filter pill is active */}
+            {!showCategorizedSections && (
+              <>
+                {loadingRecipes && (
+                  <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12 }}>
+                    {Array.from({length:10}).map((_,i)=>(
+                      <div key={i} style={{ background:CARD,borderRadius:14,overflow:"hidden",border:`1px solid ${BORDER}` }}>
+                        <div style={{ height:110,background:"#1e1e1e" }}/>
+                        <div style={{ padding:"10px" }}>
+                          <div style={{ height:13,background:"#1e1e1e",borderRadius:4,marginBottom:6,width:"75%" }}/>
+                          <div style={{ height:10,background:"#1e1e1e",borderRadius:4,width:"45%" }}/>
+                        </div>
                       </div>
-                    </div>
+                    ))}
                   </div>
-                );
-              })}
-            </div>
+                )}
+                {!loadingRecipes && filteredGrid.length===0 && (
+                  <div style={{ textAlign:"center",padding:"40px 16px" }}>
+                    <div style={{ width:52,height:52,borderRadius:"50%",background:`${PRIMARY}18`,border:`1px solid ${PRIMARY}33`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px" }}>
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.8"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><line x1="7" y1="2" x2="7" y2="11"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>
+                    </div>
+                    <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#fff",marginBottom:8 }}>
+                      {search ? `No results for "${search}"` : `No ${filter !== "All" ? filter.toLowerCase() : ""} recipes found`}
+                    </div>
+                    <div style={{ fontFamily:FONT,fontSize:12,color:"#555",lineHeight:1.65,marginBottom:20,maxWidth:260,margin:"0 auto 20px" }}>
+                      {search ? "Try a different search term." : "Try a different filter or update your dietary preferences in Settings."}
+                    </div>
+                    {!search && (
+                      <button onClick={()=>setShowProfile(true)}
+                        style={{ padding:"12px 28px",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:700,fontSize:13,color:"#fff",cursor:"pointer" }}>
+                        Update Preferences
+                      </button>
+                    )}
+                  </div>
+                )}
+                <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12 }}>
+                  {filteredGrid.map((r,i)=>{
+                    const isSaved = savedSet.has(String(r.id));
+                    return (
+                      <div key={r.id||i} onClick={()=>setSelectedRecipe(r)} style={{ background:"#fff",borderRadius:14,overflow:"hidden",cursor:"pointer",border:`1px solid ${BORDER}` }}>
+                        <div style={{ height:110,overflow:"hidden",position:"relative" }}>
+                          {r.img
+                            ? <img src={r.img} alt="" width={160} height={110} loading="lazy" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+                            : <div style={{ width:"100%",height:"100%",background:"linear-gradient(135deg,#1a1a2e,#16213e)",display:"flex",alignItems:"center",justifyContent:"center",padding:"8px" }}>
+                                <span style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#fff",textAlign:"center",lineHeight:1.3 }}>{r.name}</span>
+                              </div>
+                          }
+                          <button onClick={e=>{ e.stopPropagation(); toggleSave(r); }} style={{ position:"absolute",top:8,right:8,width:28,height:28,borderRadius:"50%",background:"rgba(0,0,0,0.5)",border:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill={isSaved?"#00A3FF":"none"} stroke="#fff" strokeWidth="2"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>
+                          </button>
+                        </div>
+                        <div style={{ padding:"10px" }}>
+                          <div style={{ fontFamily:FONT,fontSize:12,fontWeight:700,color:"#111",marginBottom:4,lineHeight:1.3 }}>{r.name}</div>
+                          <div style={{ display:"flex",gap:6 }}>
+                            <span style={{ fontFamily:FONT,fontSize:10,color:"#EF4444",fontWeight:600 }}>{r.cal} cal</span>
+                            <span style={{ fontFamily:FONT,fontSize:10,color:PRIMARY,fontWeight:600 }}>{r.protein}g protein</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
 
           </div>
         )}
@@ -9684,6 +9785,8 @@ function SplashScreen() {
 function VTRXAppInner({ setPaymentPlan }) {
 
   const { user, setUser, profileImg, isPremium, setIsPremium } = useUser();
+  const { isLoaded: clerkLoaded, isSignedIn, getToken } = useClerkAuth();
+  const { signOut: clerkSignOut } = useClerk();
 
   // ── Phase / onboarding state ──────────────────────────────────────────────
   const [phase, setPhase]           = useState("splash");
@@ -9702,7 +9805,7 @@ function VTRXAppInner({ setPaymentPlan }) {
       return;
     }
     // Save onboarding profile to backend
-    if (!DEMO_MODE && getAuthToken()) {
+    if (!DEMO_MODE && isSignedIn) {
       try {
         await apiCall("/users/profile", {
           method: "PUT",
@@ -9729,7 +9832,7 @@ function VTRXAppInner({ setPaymentPlan }) {
       // Fire-and-forget: generate free AI onboarding analysis + schedule 5-min notification
       apiCall("/ai/onboarding-analysis", { method: "POST" }).catch(() => {});
     }
-    if (!getAuthToken()) {
+    if (!isSignedIn) {
       setPhase("login");
       return;
     }
@@ -9801,9 +9904,8 @@ function VTRXAppInner({ setPaymentPlan }) {
   // Fetch today's AI-generated daily workout (ymove-first).
   // Cache the result in localStorage keyed by userId+date so re-mounts don't burn API quota.
   useEffect(()=>{
-    const token  = getAuthToken();
     const userId = liveUser?.id;
-    if (!token || !userId) return;
+    if (!isSignedIn || !userId) return;
 
     const today    = new Date().toLocaleDateString('en-CA');
     const cacheKey = `vtrx_daily_workout_${userId}`;
@@ -9829,7 +9931,11 @@ function VTRXAppInner({ setPaymentPlan }) {
   }, [liveUser?.id]);
 
   // Load real data on mount — also drives splash → onboarding/dashboard transition
+  const _splashRanRef = useRef(false);
   useEffect(()=>{
+    if (!clerkLoaded || _splashRanRef.current) return;
+    _splashRanRef.current = true;
+
     const MIN_SPLASH_MS = 2500;
     const splashStart   = Date.now();
     const afterSplash   = (nextPhase) => {
@@ -9839,8 +9945,7 @@ function VTRXAppInner({ setPaymentPlan }) {
     };
 
     if (DEMO_MODE) { afterSplash("onboarding"); return; }
-    const token = getAuthToken();
-    if (!token) { afterSplash("onboarding"); return; }
+    if (!isSignedIn) { afterSplash("onboarding"); return; }
 
     apiCall("/users/profile").then(res=>{
       if (res?.data?.user) {
@@ -9892,7 +9997,7 @@ function VTRXAppInner({ setPaymentPlan }) {
         }
       }).catch(()=>{});
     }).catch(()=>{ afterSplash("onboarding"); });
-  }, []);
+  }, [clerkLoaded, isSignedIn]);
 
   // ── Handle Stripe redirect on app load ─────────────────────────────────────
   useEffect(()=>{
@@ -9918,18 +10023,25 @@ function VTRXAppInner({ setPaymentPlan }) {
     return () => { _openPaymentSheet = null; };
   }, []);
 
+  // Register Clerk token getter as module-level bridge for apiCall()
+  useEffect(()=>{
+    _getClerkToken = () => getToken();
+    return () => { _getClerkToken = null; };
+  }, [getToken]);
+
+  useEffect(() => { _isSignedIn = isSignedIn; return () => { _isSignedIn = false; }; }, [isSignedIn]);
+
   // When any protected API call returns 401, clear auth and send to login.
   // The 500ms delay avoids false logouts during navigation where a 401 can
   // transiently fire before the new route establishes a fresh token context.
   useEffect(()=>{
     _onSessionExpired = () => {
-      setTimeout(() => {
-        if (!getAuthToken()) {
-          setUser({ name:"", age:"", gender:"", weight:"", height:"", goal:"", level:"", days:5 });
-          setIsPremium(false);
-          setPhase("login");
-        }
-      }, 500);
+      clerkSignOut().catch(()=>{}).finally(() => {
+        clearAuth();
+        setUser({ name:"", age:"", gender:"", weight:"", height:"", goal:"", level:"", days:5 });
+        setIsPremium(false);
+        setPhase("login");
+      });
     };
     return () => { _onSessionExpired = null; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -10071,30 +10183,28 @@ function VTRXAppInner({ setPaymentPlan }) {
   if (phase==="emailVerify") return (
     <EmailVerifyScreen
       email={pendingEmail}
-      onVerified={async ()=>{
-        // Auto-login after email verification so the user has a token for all subsequent API calls
-        if (pendingEmail && pendingPassword) {
-          try {
-            const loginRes = await apiCall("/auth/login", { method:"POST", body: JSON.stringify({ email: pendingEmail, password: pendingPassword }) });
-            if (loginRes?.data?.token) { storeAuth(loginRes.data.token, loginRes.data.user || {}); }
-            if (loginRes?.data?.user)  { setUser(u=>({...u, ...loginRes.data.user})); }
-            setPendingPassword(""); // clear sensitive data immediately
-            setPhase("preferences"); setScreen(2);
-          } catch(_) {
-            // Auto-login failed — send to login so the user can authenticate manually
-            setPendingPassword("");
-            setPhase("login");
-          }
-        } else {
-          // Password no longer in memory (page was refreshed before verifying) — send to login
-          setPhase("login");
-        }
+      onVerified={()=>{
+        // Clerk already established the session in EmailVerifyScreen via setActive()
+        setPendingPassword("");
+        setPhase("preferences"); setScreen(2);
       }}
       onBack={()=>setPhase("login")}
     />
   );
   if (phase==="login") return (
-    <LoginScreen onLogin={goToDashboard} onSignUp={()=>{ setPhase("preferences"); setScreen(0); }} onForgot={()=>setPhase("forgot")} onEmailVerify={(email)=>{ setPendingEmail(email); setPhase("emailVerify"); }}/>
+    <LoginScreen
+      onLogin={(u) => {
+        // u comes from /users/profile — use it directly to avoid stale user state
+        if (u?.goal && u?.fitnessLevel) {
+          setPhase("dashboard");
+        } else {
+          // No onboarding complete yet — send to body metrics (skip signup/verify)
+          setPhase("preferences"); setScreen(2);
+        }
+      }}
+      onSignUp={()=>{ setPhase("preferences"); setScreen(0); }}
+      onForgot={()=>setPhase("forgot")}
+      onEmailVerify={(email)=>{ setPendingEmail(email); setPhase("emailVerify"); }}/>
   );
   if (phase==="forgot") return (
     <ForgotPasswordPage onBack={()=>setPhase("login")}/>
@@ -10116,7 +10226,7 @@ function VTRXAppInner({ setPaymentPlan }) {
   // ── Dashboard ─────────────────────────────────────────────────────────────
   const handleLogout = async () => {
     try {
-      await apiCall("/auth/logout", { method: "POST", body: JSON.stringify({}) });
+      await clerkSignOut();
     } catch(_e){} finally {
       resetAnalytics();
       clearAuth();

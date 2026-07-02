@@ -1,111 +1,115 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// middleware/auth.js — Authentication Middleware
-// ─────────────────────────────────────────────────────────────────────────────
-// "Middleware" runs BEFORE your route handler.
-// This middleware checks: "Is this request coming from a logged-in user?"
-//
-// How it works:
-// 1. User logs in → gets a JWT token (a signed string)
-// 2. User sends that token in every request header: "Authorization: Bearer <token>"
-// 3. This middleware reads the token, verifies it, attaches user to req.user
-// 4. If token is missing or invalid → 401 Unauthorized response
-// ─────────────────────────────────────────────────────────────────────────────
+const { verifyToken, createClerkClient } = require('@clerk/backend');
+const prisma  = require('../config/database');
+const logger  = require('../utils/logger');
 
-const jwt    = require('jsonwebtoken');
-const prisma = require('../config/database');
-const logger = require('../utils/logger');
+const USER_SELECT = {
+  id:           true,
+  email:        true,
+  username:     true,
+  name:         true,
+  isPremium:    true,
+  cognitoId:    true,
+  goal:         true,
+  fitnessLevel: true,
+  streakDays:   true,
+  daysPerWeek:  true,
+  equipment:    true,
+  location:     true,
+  subscription: { select: { status: true, plan: true, currentPeriodEnd: true } },
+};
 
-// ── Protect a route (user must be logged in) ──────────────────────────────────
+// Lazily-created Clerk client (avoids crashing on import if key missing at module load)
+let _clerkClient = null;
+const getClerkClient = () => {
+  if (!_clerkClient) _clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
+  return _clerkClient;
+};
+
 const protect = async (req, res, next) => {
   try {
-    // 1. Look for token in the Authorization header
     const authHeader = req.headers.authorization;
-
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        success: false,
-        message: 'Not authorised — no token provided',
-      });
+      return res.status(401).json({ success: false, message: 'Not authorised — no token provided' });
     }
-
-    // 2. Extract the token (remove "Bearer " prefix)
     const token = authHeader.split(' ')[1];
 
-    // 3. Verify the token using our JWT_SECRET
-    //    If the token was tampered with or expired, this throws an error
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // Verify Clerk session token
+    let payload;
+    try {
+      payload = await verifyToken(token, { secretKey: process.env.CLERK_SECRET_KEY });
+    } catch (err) {
+      return res.status(401).json({ success: false, message: 'Invalid or expired token' });
+    }
 
-    // 4. Look up the user in the database
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
-      select: {
-        id:           true,
-        email:        true,
-        username:     true,
-        name:         true,
-        isPremium:    true,
-        cognitoId:    true,   // column stores Clerk user ID (usr_xxx)
-        goal:         true,
-        fitnessLevel: true,
-        streakDays:   true,
-        daysPerWeek:  true,
-        equipment:    true,
-        location:     true,
-        subscription: { select: { status: true, plan: true, currentPeriodEnd: true } },
-      },
-    });
-    // Re-validate premium from subscription record on every request
-    if (user && user.subscription) {
+    const clerkUserId = payload.sub;
+
+    // Look up Prisma user by Clerk user ID (stored in cognitoId column)
+    let user = await prisma.user.findUnique({ where: { cognitoId: clerkUserId }, select: USER_SELECT });
+
+    // Auto-provision: first request after Clerk signup creates the Prisma user
+    if (!user) {
+      let clerkUser;
+      try {
+        clerkUser = await getClerkClient().users.getUser(clerkUserId);
+      } catch (err) {
+        logger.warn(`Could not fetch Clerk user ${clerkUserId}: ${err.message}`);
+      }
+      const email    = clerkUser?.emailAddresses?.[0]?.emailAddress || payload.email || '';
+      const name     = [clerkUser?.firstName, clerkUser?.lastName].filter(Boolean).join(' ') || '';
+      const username = ((clerkUser?.username || email.split('@')[0] || 'user')
+        .replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 20)) || clerkUserId.slice(0, 15);
+
+      // Try creating with the base username, then append suffix on conflict
+      const baseUsername = username;
+      let createAttempts = 0;
+      while (createAttempts < 3) {
+        const tryUsername = createAttempts === 0 ? baseUsername : `${baseUsername.slice(0, 16)}_${clerkUserId.slice(-3)}`;
+        try {
+          user = await prisma.user.create({ data: { cognitoId: clerkUserId, email, name, username: tryUsername }, select: USER_SELECT });
+          logger.info(`Auto-provisioned Prisma user for Clerk ${clerkUserId} (${email})`);
+          break;
+        } catch (e) {
+          if (e.code === 'P2002') {
+            const target = e.meta?.target;
+            // Username conflict — retry with suffix
+            if (Array.isArray(target) && target.includes('username')) { createAttempts++; continue; }
+            // cognitoId/email conflict — another request already created this user
+            user = await prisma.user.findFirst({
+              where: { OR: [{ cognitoId: clerkUserId }, ...(email ? [{ email }] : [])] },
+              select: USER_SELECT,
+            });
+            break;
+          }
+          throw e;
+        }
+      }
+    }
+
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'User could not be found or created' });
+    }
+
+    // Revoke expired premium
+    if (user.subscription) {
       const sub = user.subscription;
-      const isActiveSub = sub.status === 'active' && (!sub.currentPeriodEnd || sub.currentPeriodEnd > new Date());
-      if (!isActiveSub && user.isPremium) {
-        // Subscription lapsed — revoke premium in DB (fire-and-forget)
+      const active = sub.status === 'active' && (!sub.currentPeriodEnd || sub.currentPeriodEnd > new Date());
+      if (!active && user.isPremium) {
         prisma.user.update({ where: { id: user.id }, data: { isPremium: false } }).catch(() => {});
         user.isPremium = false;
       }
     }
 
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'User no longer exists',
-      });
-    }
-
-    // 5. Attach user to the request object so route handlers can use it
     req.user = user;
-
-    // 6. Continue to the actual route handler
     next();
-
   } catch (error) {
-    if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({
-        success: false,
-        message: 'Token expired — please log in again',
-        code: 'TOKEN_EXPIRED',
-      });
-    }
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid token',
-      });
-    }
     logger.error('Auth middleware error:', error);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 };
 
-// ── Require Premium subscription ─────────────────────────────────────────────
-// Use this AFTER protect() to gate premium features
 const requirePremium = (req, res, next) => {
-  if (!req.user.isPremium) {
-    return res.status(403).json({
-      success: false,
-      message: 'This feature requires a Premium subscription',
-      code: 'PREMIUM_REQUIRED',
-    });
+  if (!req.user?.isPremium) {
+    return res.status(403).json({ success: false, message: 'This feature requires a Premium subscription', code: 'PREMIUM_REQUIRED' });
   }
   next();
 };

@@ -7,7 +7,6 @@
 
 const prisma              = require('../config/database');
 const logger              = require('../utils/logger');
-const { resolveLibrary }  = require('../data/exerciseLibrary');
 const { generatePlan: buildPlan, validatePlan } = require('../data/planGenerator');
 
 // ── POST /api/workouts/generate-plan ─────────────────────────────────────────
@@ -25,11 +24,8 @@ const generatePlan = async (req, res, next) => {
     });
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-    // Resolve exercise library (DB-backed, cached in memory after first call)
-    const library = await resolveLibrary(prisma);
-
     // Generate deterministic plan
-    const plan = buildPlan(user, library);
+    const plan = buildPlan(user);
 
     // Sanity check
     const { valid, errors, totalExercises } = validatePlan(plan);

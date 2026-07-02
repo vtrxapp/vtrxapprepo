@@ -4,6 +4,7 @@
 
 const prisma  = require('../config/database');
 const logger  = require('../utils/logger');
+const { generatePlan, validatePlan } = require('../data/planGenerator');
 
 // ── GET /api/users/profile ────────────────────────────────────────────────────
 const getProfile = async (req, res) => {
@@ -65,6 +66,25 @@ const updateProfile = async (req, res) => {
         ...(goalWeightLbs        !== undefined && { goalWeightLbs: parseFloat(goalWeightLbs) || null }),
       },
     });
+
+    // Auto-regenerate plan when any plan-affecting field changes and the user
+    // has all three required fields (goal + fitnessLevel + daysPerWeek).
+    const planFieldUpdated = [goal, fitnessLevel, daysPerWeek, equipment].some(f => f !== undefined);
+    if (planFieldUpdated && updated.goal && updated.fitnessLevel && updated.daysPerWeek) {
+      try {
+        const plan = generatePlan(updated);
+        const { valid, errors } = validatePlan(plan);
+        if (valid) {
+          await prisma.workoutPlan.updateMany({ where: { userId: req.user.id, isActive: true }, data: { isActive: false } });
+          await prisma.workoutPlan.create({ data: { userId: req.user.id, planJson: plan, weekNumber: 1, isActive: true } });
+          logger.info(`[auto-plan] Generated "${plan.planName}" for user ${req.user.id}`);
+        } else {
+          logger.warn(`[auto-plan] Validation failed for user ${req.user.id}:`, errors);
+        }
+      } catch (planErr) {
+        logger.error('[auto-plan] Error generating plan:', planErr);
+      }
+    }
 
     res.json({ success: true, data: { user: updated } });
   } catch (error) {

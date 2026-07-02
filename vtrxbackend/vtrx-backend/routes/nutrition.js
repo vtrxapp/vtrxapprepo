@@ -13,6 +13,7 @@ router.post('/ymove/sync-recipes',       nutrition.syncYmoveRecipes);
 router.get('/recipes/diets',             nutrition.getRecipeDiets);          // GET /nutrition/recipes/diets
 router.get('/recipes/meal-types',        nutrition.getRecipeMealTypes);      // GET /nutrition/recipes/meal-types
 router.get('/recipes/personalised',      nutrition.getPersonalisedRecipes);  // GET /nutrition/recipes/personalised?tab=all|high_protein|low_carb|vegan|vegetarian
+router.get('/recipes/categorized',       nutrition.getCategorizedRecipes);   // GET /nutrition/recipes/categorized — all 11 categories, <=10 each
 router.get('/recipes',                   nutrition.getRecipes);
 router.get('/recipes/:id',               nutrition.getRecipeById);
 

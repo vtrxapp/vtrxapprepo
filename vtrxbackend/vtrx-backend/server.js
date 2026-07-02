@@ -91,12 +91,7 @@ const aiLimiter = rateLimit({
 });
 
 app.use('/api/', limiter);
-app.use('/api/auth/login',           authLimiter);
-app.use('/api/auth/signup',          authLimiter);
-app.use('/api/auth/forgot-password', authLimiter);
-app.use('/api/auth/reset-password',  authLimiter);
-app.use('/api/auth/resend-code',     authLimiter);
-app.use('/api/ai/',                  aiLimiter);
+app.use('/api/ai/',         aiLimiter);
 
 // ── CRITICAL: Stripe webhook needs raw body ───────────────────────────────────
 // Must be registered BEFORE express.json() parses the body
