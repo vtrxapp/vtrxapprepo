@@ -1,9 +1,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // scripts/seedRecipes.js — Seed recipe library into the database
 // Run: node scripts/seedRecipes.js
+//
+// Upserts by name so redeploys re-apply tag/mealType changes to existing rows
+// instead of silently skipping them.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const { PrismaClient } = require('@prisma/client');
+const { TAGS, MEAL_TYPES, RECIPE_CATEGORIES, CATEGORY_LIMIT } = require('../data/recipeCategories');
 const prisma = new PrismaClient();
 
 const RECIPES = [
@@ -12,7 +16,8 @@ const RECIPES = [
     calories: 435, protein: 38, carbs: 28, fat: 15,
     prepTime: 25, servings: 2,
     imageUrl: "https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=600&q=80",
-    tags: ["High Protein","Muscle Gain"],
+    tags: [TAGS.HIGH_PROTEIN, TAGS.MUSCLE_GAIN],
+    mealType: MEAL_TYPES.LUNCH,
     description: "A nutrient-dense bowl packed with omega-3 rich salmon, fluffy quinoa, and fresh greens. Perfect post-workout fuel.",
     ingredients: ["2 salmon fillets (6 oz each)","1 cup quinoa","2 cups mixed greens","1 avocado, sliced","½ cup cherry tomatoes","2 tbsp olive oil","Juice of 1 lemon","Sea salt & black pepper"],
     instructions: ["Season salmon fillets with lemon juice, olive oil, salt and pepper.","Cook quinoa according to package instructions.","Heat grill or pan over medium-high heat and cook salmon 4 minutes each side.","Divide greens and quinoa between bowls.","Top with salmon, avocado and cherry tomatoes."],
@@ -22,7 +27,8 @@ const RECIPES = [
     calories: 485, protein: 42, carbs: 32, fat: 14,
     prepTime: 20, servings: 2,
     imageUrl: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&q=80",
-    tags: ["High Protein","Meal Prep"],
+    tags: [TAGS.HIGH_PROTEIN, "Meal Prep"],
+    mealType: MEAL_TYPES.LUNCH,
     description: "Lean grilled chicken over brown rice and black beans — a complete protein meal that meal-preps perfectly for the week.",
     ingredients: ["200g chicken breast","½ cup brown rice","1 cup baby spinach","½ cup black beans, drained","1 tbsp olive oil","2 garlic cloves, minced","1 tsp paprika","Salt & pepper"],
     instructions: ["Season chicken with garlic, paprika, salt and pepper.","Cook brown rice according to package instructions.","Heat olive oil in a pan and cook chicken 6–7 minutes each side until cooked through.","Slice chicken and assemble bowl with rice, spinach and black beans.","Drizzle with remaining olive oil."],
@@ -32,7 +38,8 @@ const RECIPES = [
     calories: 320, protein: 36, carbs: 14, fat: 12,
     prepTime: 18, servings: 2,
     imageUrl: "https://images.unsplash.com/photo-1540420773420-3366772f4999?w=600&q=80",
-    tags: ["Low Carb","Weight Loss"],
+    tags: ["Low Carb", TAGS.WEIGHT_LOSS, TAGS.LOW_CALORIE],
+    mealType: MEAL_TYPES.DINNER,
     description: "Lean turkey mince stir-fried with crisp broccoli and bell peppers in a savory soy-sesame sauce. Low carb and high protein.",
     ingredients: ["200g turkey mince","1 cup broccoli florets","1 red bell pepper, sliced","2 tbsp soy sauce","1 tbsp sesame oil","2 garlic cloves","1 tsp fresh ginger, grated","1 tsp cornstarch"],
     instructions: ["Heat sesame oil in a wok over high heat.","Brown turkey mince, breaking up lumps, about 5 minutes.","Add garlic and ginger, cook 1 minute.","Add broccoli and bell pepper, stir fry 3–4 minutes.","Mix soy sauce and cornstarch, pour over and toss to coat."],
@@ -42,7 +49,8 @@ const RECIPES = [
     calories: 320, protein: 28, carbs: 30, fat: 8,
     prepTime: 5, servings: 1,
     imageUrl: "https://images.unsplash.com/photo-1488477181946-6428a0291777?w=600&q=80",
-    tags: ["High Protein","Muscle Gain"],
+    tags: [TAGS.HIGH_PROTEIN, TAGS.MUSCLE_GAIN, TAGS.LOW_CALORIE, TAGS.QUICK_MEAL],
+    mealType: MEAL_TYPES.BREAKFAST,
     description: "Thick Greek yogurt loaded with protein powder, fresh blueberries and crunchy granola. A no-cook breakfast done in 5 minutes.",
     ingredients: ["200g full-fat Greek yogurt","1 scoop vanilla protein powder","½ cup fresh blueberries","1 tbsp raw honey","2 tbsp granola","1 tbsp chia seeds"],
     instructions: ["Whisk protein powder into Greek yogurt until smooth.","Transfer to a bowl.","Top with blueberries, granola and chia seeds.","Drizzle honey over the top and serve immediately."],
@@ -52,7 +60,8 @@ const RECIPES = [
     calories: 280, protein: 32, carbs: 10, fat: 10,
     prepTime: 12, servings: 1,
     imageUrl: "https://images.unsplash.com/photo-1510693206972-df098062cb71?w=600&q=80",
-    tags: ["Weight Loss","Low Carb"],
+    tags: [TAGS.WEIGHT_LOSS, "Low Carb", TAGS.LOW_CALORIE, TAGS.QUICK_MEAL],
+    mealType: MEAL_TYPES.BREAKFAST,
     description: "Fluffy egg white omelette packed with spinach, mushrooms and tomatoes. Light yet filling — ideal for a weight-loss breakfast.",
     ingredients: ["5 egg whites","1 whole egg","½ cup baby spinach","¼ cup mushrooms, sliced","¼ cup cherry tomatoes, halved","1 tsp olive oil","Salt, pepper & herbs"],
     instructions: ["Whisk egg whites and whole egg together with salt and pepper.","Heat olive oil in a non-stick pan over medium heat.","Sauté mushrooms 2 minutes, add spinach and tomatoes.","Pour egg mixture over vegetables.","Cook until edges set, then fold omelette in half and serve."],
@@ -62,7 +71,8 @@ const RECIPES = [
     calories: 420, protein: 14, carbs: 68, fat: 10,
     prepTime: 30, servings: 2,
     imageUrl: "https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=600&q=80",
-    tags: ["Vegan","Vegetarian"],
+    tags: [TAGS.VEGAN, TAGS.VEGETARIAN],
+    mealType: MEAL_TYPES.DINNER,
     description: "Roasted sweet potato wedges over seasoned black beans and fresh corn, finished with lime and coriander. Naturally vegan and satisfying.",
     ingredients: ["2 medium sweet potatoes, cubed","1 can black beans, drained","½ cup corn kernels","1 avocado","1 lime","1 tsp cumin","1 tsp smoked paprika","Fresh coriander"],
     instructions: ["Preheat oven to 200°C (400°F).","Toss sweet potato with oil, cumin, paprika, salt. Roast 25 minutes.","Warm black beans in a pan with remaining spices.","Assemble bowl: sweet potato, beans, corn, avocado.","Squeeze lime over everything and top with fresh coriander."],
@@ -72,7 +82,8 @@ const RECIPES = [
     calories: 310, protein: 34, carbs: 20, fat: 9,
     prepTime: 5, servings: 2,
     imageUrl: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=600&q=80",
-    tags: ["High Protein","Meal Prep"],
+    tags: [TAGS.HIGH_PROTEIN, "Meal Prep", TAGS.LOW_CALORIE, TAGS.QUICK_MEAL],
+    mealType: MEAL_TYPES.LUNCH,
     description: "A no-cook, meal-prep friendly salad with canned tuna, chickpeas and crisp vegetables. Lasts 3 days in the fridge.",
     ingredients: ["1 can tuna in spring water, drained","1 can chickpeas, drained","½ cucumber, diced","1 cup cherry tomatoes, halved","¼ red onion, finely sliced","2 tbsp olive oil","Juice of 1 lemon","Salt & pepper"],
     instructions: ["Drain and rinse tuna and chickpeas.","Chop all vegetables and combine in a large bowl.","Add tuna and chickpeas.","Whisk olive oil and lemon juice, season with salt and pepper.","Pour dressing over salad and toss to combine."],
@@ -82,7 +93,8 @@ const RECIPES = [
     calories: 380, protein: 20, carbs: 52, fat: 10,
     prepTime: 5, servings: 1,
     imageUrl: "https://images.unsplash.com/photo-1495214783159-3503fd1b572d?w=600&q=80",
-    tags: ["Meal Prep","Muscle Gain"],
+    tags: ["Meal Prep", TAGS.MUSCLE_GAIN, TAGS.QUICK_MEAL],
+    mealType: MEAL_TYPES.BREAKFAST,
     description: "Prep these the night before and wake up to a ready-to-eat, protein-rich breakfast. Customize toppings daily to keep it interesting.",
     ingredients: ["½ cup rolled oats","1 cup unsweetened almond milk","1 scoop protein powder","1 ripe banana, sliced","1 tbsp natural peanut butter","1 tbsp chia seeds","Pinch of cinnamon"],
     instructions: ["Combine oats, almond milk, protein powder and chia seeds in a jar.","Stir well and seal.","Refrigerate overnight (minimum 6 hours).","In the morning, stir and top with banana slices and peanut butter."],
@@ -92,7 +104,8 @@ const RECIPES = [
     calories: 350, protein: 18, carbs: 28, fat: 20,
     prepTime: 8, servings: 1,
     imageUrl: "https://images.unsplash.com/photo-1541519227354-08fa5d50c820?w=600&q=80",
-    tags: ["Vegetarian","Weight Loss"],
+    tags: [TAGS.VEGETARIAN, TAGS.WEIGHT_LOSS, TAGS.QUICK_MEAL],
+    mealType: MEAL_TYPES.BREAKFAST,
     description: "Creamy mashed avocado on whole grain toast topped with perfectly poached eggs. A balanced meal with healthy fats and protein.",
     ingredients: ["2 slices whole grain bread","1 ripe avocado","2 large eggs","Juice of half a lemon","Chilli flakes","Salt & freshly ground black pepper"],
     instructions: ["Toast bread slices until golden and crisp.","Halve avocado, remove stone and scoop flesh into a bowl.","Mash avocado with lemon juice, salt and pepper.","Bring a pan of water to a gentle simmer and poach eggs 3–4 minutes.","Spread avocado on toast and top with poached eggs and chilli flakes."],
@@ -102,7 +115,8 @@ const RECIPES = [
     calories: 450, protein: 38, carbs: 26, fat: 18,
     prepTime: 20, servings: 2,
     imageUrl: "https://images.unsplash.com/photo-1603360946369-dc9bb6258143?w=600&q=80",
-    tags: ["High Protein","Muscle Gain"],
+    tags: [TAGS.HIGH_PROTEIN, TAGS.MUSCLE_GAIN],
+    mealType: MEAL_TYPES.DINNER,
     description: "Tender lean beef strips and crisp broccoli in a rich soy-oyster sauce. A classic muscle-building meal served over brown rice.",
     ingredients: ["300g lean beef sirloin, thinly sliced","2 cups broccoli florets","3 tbsp soy sauce","1 tbsp oyster sauce","1 tsp sesame oil","2 garlic cloves","1 tsp fresh ginger","1 tsp cornstarch","Brown rice to serve"],
     instructions: ["Marinate beef in soy sauce, oyster sauce and cornstarch for 10 minutes.","Steam broccoli 3 minutes until bright green and tender-crisp.","Heat sesame oil in a wok over high heat.","Stir-fry beef 2–3 minutes until browned.","Add garlic, ginger and broccoli, toss with any remaining marinade. Serve over rice."],
@@ -112,7 +126,8 @@ const RECIPES = [
     calories: 340, protein: 30, carbs: 38, fat: 8,
     prepTime: 5, servings: 1,
     imageUrl: "https://images.unsplash.com/photo-1490645935967-10de6ba17061?w=600&q=80",
-    tags: ["Muscle Gain","High Protein"],
+    tags: [TAGS.MUSCLE_GAIN, TAGS.HIGH_PROTEIN, TAGS.QUICK_MEAL],
+    mealType: MEAL_TYPES.BREAKFAST,
     description: "A thick, spoonable smoothie bowl packed with frozen fruit and protein powder, topped with crunchy granola and fresh berries.",
     ingredients: ["1 scoop vanilla protein powder","1 frozen banana","½ cup frozen mixed berries","¼ cup unsweetened almond milk","Granola, fresh fruit and hemp seeds to top"],
     instructions: ["Blend protein powder, frozen banana, berries and almond milk until very thick.","Pour into a bowl — it should be thick enough to hold toppings.","Arrange granola, fresh fruit and hemp seeds on top.","Serve immediately."],
@@ -122,7 +137,8 @@ const RECIPES = [
     calories: 290, protein: 16, carbs: 42, fat: 6,
     prepTime: 35, servings: 4,
     imageUrl: "https://images.unsplash.com/photo-1547592166-23ac45744acd?w=600&q=80",
-    tags: ["Vegan","Vegetarian","Meal Prep"],
+    tags: [TAGS.VEGAN, TAGS.VEGETARIAN, "Meal Prep", TAGS.LOW_CALORIE],
+    mealType: MEAL_TYPES.DINNER,
     description: "A hearty, warming soup loaded with red lentils and vegetables. Batch-cook on Sunday and eat all week.",
     ingredients: ["1 cup red lentils, rinsed","2 carrots, diced","2 celery stalks, sliced","1 large onion, diced","3 garlic cloves","1 can diced tomatoes","4 cups vegetable broth","1 tsp cumin","1 tsp turmeric","Salt & pepper"],
     instructions: ["Sauté onion, garlic, carrots and celery in olive oil for 5 minutes.","Add cumin and turmeric, cook 1 minute.","Add lentils, diced tomatoes and vegetable broth.","Bring to a boil, then simmer 25 minutes until lentils are soft.","Season with salt and pepper. Blend partially for a creamier texture if desired."],
@@ -132,7 +148,8 @@ const RECIPES = [
     calories: 310, protein: 44, carbs: 4, fat: 12,
     prepTime: 30, servings: 2,
     imageUrl: "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=600&q=80",
-    tags: ["High Protein","Low Carb","Weight Loss"],
+    tags: [TAGS.HIGH_PROTEIN, "Low Carb", TAGS.WEIGHT_LOSS, TAGS.LOW_CALORIE],
+    mealType: MEAL_TYPES.DINNER,
     description: "Juicy baked chicken breasts marinated in lemon, garlic and herbs. One of the leanest high-protein meals you can make.",
     ingredients: ["2 large chicken breasts","2 tbsp olive oil","Juice of 1 lemon","3 garlic cloves, minced","1 tsp dried oregano","1 tsp dried thyme","Salt & black pepper"],
     instructions: ["Preheat oven to 200°C (400°F).","Whisk olive oil, lemon juice, garlic and herbs.","Coat chicken in marinade and leave 10 minutes.","Bake 22–25 minutes until internal temp reaches 75°C.","Rest 5 minutes before slicing and serving."],
@@ -142,7 +159,8 @@ const RECIPES = [
     calories: 380, protein: 18, carbs: 55, fat: 10,
     prepTime: 20, servings: 3,
     imageUrl: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=600&q=80",
-    tags: ["Vegan","Vegetarian","Meal Prep"],
+    tags: [TAGS.VEGAN, TAGS.VEGETARIAN, "Meal Prep"],
+    mealType: MEAL_TYPES.LUNCH,
     description: "A colourful, protein-rich vegan salad that doubles as a side or main. Keeps well in the fridge for 4 days.",
     ingredients: ["1 cup quinoa","1 can black beans, drained","1 cup corn kernels","1 red bell pepper, diced","½ red onion, diced","Juice of 2 limes","3 tbsp olive oil","Fresh coriander","1 tsp cumin"],
     instructions: ["Cook quinoa per package instructions, fluff and let cool.","Combine quinoa with black beans, corn, bell pepper and onion.","Whisk lime juice, olive oil and cumin for dressing.","Pour dressing over salad and toss well.","Fold in fresh coriander before serving."],
@@ -152,7 +170,8 @@ const RECIPES = [
     calories: 265, protein: 30, carbs: 14, fat: 10,
     prepTime: 15, servings: 2,
     imageUrl: "https://images.unsplash.com/photo-1565299585323-38d6b0865b47?w=600&q=80",
-    tags: ["Low Carb","Weight Loss","High Protein"],
+    tags: ["Low Carb", TAGS.WEIGHT_LOSS, TAGS.HIGH_PROTEIN, TAGS.LOW_CALORIE],
+    mealType: MEAL_TYPES.DINNER,
     description: "Garlic butter shrimp over cauliflower rice — all the satisfaction with a fraction of the carbs.",
     ingredients: ["300g large shrimp, peeled","1 head cauliflower, riced","3 garlic cloves, minced","2 tbsp butter","1 tbsp olive oil","Juice of half a lemon","Fresh parsley","Chilli flakes","Salt & pepper"],
     instructions: ["Rice cauliflower by pulsing florets in a food processor.","Cook cauliflower rice in a dry pan 4–5 minutes.","In another pan, heat butter and olive oil.","Cook shrimp with garlic and chilli 2–3 minutes each side.","Plate cauliflower rice, top with shrimp and squeeze lemon over. Garnish with parsley."],
@@ -162,7 +181,8 @@ const RECIPES = [
     calories: 390, protein: 35, carbs: 38, fat: 10,
     prepTime: 15, servings: 2,
     imageUrl: "https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=600&q=80",
-    tags: ["Muscle Gain","High Protein"],
+    tags: [TAGS.MUSCLE_GAIN, TAGS.HIGH_PROTEIN],
+    mealType: MEAL_TYPES.BREAKFAST,
     description: "Fluffy protein-packed pancakes made with oats and banana. Top with berries and a drizzle of honey for a pre-workout breakfast.",
     ingredients: ["2 scoops vanilla protein powder","1 cup rolled oats","2 ripe bananas","2 large eggs","½ cup almond milk","1 tsp baking powder","Pinch of cinnamon","Berries and honey to serve"],
     instructions: ["Blend oats into a flour using a blender or food processor.","Blend in protein powder, bananas, eggs, almond milk, baking powder and cinnamon until smooth.","Heat a non-stick pan over medium heat, lightly oiled.","Pour ¼ cup batter per pancake and cook 2–3 minutes each side.","Serve stacked with berries and a drizzle of honey."],
@@ -172,7 +192,8 @@ const RECIPES = [
     calories: 310, protein: 20, carbs: 28, fat: 14,
     prepTime: 20, servings: 2,
     imageUrl: "https://images.unsplash.com/photo-1512058564366-18510be2db19?w=600&q=80",
-    tags: ["Vegan","Vegetarian","Low Carb"],
+    tags: [TAGS.VEGAN, TAGS.VEGETARIAN, "Low Carb", TAGS.LOW_CALORIE],
+    mealType: MEAL_TYPES.DINNER,
     description: "Crispy tofu stir-fried with colourful vegetables in a savoury ginger-soy sauce. Ready in 20 minutes.",
     ingredients: ["400g firm tofu, pressed and cubed","1 cup broccoli florets","1 carrot, julienned","1 red bell pepper","3 tbsp soy sauce","1 tbsp sesame oil","1 tbsp rice vinegar","2 garlic cloves","1 tbsp fresh ginger"],
     instructions: ["Press tofu dry with paper towels, cube and pan-fry in oil until golden on all sides.","Set aside tofu.","Stir-fry garlic and ginger 30 seconds.","Add vegetables and cook 4–5 minutes.","Return tofu, add soy sauce, sesame oil and rice vinegar. Toss and serve."],
@@ -182,7 +203,8 @@ const RECIPES = [
     calories: 420, protein: 32, carbs: 36, fat: 14,
     prepTime: 40, servings: 4,
     imageUrl: "https://images.unsplash.com/photo-1563805042-7684c019e1cb?w=600&q=80",
-    tags: ["High Protein","Meal Prep"],
+    tags: [TAGS.HIGH_PROTEIN, "Meal Prep"],
+    mealType: MEAL_TYPES.DINNER,
     description: "Bell peppers stuffed with lean ground beef, rice and tomato sauce then baked until tender. Perfect meal prep — freezes well.",
     ingredients: ["4 large bell peppers, tops cut off","300g lean ground beef","1 cup cooked brown rice","1 can diced tomatoes","1 onion, diced","2 garlic cloves","1 tsp Italian seasoning","Salt & pepper"],
     instructions: ["Preheat oven to 190°C (375°F).","Sauté onion and garlic 3 minutes. Add beef and cook until browned.","Stir in diced tomatoes, cooked rice and seasoning.","Fill peppers with beef mixture and place in a baking dish.","Bake 30 minutes until peppers are tender."],
@@ -192,7 +214,8 @@ const RECIPES = [
     calories: 280, protein: 10, carbs: 28, fat: 14,
     prepTime: 5, servings: 2,
     imageUrl: "https://images.unsplash.com/photo-1614777986387-015c2a89b852?w=600&q=80",
-    tags: ["Vegan","Vegetarian","Meal Prep"],
+    tags: [TAGS.VEGAN, TAGS.VEGETARIAN, "Meal Prep", TAGS.LOW_CALORIE, TAGS.QUICK_MEAL],
+    mealType: MEAL_TYPES.BREAKFAST,
     description: "Creamy coconut chia pudding loaded with omega-3s and topped with mango and berries. Set it overnight, eat it all week.",
     ingredients: ["¼ cup chia seeds","1 cup coconut milk","1 tbsp maple syrup","½ tsp vanilla extract","½ cup mango, diced","Fresh berries to top"],
     instructions: ["Whisk chia seeds, coconut milk, maple syrup and vanilla together.","Let sit 5 minutes then whisk again to prevent clumping.","Refrigerate for at least 4 hours or overnight.","Stir before serving and top with mango and fresh berries."],
@@ -202,7 +225,8 @@ const RECIPES = [
     calories: 360, protein: 14, carbs: 48, fat: 12,
     prepTime: 15, servings: 2,
     imageUrl: "https://images.unsplash.com/photo-1565299585323-38d6b0865b47?w=600&q=80",
-    tags: ["Vegan","Vegetarian"],
+    tags: [TAGS.VEGAN, TAGS.VEGETARIAN, TAGS.QUICK_MEAL],
+    mealType: MEAL_TYPES.DINNER,
     description: "Quick spiced black bean tacos with fresh salsa, avocado and crunchy slaw. A crowd-pleasing plant-based dinner in under 15 minutes.",
     ingredients: ["1 can black beans, drained","8 corn tortillas","1 avocado, sliced","1 cup red cabbage, shredded","1 lime","1 tsp cumin","1 tsp smoked paprika","Fresh salsa","Coriander"],
     instructions: ["Warm black beans with cumin, paprika, salt and a splash of water until heated through.","Warm tortillas in a dry pan 30 seconds each side.","Toss cabbage with lime juice and salt.","Assemble tacos: beans, cabbage, avocado and salsa.","Finish with coriander and an extra squeeze of lime."],
@@ -212,7 +236,8 @@ const RECIPES = [
     calories: 390, protein: 40, carbs: 12, fat: 20,
     prepTime: 22, servings: 2,
     imageUrl: "https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=600&q=80",
-    tags: ["High Protein","Low Carb","Weight Loss"],
+    tags: [TAGS.HIGH_PROTEIN, "Low Carb", TAGS.WEIGHT_LOSS],
+    mealType: MEAL_TYPES.DINNER,
     description: "Everything cooks on one pan. Omega-3 rich salmon and crisp asparagus roasted with lemon and garlic. Minimal cleanup.",
     ingredients: ["2 salmon fillets","1 bunch asparagus, trimmed","2 tbsp olive oil","3 garlic cloves, minced","Juice of 1 lemon","1 tsp dried dill","Salt & black pepper","Lemon slices to serve"],
     instructions: ["Preheat oven to 210°C (425°F). Line a baking sheet.","Toss asparagus with half the olive oil, garlic, salt and pepper.","Place salmon on the pan. Rub with remaining olive oil, dill and lemon juice.","Arrange asparagus around salmon.","Roast 12–15 minutes until salmon flakes easily. Serve with lemon slices."],
@@ -222,7 +247,8 @@ const RECIPES = [
     calories: 440, protein: 38, carbs: 40, fat: 12,
     prepTime: 25, servings: 4,
     imageUrl: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&q=80",
-    tags: ["High Protein","Meal Prep","Weight Loss"],
+    tags: [TAGS.HIGH_PROTEIN, "Meal Prep", TAGS.WEIGHT_LOSS],
+    mealType: MEAL_TYPES.LUNCH,
     description: "A lean bulk staple. Ground turkey, brown rice and roasted broccoli — prep four portions at once for the week.",
     ingredients: ["400g lean ground turkey","2 cups brown rice","2 cups broccoli florets","1 tbsp olive oil","3 garlic cloves","1 tbsp soy sauce","1 tsp garlic powder","Salt & pepper"],
     instructions: ["Cook brown rice per package instructions.","Brown ground turkey with garlic and garlic powder in olive oil.","Add soy sauce and cook 1 more minute.","Roast broccoli at 200°C for 15 minutes.","Divide rice, turkey and broccoli into four meal prep containers."],
@@ -232,7 +258,8 @@ const RECIPES = [
     calories: 250, protein: 24, carbs: 26, fat: 5,
     prepTime: 5, servings: 1,
     imageUrl: "https://images.unsplash.com/photo-1488477181946-6428a0291777?w=600&q=80",
-    tags: ["High Protein","Weight Loss"],
+    tags: [TAGS.HIGH_PROTEIN, TAGS.WEIGHT_LOSS, TAGS.LOW_CALORIE, TAGS.QUICK_MEAL],
+    mealType: MEAL_TYPES.BREAKFAST,
     description: "High-protein cottage cheese topped with seasonal fruit, a drizzle of honey and crunchy walnuts. A simple, no-cook breakfast under 250 calories.",
     ingredients: ["200g low-fat cottage cheese","½ cup mixed berries","½ peach or pear, sliced","1 tbsp honey","2 tbsp walnuts, roughly chopped","Pinch of cinnamon"],
     instructions: ["Spoon cottage cheese into a bowl.","Arrange berries and sliced peach on top.","Scatter walnuts and drizzle with honey.","Finish with a pinch of cinnamon and serve immediately."],
@@ -242,7 +269,8 @@ const RECIPES = [
     calories: 310, protein: 40, carbs: 30, fat: 5,
     prepTime: 3, servings: 1,
     imageUrl: "https://images.unsplash.com/photo-1490645935967-10de6ba17061?w=600&q=80",
-    tags: ["Muscle Gain","High Protein"],
+    tags: [TAGS.MUSCLE_GAIN, TAGS.HIGH_PROTEIN, TAGS.QUICK_MEAL, TAGS.HEALTHY_SNACK, TAGS.LOW_CALORIE],
+    mealType: null,
     description: "The perfect recovery shake — fast-digesting protein and carbs to kickstart muscle repair within 30 minutes of training.",
     ingredients: ["2 scoops chocolate whey protein","1 banana","1 cup low-fat milk","1 tbsp peanut butter","4–5 ice cubes"],
     instructions: ["Add all ingredients to a blender.","Blend on high until completely smooth.","Pour into a glass and drink within 30 minutes of finishing your workout."],
@@ -252,30 +280,236 @@ const RECIPES = [
     calories: 180, protein: 16, carbs: 6, fat: 10,
     prepTime: 25, servings: 6,
     imageUrl: "https://images.unsplash.com/photo-1510693206972-df098062cb71?w=600&q=80",
-    tags: ["Meal Prep","Low Carb","Weight Loss"],
+    tags: ["Meal Prep", "Low Carb", TAGS.WEIGHT_LOSS, TAGS.LOW_CALORIE],
+    mealType: MEAL_TYPES.BREAKFAST,
     description: "Mini egg muffins packed with vegetables and feta — meal prep 12 at once and grab two for a protein-packed breakfast all week.",
     ingredients: ["6 large eggs","¼ cup milk","½ cup spinach, chopped","¼ cup red bell pepper, diced","¼ cup cherry tomatoes, halved","¼ cup feta cheese, crumbled","Salt, pepper & dried oregano"],
     instructions: ["Preheat oven to 180°C (350°F). Grease a muffin tin.","Whisk eggs and milk with salt, pepper and oregano.","Divide vegetables evenly between muffin cups.","Pour egg mixture over vegetables.","Sprinkle feta on top and bake 18–20 minutes until set."],
+  },
+
+  // ── New: Healthy Snacks (category had zero coverage before) ─────────────────
+  {
+    name: "Hummus & Veggie Sticks",
+    calories: 180, protein: 7, carbs: 20, fat: 9,
+    prepTime: 5, servings: 1,
+    imageUrl: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=600&q=80",
+    tags: [TAGS.VEGAN, TAGS.VEGETARIAN, TAGS.LOW_CALORIE, TAGS.QUICK_MEAL, TAGS.HEALTHY_SNACK],
+    mealType: null,
+    description: "Crunchy carrot, cucumber and bell pepper sticks dipped in creamy hummus. A five-minute snack that actually keeps you full.",
+    ingredients: ["½ cup hummus","1 carrot, cut into sticks","½ cucumber, cut into sticks","½ red bell pepper, sliced","Pinch of paprika"],
+    instructions: ["Spoon hummus into a small bowl and sprinkle with paprika.","Arrange carrot, cucumber and pepper sticks around the bowl.","Serve immediately."],
+  },
+  {
+    name: "Hard-Boiled Eggs & Almonds",
+    calories: 210, protein: 14, carbs: 4, fat: 15,
+    prepTime: 10, servings: 1,
+    imageUrl: "https://images.unsplash.com/photo-1510693206972-df098062cb71?w=600&q=80",
+    tags: [TAGS.HIGH_PROTEIN, TAGS.LOW_CALORIE, TAGS.QUICK_MEAL, TAGS.HEALTHY_SNACK],
+    mealType: null,
+    description: "Two hard-boiled eggs and a handful of almonds — the simplest high-protein snack that needs zero recipe skill.",
+    ingredients: ["2 large eggs","12 whole almonds","Pinch of salt & pepper"],
+    instructions: ["Place eggs in a pot, cover with water, bring to a boil.","Boil 9–10 minutes, then transfer to ice water.","Peel, season with salt and pepper, and serve with almonds."],
+  },
+  {
+    name: "No-Bake Protein Energy Balls",
+    calories: 190, protein: 9, carbs: 20, fat: 9,
+    prepTime: 15, servings: 6,
+    imageUrl: "https://images.unsplash.com/photo-1495214783159-3503fd1b572d?w=600&q=80",
+    tags: [TAGS.VEGETARIAN, TAGS.MUSCLE_GAIN, TAGS.QUICK_MEAL, TAGS.HEALTHY_SNACK],
+    mealType: null,
+    description: "Chewy no-bake balls of oats, peanut butter and protein powder. Batch these once and grab one whenever hunger hits.",
+    ingredients: ["1 cup rolled oats","½ cup natural peanut butter","1 scoop vanilla protein powder","3 tbsp honey","2 tbsp mini chocolate chips","1 tbsp chia seeds"],
+    instructions: ["Mix all ingredients together in a bowl until a thick dough forms.","Roll into 12 small balls.","Refrigerate at least 30 minutes to firm up.","Store in the fridge for up to a week."],
+  },
+  {
+    name: "Apple Slices & Peanut Butter",
+    calories: 200, protein: 5, carbs: 25, fat: 10,
+    prepTime: 3, servings: 1,
+    imageUrl: "https://images.unsplash.com/photo-1490645935967-10de6ba17061?w=600&q=80",
+    tags: [TAGS.VEGAN, TAGS.VEGETARIAN, TAGS.LOW_CALORIE, TAGS.QUICK_MEAL, TAGS.HEALTHY_SNACK],
+    mealType: null,
+    description: "Crisp apple slices with natural peanut butter — a three-minute classic that balances fibre, fat and a touch of sweetness.",
+    ingredients: ["1 medium apple, sliced","2 tbsp natural peanut butter","Pinch of cinnamon (optional)"],
+    instructions: ["Slice the apple into wedges.","Serve with peanut butter for dipping.","Sprinkle with cinnamon if desired."],
+  },
+  {
+    name: "Turkey & Avocado Rice Cakes",
+    calories: 220, protein: 15, carbs: 22, fat: 9,
+    prepTime: 5, servings: 1,
+    imageUrl: "https://images.unsplash.com/photo-1541519227354-08fa5d50c820?w=600&q=80",
+    tags: [TAGS.HIGH_PROTEIN, TAGS.QUICK_MEAL, TAGS.HEALTHY_SNACK],
+    mealType: null,
+    description: "Crunchy rice cakes topped with sliced turkey breast and mashed avocado. A satisfying snack with real staying power.",
+    ingredients: ["2 plain rice cakes","¼ avocado, mashed","60g sliced turkey breast","Chilli flakes","Squeeze of lemon"],
+    instructions: ["Mash avocado with a squeeze of lemon.","Spread over rice cakes.","Top with sliced turkey and a pinch of chilli flakes."],
+  },
+  {
+    name: "Sea Salt Edamame",
+    calories: 150, protein: 13, carbs: 12, fat: 6,
+    prepTime: 5, servings: 1,
+    imageUrl: "https://images.unsplash.com/photo-1512058564366-18510be2db19?w=600&q=80",
+    tags: [TAGS.VEGAN, TAGS.VEGETARIAN, TAGS.LOW_CALORIE, TAGS.QUICK_MEAL, TAGS.HEALTHY_SNACK, TAGS.HIGH_PROTEIN],
+    mealType: null,
+    description: "Steamed edamame pods tossed in sea salt — a plant-based protein snack ready in five minutes.",
+    ingredients: ["1 cup frozen edamame pods","Sea salt to taste","Squeeze of lime (optional)"],
+    instructions: ["Steam or boil edamame pods for 4–5 minutes.","Drain and toss with sea salt.","Serve warm with a squeeze of lime if desired."],
+  },
+  {
+    name: "Homemade Trail Mix Cups",
+    calories: 230, protein: 7, carbs: 20, fat: 15,
+    prepTime: 5, servings: 4,
+    imageUrl: "https://images.unsplash.com/photo-1495214783159-3503fd1b572d?w=600&q=80",
+    tags: [TAGS.VEGETARIAN, TAGS.MUSCLE_GAIN, TAGS.QUICK_MEAL, TAGS.HEALTHY_SNACK],
+    mealType: null,
+    description: "Mixed nuts, seeds and dried fruit portioned into grab-and-go cups. Batch it Sunday, snack all week.",
+    ingredients: ["½ cup almonds","½ cup walnuts","¼ cup pumpkin seeds","¼ cup dried cranberries","¼ cup dark chocolate chips"],
+    instructions: ["Combine all ingredients in a bowl and mix well.","Divide evenly into 4 small containers or bags.","Store at room temperature for up to 2 weeks."],
+  },
+  {
+    name: "Cucumber Tuna Bites",
+    calories: 160, protein: 20, carbs: 6, fat: 6,
+    prepTime: 10, servings: 2,
+    imageUrl: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=600&q=80",
+    tags: [TAGS.HIGH_PROTEIN, "Low Carb", TAGS.LOW_CALORIE, TAGS.QUICK_MEAL, TAGS.HEALTHY_SNACK],
+    mealType: null,
+    description: "Cucumber rounds topped with lemony tuna salad — a low-carb, high-protein bite-sized snack.",
+    ingredients: ["1 can tuna in spring water, drained","1 tbsp Greek yogurt","1 tsp Dijon mustard","Juice of half a lemon","1 cucumber, sliced into rounds","Fresh dill"],
+    instructions: ["Mix tuna, Greek yogurt, mustard and lemon juice in a bowl.","Arrange cucumber rounds on a plate.","Top each round with a spoonful of tuna mixture.","Garnish with fresh dill."],
+  },
+  {
+    name: "Cottage Cheese & Cucumber Cups",
+    calories: 140, protein: 16, carbs: 8, fat: 4,
+    prepTime: 5, servings: 1,
+    imageUrl: "https://images.unsplash.com/photo-1488477181946-6428a0291777?w=600&q=80",
+    tags: [TAGS.HIGH_PROTEIN, "Low Carb", TAGS.LOW_CALORIE, TAGS.QUICK_MEAL, TAGS.HEALTHY_SNACK],
+    mealType: null,
+    description: "Cool cucumber cups filled with cottage cheese and cracked pepper — a light, high-protein snack under 150 calories.",
+    ingredients: ["½ cup low-fat cottage cheese","1 cucumber, thick-sliced","Cracked black pepper","Pinch of paprika"],
+    instructions: ["Slice cucumber into thick rounds and hollow the centre slightly with a spoon.","Fill each with a spoonful of cottage cheese.","Finish with black pepper and paprika."],
+  },
+  {
+    name: "Mini Greek Yogurt Berry Cups",
+    calories: 170, protein: 15, carbs: 20, fat: 3,
+    prepTime: 5, servings: 1,
+    imageUrl: "https://images.unsplash.com/photo-1488477181946-6428a0291777?w=600&q=80",
+    tags: [TAGS.HIGH_PROTEIN, TAGS.VEGETARIAN, TAGS.QUICK_MEAL, TAGS.HEALTHY_SNACK],
+    mealType: null,
+    description: "Layered Greek yogurt and mixed berries in a small cup — a portioned, protein-rich snack that satisfies a sweet craving.",
+    ingredients: ["150g plain Greek yogurt","⅓ cup mixed berries","1 tsp honey","1 tbsp granola"],
+    instructions: ["Spoon half the yogurt into a small cup.","Layer with half the berries.","Repeat with remaining yogurt and berries.","Top with granola and a drizzle of honey."],
+  },
+
+  // ── New: Lunch / Vegan (both categories were thin before) ────────────────────
+  {
+    name: "Mediterranean Chickpea Bowl",
+    calories: 380, protein: 16, carbs: 50, fat: 14,
+    prepTime: 15, servings: 2,
+    imageUrl: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=600&q=80",
+    tags: [TAGS.VEGAN, TAGS.VEGETARIAN, TAGS.HIGH_PROTEIN, TAGS.WEIGHT_LOSS],
+    mealType: MEAL_TYPES.LUNCH,
+    description: "Chickpeas, cucumber, tomato and olives tossed in lemon-herb dressing over couscous. A bright, plant-based Mediterranean lunch.",
+    ingredients: ["1 can chickpeas, drained","½ cup couscous","1 cucumber, diced","1 cup cherry tomatoes, halved","¼ cup kalamata olives","3 tbsp olive oil","Juice of 1 lemon","1 tsp dried oregano"],
+    instructions: ["Cook couscous per package instructions and fluff with a fork.","Combine chickpeas, cucumber, tomatoes and olives in a bowl.","Whisk olive oil, lemon juice and oregano for dressing.","Toss couscous and vegetables with dressing.","Season with salt and pepper before serving."],
+  },
+  {
+    name: "Caprese Quinoa Salad",
+    calories: 360, protein: 14, carbs: 42, fat: 16,
+    prepTime: 15, servings: 2,
+    imageUrl: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=600&q=80",
+    tags: [TAGS.VEGETARIAN, TAGS.QUICK_MEAL],
+    mealType: MEAL_TYPES.LUNCH,
+    description: "Fluffy quinoa tossed with fresh mozzarella, cherry tomatoes and basil in a balsamic drizzle. Light but filling.",
+    ingredients: ["1 cup cooked quinoa","150g mini mozzarella balls","1 cup cherry tomatoes, halved","Fresh basil leaves","2 tbsp olive oil","1 tbsp balsamic glaze","Salt & pepper"],
+    instructions: ["Cook quinoa per package instructions and let cool.","Combine quinoa, mozzarella, tomatoes and basil in a bowl.","Drizzle with olive oil and balsamic glaze.","Season with salt and pepper and toss gently."],
+  },
+  {
+    name: "Falafel Wrap",
+    calories: 420, protein: 15, carbs: 55, fat: 16,
+    prepTime: 20, servings: 2,
+    imageUrl: "https://images.unsplash.com/photo-1565299585323-38d6b0865b47?w=600&q=80",
+    tags: [TAGS.VEGAN, TAGS.VEGETARIAN, TAGS.MUSCLE_GAIN],
+    mealType: MEAL_TYPES.LUNCH,
+    description: "Crispy baked falafel wrapped with crunchy slaw and tahini sauce. A filling plant-based lunch that travels well.",
+    ingredients: ["8 falafel balls (store-bought or homemade)","2 whole wheat wraps","1 cup shredded cabbage and carrot slaw","3 tbsp tahini sauce","1 tomato, sliced","Fresh parsley"],
+    instructions: ["Warm falafel in the oven or a dry pan until crisp.","Lay each wrap flat and add slaw, tomato and falafel.","Drizzle generously with tahini sauce.","Fold and roll tightly, then slice in half to serve."],
+  },
+  {
+    name: "Grilled Veggie & Hummus Wrap",
+    calories: 340, protein: 11, carbs: 46, fat: 13,
+    prepTime: 15, servings: 2,
+    imageUrl: "https://images.unsplash.com/photo-1565299585323-38d6b0865b47?w=600&q=80",
+    tags: [TAGS.VEGAN, TAGS.VEGETARIAN, TAGS.WEIGHT_LOSS, TAGS.QUICK_MEAL],
+    mealType: MEAL_TYPES.LUNCH,
+    description: "Smoky grilled zucchini and bell pepper rolled up with hummus in a soft wrap. A quick, veg-packed lunch.",
+    ingredients: ["2 whole wheat wraps","½ cup hummus","1 zucchini, sliced and grilled","1 bell pepper, sliced and grilled","½ cup baby spinach","1 tsp smoked paprika"],
+    instructions: ["Grill zucchini and bell pepper with a pinch of smoked paprika until charred, about 5 minutes.","Spread hummus over each wrap.","Layer spinach and grilled vegetables.","Roll tightly and slice in half to serve."],
+  },
+  {
+    name: "Southwest Black Bean Bowl",
+    calories: 400, protein: 17, carbs: 58, fat: 12,
+    prepTime: 20, servings: 2,
+    imageUrl: "https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=600&q=80",
+    tags: [TAGS.VEGAN, TAGS.VEGETARIAN, TAGS.HIGH_PROTEIN],
+    mealType: MEAL_TYPES.LUNCH,
+    description: "Spiced black beans, brown rice, corn and avocado with a zesty lime dressing. A hearty plant-based lunch bowl.",
+    ingredients: ["1 can black beans, drained","1 cup cooked brown rice","½ cup corn kernels","1 avocado, sliced","1 tomato, diced","Juice of 1 lime","1 tsp cumin","1 tsp chilli powder"],
+    instructions: ["Warm black beans with cumin and chilli powder in a pan.","Divide rice between two bowls.","Top with black beans, corn, tomato and avocado.","Squeeze lime juice over everything before serving."],
+  },
+  {
+    name: "Vegan Buddha Bowl",
+    calories: 390, protein: 16, carbs: 52, fat: 14,
+    prepTime: 20, servings: 2,
+    imageUrl: "https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=600&q=80",
+    tags: [TAGS.VEGAN, TAGS.VEGETARIAN, TAGS.WEIGHT_LOSS, TAGS.HIGH_PROTEIN],
+    mealType: MEAL_TYPES.LUNCH,
+    description: "Roasted chickpeas, sweet potato and greens with a tahini-lemon drizzle. A balanced, nutrient-dense plant-based bowl.",
+    ingredients: ["1 can chickpeas, drained and roasted","1 sweet potato, cubed and roasted","2 cups baby kale","¼ cup shredded purple cabbage","3 tbsp tahini","Juice of 1 lemon","1 tbsp maple syrup","Water to thin"],
+    instructions: ["Roast chickpeas and sweet potato at 200°C for 20–25 minutes until golden.","Whisk tahini, lemon juice, maple syrup and water into a smooth dressing.","Arrange kale, cabbage, chickpeas and sweet potato in a bowl.","Drizzle with tahini dressing before serving."],
+  },
+
+  // ── New: Breakfast (closes the last gap to reach 10) ─────────────────────────
+  {
+    name: "Blueberry Protein Oat Muffins",
+    calories: 210, protein: 12, carbs: 28, fat: 6,
+    prepTime: 25, servings: 6,
+    imageUrl: "https://images.unsplash.com/photo-1510693206972-df098062cb71?w=600&q=80",
+    tags: [TAGS.VEGETARIAN, TAGS.MUSCLE_GAIN],
+    mealType: MEAL_TYPES.BREAKFAST,
+    description: "Soft baked oat muffins studded with blueberries and boosted with protein powder. Bake a batch for grab-and-go mornings.",
+    ingredients: ["1½ cups rolled oats, blended to flour","1 scoop vanilla protein powder","2 eggs","1 cup Greek yogurt","¼ cup honey","1 tsp baking powder","1 cup fresh blueberries"],
+    instructions: ["Preheat oven to 180°C (350°F) and line a muffin tin.","Whisk eggs, Greek yogurt and honey together.","Fold in oat flour, protein powder and baking powder until just combined.","Gently fold in blueberries.","Divide batter into muffin cups and bake 18–20 minutes until golden."],
   },
 ];
 
 async function main() {
   console.log(`Seeding ${RECIPES.length} recipes...`);
   let created = 0;
-  let skipped = 0;
+  let updated = 0;
 
   for (const recipe of RECIPES) {
     const existing = await prisma.recipe.findFirst({ where: { name: recipe.name } });
     if (existing) {
-      skipped++;
-      continue;
+      await prisma.recipe.update({ where: { id: existing.id }, data: { ...recipe, isPublic: true } });
+      updated++;
+    } else {
+      await prisma.recipe.create({ data: { ...recipe, isPublic: true } });
+      created++;
+      console.log(`  ✓ ${recipe.name}`);
     }
-    await prisma.recipe.create({ data: { ...recipe, isPublic: true } });
-    created++;
-    console.log(`  ✓ ${recipe.name}`);
   }
 
-  console.log(`\nDone — ${created} created, ${skipped} already existed.`);
+  console.log(`\nDone — ${created} created, ${updated} updated.`);
+
+  // Coverage check — warn if any of the 11 categories can't fill CATEGORY_LIMIT
+  console.log('\nCategory coverage:');
+  for (const cat of RECIPE_CATEGORIES) {
+    const where = cat.type === 'tag'
+      ? { tags: { has: cat.value } }
+      : { mealType: cat.value };
+    const count = await prisma.recipe.count({ where });
+    const flag = count < CATEGORY_LIMIT ? `⚠️  below ${CATEGORY_LIMIT}` : '✓';
+    console.log(`  ${cat.label.padEnd(14)} ${String(count).padStart(3)} recipes  ${flag}`);
+  }
 }
 
 // Export for use by server.js on startup

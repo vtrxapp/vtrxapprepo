@@ -6,6 +6,31 @@ const prisma    = require('../config/database');
 const ymove     = require('../services/ymoveService');
 const aiService = require('../services/aiService');
 const logger    = require('../utils/logger');
+const { RECIPE_CATEGORIES, CATEGORY_LIMIT } = require('../data/recipeCategories');
+
+// ── GET /api/nutrition/recipes/categorized — All 11 categories, ≤10 each ──────
+// DB-sourced (not live ymove) so results are fast, consistent, and match the
+// standardized taxonomy in data/recipeCategories.js.
+const getCategorizedRecipes = async (req, res) => {
+  try {
+    const categories = await Promise.all(RECIPE_CATEGORIES.map(async (cat) => {
+      const where = cat.type === 'tag'
+        ? { isPublic: true, tags: { has: cat.value } }
+        : { isPublic: true, mealType: cat.value };
+      const recipes = await prisma.recipe.findMany({
+        where,
+        take:    CATEGORY_LIMIT,
+        orderBy: { createdAt: 'desc' },
+      });
+      return { key: cat.key, label: cat.label, recipes };
+    }));
+
+    res.json({ success: true, data: { categories } });
+  } catch (error) {
+    logger.error('getCategorizedRecipes error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch categorized recipes' });
+  }
+};
 
 // ── GET /api/nutrition/recipes — Browse recipes ───────────────────────────────
 // Supports source=ymove (live paginated) or source=db (DB only) or source=all
@@ -533,6 +558,7 @@ const generateYmoveMealPlan = async (req, res) => {
 };
 
 module.exports = {
+  getCategorizedRecipes,
   getRecipes,
   getPersonalisedRecipes,
   getRecipeById,

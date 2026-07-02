@@ -263,7 +263,8 @@ model Recipe {
   prepTime     Int?
   servings     Int?        @default(1)
   imageUrl     String?
-  tags         String[]
+  tags         String[]    // diet/goal tags: High Protein, Weight Loss, Muscle Gain, Low Calorie, Vegetarian, Vegan, Quick Meal, Healthy Snack
+  mealType     String?     // "Breakfast" | "Lunch" | "Dinner" — see data/recipeCategories.js for the full taxonomy
   description  String?
   ingredients  String[]
   instructions String[]
@@ -273,6 +274,7 @@ model Recipe {
 
   savedBy      SavedMeal[]
 
+  @@index([mealType])
   @@map("recipes")
 }
 
