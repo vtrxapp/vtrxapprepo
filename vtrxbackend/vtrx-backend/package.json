@@ -4,19 +4,17 @@
   "description": "VTRX Fitness Platform - Production Backend API",
   "main": "server.js",
   "scripts": {
-    "start": "npx prisma db push --accept-data-loss && node server.js",
+    "start": "node server.js",
     "dev": "nodemon server.js",
+    "postinstall": "npx prisma generate",
     "db:migrate": "npx prisma migrate dev",
     "db:generate": "npx prisma generate",
     "db:studio": "npx prisma studio",
     "seed:recipes": "node scripts/seedRecipes.js"
   },
   "dependencies": {
-    "@aws-sdk/client-cognito-identity-provider": "^3.600.0",
-    "@aws-sdk/client-s3": "^3.600.0",
-    "@aws-sdk/client-secrets-manager": "^3.600.0",
-    "@aws-sdk/s3-request-presigner": "^3.600.0",
     "@clerk/backend": "^3.4.14",
+    "@supabase/supabase-js": "^2.45.0",
     "@pinecone-database/pinecone": "^7.2.0",
     "@prisma/client": "^5.16.0",
     "@sentry/node": "^10.57.0",

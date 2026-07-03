@@ -2,9 +2,9 @@
 // controllers/uploadController.js — File Upload Controller
 // ─────────────────────────────────────────────────────────────────────────────
 
-const s3Service = require('../services/s3Service');
-const prisma    = require('../config/database');
-const logger    = require('../utils/logger');
+const storageService = require('../services/supabaseStorageService');
+const prisma         = require('../config/database');
+const logger         = require('../utils/logger');
 
 // ── POST /api/upload/avatar ───────────────────────────────────────────────────
 const uploadAvatar = async (req, res) => {
@@ -13,7 +13,7 @@ const uploadAvatar = async (req, res) => {
   }
 
   try {
-    const { url } = await s3Service.uploadAvatar({
+    const { url } = await storageService.uploadAvatar({
       userId:   req.user.id,
       buffer:   req.file.buffer,
       mimetype: req.file.mimetype,
@@ -38,7 +38,7 @@ const uploadProgressPhoto = async (req, res) => {
   }
 
   try {
-    const { url, key } = await s3Service.uploadProgressPhoto({
+    const { url, key } = await storageService.uploadProgressPhoto({
       userId:   req.user.id,
       buffer:   req.file.buffer,
       mimetype: req.file.mimetype,
