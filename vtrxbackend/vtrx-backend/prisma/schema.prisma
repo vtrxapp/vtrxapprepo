@@ -569,3 +569,23 @@ model NotificationLog {
   @@index([userId, type, sentAt])
   @@map("notification_log")
 }
+
+// ── EXERCISE_LIBRARY ──────────────────────────────────────────────────────────
+// Curated exercise bank used by the AI plan generator.
+// IDs are stable slugs (e.g. "BENCH_GYM") so the AI can reference them.
+// Video URLs are populated separately via the ymove sync job — not seeded here.
+model ExerciseLibrary {
+  id           String  @id
+  name         String
+  muscleGroup  String
+  equipment    String  // barbell | cable | machine | dumbbell | bodyweight
+  difficulty   String  // BEGINNER | INTERMEDIATE
+  isCompound   Boolean
+  isTimed      Boolean
+  defaultReps  Int?
+  defaultSecs  Int?
+  videoUrl     String  @default("")
+  thumbnailUrl String  @default("")
+
+  @@map("exercise_library")
+}

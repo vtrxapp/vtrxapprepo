@@ -9,7 +9,9 @@ const router = express.Router();
 router.use(protect);
 
 // ── AI Workout Plan ───────────────────────────────────────────────────────────
-router.post('/generate-plan',            plan.generatePlan);           // POST  — generate + save new 4-week plan
+router.post('/generate-plan',            plan.generatePlan);           // POST  — AI-generate + save new 4-week plan
+router.post('/regenerate-plan',          plan.regeneratePlan);         // POST  — force a fresh AI-generated plan
+router.get('/current-plan',              plan.getActivePlan);          // GET   — alias for active-plan
 router.get('/active-plan',               plan.getActivePlan);          // GET   — fetch current active plan
 router.patch('/active-plan/advance-week',plan.advancePlanWeek);        // PATCH — advance to next week
 router.post('/exercise-log',             plan.logExercise);            // POST  — log exercise performance
