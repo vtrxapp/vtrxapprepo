@@ -63,11 +63,15 @@ const protect = async (req, res, next) => {
       const username = ((clerkUser?.username || email.split('@')[0] || 'user')
         .replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 20)) || clerkUserId.slice(0, 15);
 
-      // Try creating with the base username, then append suffix on conflict
+      // Try creating with the base username, then append a distinct suffix on
+      // each conflict — each attempt must try a genuinely different username,
+      // otherwise a real 3-way collision only ever gets 2 attempts.
       const baseUsername = username;
       let createAttempts = 0;
       while (createAttempts < 3) {
-        const tryUsername = createAttempts === 0 ? baseUsername : `${baseUsername.slice(0, 16)}_${clerkUserId.slice(-3)}`;
+        const tryUsername = createAttempts === 0
+          ? baseUsername
+          : `${baseUsername.slice(0, 14)}_${clerkUserId.slice(-4)}${createAttempts}`;
         try {
           user = await prisma.user.create({ data: { cognitoId: clerkUserId, email, name, username: tryUsername }, select: USER_SELECT });
           logger.info(`Auto-provisioned Prisma user for Clerk ${clerkUserId} (${email})`);
@@ -75,13 +79,17 @@ const protect = async (req, res, next) => {
         } catch (e) {
           if (e.code === 'P2002') {
             const target = e.meta?.target;
-            // Username conflict — retry with suffix
+            // Username conflict — retry with a different suffix
             if (Array.isArray(target) && target.includes('username')) { createAttempts++; continue; }
-            // cognitoId/email conflict — another request already created this user
-            user = await prisma.user.findFirst({
+            // cognitoId/email conflict — another request already created this user.
+            // Verify the row we found actually belongs to THIS Clerk identity before
+            // trusting it — a shared email with an unrelated/legacy row must not
+            // silently attach this session to someone else's account.
+            const found = await prisma.user.findFirst({
               where: { OR: [{ cognitoId: clerkUserId }, ...(email ? [{ email }] : [])] },
               select: USER_SELECT,
             });
+            user = found && found.cognitoId === clerkUserId ? found : null;
             break;
           }
           throw e;

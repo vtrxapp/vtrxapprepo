@@ -46,30 +46,47 @@ const apiCall = async (endpoint, options = {}) => {
 
   const attempt = async () => {
     const token = _getClerkToken ? await _getClerkToken() : null;
-    const res   = await fetch(`${API_URL}${endpoint}`, {
-      headers: {
-        "Content-Type": "application/json",
-        ...(token && { Authorization: `Bearer ${token}` }),
-        ...fetchOptions.headers,
-      },
-      ...fetchOptions,
-    });
-    const data = await res.json();
-    return { res, data };
+    const controller = new AbortController();
+    // A request that's accepted but never answered would otherwise hang forever —
+    // no caller currently passes its own signal, so this always wins.
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
+    try {
+      const res  = await fetch(`${API_URL}${endpoint}`, {
+        headers: {
+          "Content-Type": "application/json",
+          ...(token && { Authorization: `Bearer ${token}` }),
+          ...fetchOptions.headers,
+        },
+        ...fetchOptions,
+        signal: controller.signal,
+      });
+      const data = await res.json();
+      return { res, data };
+    } finally {
+      clearTimeout(timeoutId);
+    }
   };
 
   // The backend can restart mid-session (e.g. host idle/sleep cycling) — a request
-  // landing during that window fails with a raw network error or a spurious 401 that
-  // looks identical to a real expired session. Retry once after a short delay before
-  // treating it as either, so a several-second restart doesn't sign the user out.
+  // landing during that window fails with a raw network error, a spurious 401, or a
+  // 5xx from a process that's up but still erroring mid-restart. Retry once after a
+  // short delay before treating any of those as final, so a several-second restart
+  // doesn't sign the user out or fail outright.
   let res, data;
   try {
     ({ res, data } = await attempt());
   } catch (_networkErr) {
     await new Promise(r => setTimeout(r, 2000));
-    ({ res, data } = await attempt());
+    try {
+      ({ res, data } = await attempt());
+    } catch (networkErr2) {
+      // Both attempts failed before ever getting an HTTP response — normalize
+      // to the same {status, code} shape as the deliberate error path below,
+      // so callers branching on err.status/err.code don't miss this case.
+      throw Object.assign(new Error(networkErr2?.message || "Network request failed"), { status: 0, code: 'NETWORK_ERROR' });
+    }
   }
-  if (!data.success && res.status === 401 && !endpoint.startsWith('/auth/')) {
+  if (!data.success && (res.status === 401 || res.status >= 500) && !endpoint.startsWith('/auth/')) {
     await new Promise(r => setTimeout(r, 2000));
     ({ res, data } = await attempt());
   }
@@ -3292,7 +3309,14 @@ function ForgotPasswordPage({ onBack }) {
   const [confirmPass, setConfirmPass] = useState("");
   const [err, setErr]             = useState("");
   const [loading, setLoading]     = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
   const { signIn, setActive } = useClerkSignIn();
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setTimeout(() => setResendCooldown(s => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendCooldown]);
 
   const sendCode = async () => {
     if (!email.trim()) { setErr("Please enter your email."); return; }
@@ -3303,10 +3327,11 @@ function ForgotPasswordPage({ onBack }) {
         identifier: email.trim().toLowerCase(),
       });
       setStep("code");
+      setResendCooldown(30);
     } catch (e) {
       const clerkErr = e?.errors?.[0];
       // Treat "user not found" as success to avoid email enumeration
-      if (clerkErr?.code === 'form_identifier_not_found') { setStep("code"); }
+      if (clerkErr?.code === 'form_identifier_not_found') { setStep("code"); setResendCooldown(30); }
       else { setErr(clerkErr?.longMessage || clerkErr?.message || e?.message || "Failed to send code."); }
     }
     finally { setLoading(false); }
@@ -3330,8 +3355,12 @@ function ForgotPasswordPage({ onBack }) {
       });
       if (result.status === 'complete') {
         await setActive({ session: result.createdSessionId });
+        setStep("done");
+      } else {
+        // e.g. needs_second_factor — no session was actually established,
+        // so don't show the success screen.
+        setErr("Your password was updated, but sign-in needs an extra step this screen doesn't support. Please contact support.");
       }
-      setStep("done");
     } catch (e) {
       const clerkErr = e?.errors?.[0];
       if (clerkErr?.code === 'form_code_incorrect') { setErr("Incorrect code. Please try again."); }
@@ -3381,7 +3410,11 @@ function ForgotPasswordPage({ onBack }) {
         ) : (
           <>
             <div style={{ fontFamily:FONT,fontSize:14,color:"#888",marginBottom:8,lineHeight:1.6 }}>We sent a code to <span style={{ color:"#fff",fontWeight:600 }}>{email}</span></div>
-            <div style={{ fontFamily:FONT,fontSize:13,color:"#666",marginBottom:24 }}>Check your spam folder if you don't see it.</div>
+            <div style={{ fontFamily:FONT,fontSize:13,color:"#666",marginBottom:12 }}>Check your spam folder if you don't see it.</div>
+            <button onClick={sendCode} disabled={resendCooldown > 0 || loading}
+              style={{ background:"none",border:"none",padding:0,marginBottom:20,fontFamily:FONT,fontSize:13,fontWeight:700,color:resendCooldown>0?"#666":PRIMARY,cursor:resendCooldown>0?"default":"pointer" }}>
+              {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : "Resend code"}
+            </button>
             <div style={{ fontFamily:FONT,fontSize:11,fontWeight:700,color:"#888",letterSpacing:1,marginBottom:6 }}>VERIFICATION CODE</div>
             <input value={code} onChange={e=>setCode(e.target.value)} placeholder="6-digit code"
               inputMode="numeric" maxLength={6}
@@ -3441,6 +3474,19 @@ function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
     }
   };
 
+  // Shared by the happy path and the "already signed in" error branch below —
+  // always route off the real profile, never assume an empty one means "new user".
+  const fetchProfileAndLogin = async () => {
+    try {
+      const profileRes = await apiCall("/users/profile", { skipAuthRedirect: true });
+      const u = profileRes?.data?.user || {};
+      if (u.id) setUser(prev => ({...prev, ...u}));
+      onLogin(u);
+    } catch (_) {
+      onLogin({});
+    }
+  };
+
   const handle = async () => {
     setSubmitted(true);
     const errs = {};
@@ -3468,23 +3514,23 @@ function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
         // skipAuthRedirect: this is the first authenticated call of a fresh session —
         // a 401 here must not trigger a full Clerk sign-out (that's what was bouncing
         // users straight back to the login screen after a successful login).
-        try {
-          const profileRes = await apiCall("/users/profile", { skipAuthRedirect: true });
-          const u = profileRes?.data?.user || {};
-          if (u.id) setUser(prev => ({...prev, ...u}));
-          onLogin(u);
-        } catch(_) {
-          onLogin({});
-        }
+        await fetchProfileAndLogin();
+      } else if (result.status === 'needs_new_password') {
+        setErrors({ general: "For your security you'll need to set a new password before signing in — use \"Forgot password?\" below." });
       } else {
-        setErrors({ general: "Login incomplete — please try again." });
+        // needs_second_factor / needs_client_trust / anything else this UI doesn't
+        // have a screen for. Retrying won't change the outcome, so say so honestly
+        // instead of looping the user through "please try again".
+        setErrors({ general: "We couldn't complete sign-in for this account. If you have two-factor authentication enabled, contact support — it isn't supported here yet." });
       }
     } catch (e) {
       console.error(e);
       const clerkErr = e?.errors?.[0];
       if (clerkErr?.code === 'session_exists' || e?.status === 422) {
-        // Already signed in
-        onLogin({});
+        // Already signed in — fetch the real profile rather than assuming
+        // "no profile", which was incorrectly demoting onboarded users back
+        // into the onboarding flow.
+        await fetchProfileAndLogin();
       } else if (clerkErr?.code === 'form_identifier_not_found' || clerkErr?.code === 'form_password_incorrect' || clerkErr?.code === 'not_found') {
         setErrors({ general: "Incorrect email or password." });
       } else if (clerkErr?.code === 'strategy_for_user_invalid' || clerkErr?.code === 'verification_failed') {
@@ -3521,9 +3567,10 @@ function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
             value={email} 
             onChange={e=>{ setEmail(e.target.value); setErrors(p=>({...p,email:undefined})); }} 
             onBlur={e=>validateField("email", e.target.value)}
-            placeholder="Email address" 
+            placeholder="Email address"
             type="email"
-            autoCapitalize="none" 
+            autoComplete="username"
+            autoCapitalize="none"
             autoCorrect="off"
             style={{ width:"100%", background:"rgba(255,255,255,0.92)", borderRadius:50, border:`2px solid ${submitted&&errors.email?"#EF4444":"transparent"}`, padding:"16px 18px 16px 44px", fontFamily:FONT, fontSize:14, fontWeight:500, color:"#111", outline:"none", boxSizing:"border-box" }}
           />
@@ -3535,10 +3582,11 @@ function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
             <BodyFieldIcon type="lock"/>
           </div>
           <input
-            value={pass} 
-            onChange={e=>{ setPass(e.target.value); setErrors(p=>({...p,pass:undefined})); }} 
+            value={pass}
+            onChange={e=>{ setPass(e.target.value); setErrors(p=>({...p,pass:undefined})); }}
             onBlur={e=>validateField("pass", e.target.value)}
-            placeholder="Password" 
+            autoComplete="current-password"
+            placeholder="Password"
             type={showPass?"text":"password"}
             onKeyDown={e=>e.key==="Enter"&&handle()}
             style={{ width:"100%", background:"rgba(255,255,255,0.92)", borderRadius:50, border:`2px solid ${submitted&&errors.pass?"#EF4444":"transparent"}`, padding:"16px 46px 16px 44px", fontFamily:FONT, fontSize:14, fontWeight:500, color:"#111", outline:"none", boxSizing:"border-box" }}
@@ -3632,7 +3680,11 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
     } catch (e) {
       const clerkErr = e?.errors?.[0];
       if (clerkErr?.code === 'form_identifier_exists') {
-        setErrors({ general: "An account with this email already exists." });
+        // Clerk uses this same code for a taken email AND a taken username —
+        // meta.paramName says which one so the message doesn't blame the wrong field.
+        setErrors({ general: clerkErr?.meta?.paramName === 'username'
+          ? "That username is already taken."
+          : "An account with this email already exists." });
       } else if (clerkErr?.code === 'form_password_pwned' || clerkErr?.code?.includes('password')) {
         setErrors({ general: clerkErr?.longMessage || clerkErr?.message || "Password does not meet requirements." });
       } else {
@@ -6374,7 +6426,9 @@ function ChangePasswordPage({ onBack }) {
   const [saved,   setSaved]     = useState(false);
   const [loading, setLoading]   = useState(false);
   const [error,   setError]     = useState("");
-  const strong = newPass.length >= 8;
+  // Matches the regex ForgotPasswordPage enforces — was previously length-only here,
+  // letting a password like "aaaaaaaa" through a field the forgot-password flow rejects.
+  const strong = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/.test(newPass);
   const match  = newPass && newPass===confirm;
 
   const strength = newPass.length === 0 ? 0 : newPass.length < 6 ? 1 : newPass.length < 10 ? 2 : 3;
@@ -6404,7 +6458,7 @@ function ChangePasswordPage({ onBack }) {
     <SubShell title="CHANGE PASSWORD" onBack={onBack}>
       <div style={{ background:"#ffffff",borderRadius:20,border:"1px solid #e8e8e8",padding:"20px",marginBottom:14 }}>
         <DarkInput label="CURRENT PASSWORD" value={current} onChange={setCurrent} type="password" placeholder="Enter current password"/>
-        <DarkInput label="NEW PASSWORD" value={newPass} onChange={setNewPass} type="password" placeholder="Min 8 characters"/>
+        <DarkInput label="NEW PASSWORD" value={newPass} onChange={setNewPass} type="password" placeholder="8+ chars, upper and lower case, a number"/>
         {newPass.length>0&&(
           <div style={{ marginBottom:16,marginTop:-8 }}>
             <div style={{ display:"flex",gap:4,marginBottom:4 }}>
@@ -9948,7 +10002,6 @@ function VTRXAppInner({ setPaymentPlan }) {
   // ── Phase / onboarding state ──────────────────────────────────────────────
   const [phase, setPhase]           = useState("splash");
   const [pendingEmail,    setPendingEmail]    = useState("");
-  const [pendingPassword, setPendingPassword] = useState(""); // held only for auto-login after email verify
   const [screen, setScreen]         = useState(0);
   const [dir, setDir]               = useState(1);
   const goNext = () => { setDir(1);  setScreen(s=>s+1); };
@@ -10116,7 +10169,19 @@ function VTRXAppInner({ setPaymentPlan }) {
     // load/refresh for an already-signed-in user. It already falls back to
     // onboarding on failure below — a transient 401 here shouldn't force an
     // actual Clerk sign-out for a user who is genuinely still signed in.
-    apiCall("/users/profile", { skipAuthRedirect: true }).then(res=>{
+    // A genuinely signed-in user whose profile fetch fails must not be silently
+    // treated as "never onboarded" — retry a few more times (on top of apiCall's
+    // own internal retry) before falling back.
+    const fetchProfileWithRetry = async (attemptsLeft = 3) => {
+      try {
+        return await apiCall("/users/profile", { skipAuthRedirect: true });
+      } catch (err) {
+        if (attemptsLeft <= 1) throw err;
+        await new Promise(r => setTimeout(r, 1500));
+        return fetchProfileWithRetry(attemptsLeft - 1);
+      }
+    };
+    fetchProfileWithRetry().then(res=>{
       if (res?.data?.user) {
         const u = res.data.user;
         setUser(prev=>({...prev,
@@ -10201,8 +10266,9 @@ function VTRXAppInner({ setPaymentPlan }) {
   useEffect(() => { _isSignedIn = isSignedIn; return () => { _isSignedIn = false; }; }, [isSignedIn]);
 
   // When any protected API call returns 401, clear auth and send to login.
-  // The 500ms delay avoids false logouts during navigation where a 401 can
-  // transiently fire before the new route establishes a fresh token context.
+  // The actual grace period against a transient 401 during navigation lives in
+  // apiCall's own retry (a 2s delay before it re-attempts and, only if that
+  // also fails, calls this) — there's no additional delay in here.
   useEffect(()=>{
     _onSessionExpired = () => {
       clerkSignOut().catch(()=>{}).finally(() => {
@@ -10394,12 +10460,24 @@ function VTRXAppInner({ setPaymentPlan }) {
 
   // ── Dashboard ─────────────────────────────────────────────────────────────
   const handleLogout = async () => {
+    // Unregister this device's push token so a future user on the same
+    // browser doesn't keep receiving this account's notifications.
+    try {
+      const token = await getNotificationToken();
+      if (token) await apiCall('/notifications/register', { method: 'DELETE', body: JSON.stringify({ token }) });
+    } catch(_e) {}
     try {
       await clerkSignOut();
     } catch(_e){} finally {
       resetAnalytics();
       clearAuth();
     }
+    // These caches are module-level (not per-user) — clear them so the next
+    // account signed in on this device/tab doesn't briefly see stale data.
+    _weightsCache.data = null; _weightsCache.fetchedAt = 0;
+    _savedCache.data = null; _savedCache.fetchedAt = 0;
+    _categorizedCache.data = null; _categorizedCache.fetchedAt = 0;
+    _videoUrlCache.clear();
     setUser({ name:"", age:"", gender:"", weight:"", height:"", goal:"", level:"", days:5 });
     setIsPremium(false);
     setPhase("onboarding");

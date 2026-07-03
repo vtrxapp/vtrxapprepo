@@ -4,8 +4,9 @@
 
 const prisma  = require('../config/database');
 const logger  = require('../utils/logger');
-const { validatePlan }   = require('../data/planGenerator');
-const { generateAIPlan } = require('../services/aiPlanGenerator');
+const { validatePlan }    = require('../data/planGenerator');
+const { generateAIPlan }  = require('../services/aiPlanGenerator');
+const { canGeneratePlan } = require('../utils/planAccess');
 
 // ── GET /api/users/profile ────────────────────────────────────────────────────
 const getProfile = async (req, res) => {
@@ -73,10 +74,14 @@ const updateProfile = async (req, res) => {
     // Fire-and-forget: the AI call takes a few seconds and this update may be
     // an incidental side effect of an unrelated save (e.g. changing location
     // in Settings) — don't make the caller wait on it.
+    // Free tier: skip silently once an active plan already exists — a Settings
+    // edit shouldn't spend a free user's one-time plan on their behalf.
     const planFieldUpdated = [goal, fitnessLevel, daysPerWeek, equipment].some(f => f !== undefined);
     if (planFieldUpdated && updated.goal && updated.fitnessLevel && updated.daysPerWeek) {
-      generateAIPlan(updated)
-        .then(async (plan) => {
+      canGeneratePlan(prisma.workoutPlan, req.user.id, updated.isPremium)
+        .then(async (allowed) => {
+          if (!allowed) return;
+          const plan = await generateAIPlan(updated);
           const { valid, errors } = validatePlan(plan);
           if (!valid) {
             logger.warn(`[auto-plan] Validation failed for user ${req.user.id}:`, errors);

@@ -5,8 +5,11 @@
 const prisma   = require('../config/database');
 const logger   = require('../utils/logger');
 const planSvc  = require('../services/nutritionPlanService');
+const { canGeneratePlan } = require('../utils/planAccess');
 
 // ── POST /api/nutrition/generate-plan ────────────────────────────────────────
+// Free tier: your first plan is free. Once you have an active plan, generating
+// another one requires Premium.
 const generateNutritionPlan = async (req, res, next) => {
   try {
     const user = await prisma.user.findUnique({
@@ -22,6 +25,14 @@ const generateNutritionPlan = async (req, res, next) => {
       },
     });
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+    if (!(await canGeneratePlan(prisma.nutritionPlan, req.user.id, req.user.isPremium))) {
+      return res.status(403).json({
+        success: false,
+        message: 'Regenerating your nutrition plan requires Premium.',
+        code: 'PREMIUM_REQUIRED',
+      });
+    }
 
     // Fetch behavioral context for personalized nutrition planning
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);

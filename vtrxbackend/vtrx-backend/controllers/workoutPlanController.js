@@ -6,8 +6,11 @@ const prisma                     = require('../config/database');
 const logger                     = require('../utils/logger');
 const { generateAIPlan }         = require('../services/aiPlanGenerator');
 const { validatePlan }           = require('../data/planGenerator');
+const { canGeneratePlan }        = require('../utils/planAccess');
 
 // ── POST /api/workouts/generate-plan ─────────────────────────────────────────
+// Free tier: your first plan is free. Once you have an active plan, generating
+// another one (this route or /regenerate-plan) requires Premium.
 const generatePlan = async (req, res, next) => {
   try {
     const user = await prisma.user.findUnique({
@@ -19,6 +22,14 @@ const generatePlan = async (req, res, next) => {
       },
     });
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+    if (!(await canGeneratePlan(prisma.workoutPlan, req.user.id, req.user.isPremium))) {
+      return res.status(403).json({
+        success: false,
+        message: 'Regenerating your workout plan requires Premium.',
+        code: 'PREMIUM_REQUIRED',
+      });
+    }
 
     const plan = await generateAIPlan(user);
 
@@ -46,8 +57,17 @@ const generatePlan = async (req, res, next) => {
 };
 
 // ── POST /api/workouts/regenerate-plan ───────────────────────────────────────
+// Always a "regeneration" in intent — requires Premium unconditionally.
 const regeneratePlan = async (req, res, next) => {
   try {
+    if (!req.user.isPremium) {
+      return res.status(403).json({
+        success: false,
+        message: 'Regenerating your workout plan requires Premium.',
+        code: 'PREMIUM_REQUIRED',
+      });
+    }
+
     const user = await prisma.user.findUnique({
       where:  { id: req.user.id },
       select: {

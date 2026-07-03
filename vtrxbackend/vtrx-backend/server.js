@@ -48,6 +48,14 @@ const allowedVercelOrigins = process.env.ALLOWED_VERCEL_ORIGINS
   ? process.env.ALLOWED_VERCEL_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
   : null;
 
+if (!allowedVercelOrigins) {
+  logger.warn(
+    '[CORS] ALLOWED_VERCEL_ORIGINS is not set — falling back to allowing ANY *.vercel.app ' +
+    'origin with credentials. Anyone can deploy a project to a vercel.app subdomain. ' +
+    'Set ALLOWED_VERCEL_ORIGINS to your exact production frontend URL(s) to close this.'
+  );
+}
+
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (mobile apps, Postman)
@@ -92,6 +100,7 @@ const aiLimiter = rateLimit({
 
 app.use('/api/', limiter);
 app.use('/api/ai/',         aiLimiter);
+app.use('/api/auth/',       authLimiter);
 
 // ── CRITICAL: Stripe webhook needs raw body ───────────────────────────────────
 // Must be registered BEFORE express.json() parses the body
