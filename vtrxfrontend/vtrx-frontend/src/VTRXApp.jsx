@@ -3688,7 +3688,7 @@ function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
 }
 
 function SignUpScreen({ onContinue, onBack, onLogin }) {
-  const [f, setF]         = useState({ name:"", username:"", email:"", password:"", confirm:"" });
+  const [f, setF]         = useState({ name:"", email:"", password:"", confirm:"" });
   const [errors,    setErrors]    = useState({});
   const [submitted, setSubmitted] = useState(false);
   const [loading,   setLoading]   = useState(false);
@@ -3720,7 +3720,6 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
     if (!submitted) return;
     const e = {};
     if (key==="name"     && !value.trim())             e.name     = "Full name is required.";
-    if (key==="username" && !value.trim())             e.username = "Username is required.";
     if (key==="email"    && !value.trim())             e.email    = "Email is required.";
     if (key==="email"    && value.trim() && !emailRegex.test(value.trim())) e.email = "Please enter a valid email (e.g. you@example.com).";
     if (key==="password" && value.length < 8)          e.password = "Password must be at least 8 characters.";
@@ -3729,11 +3728,26 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
     setErrors(p => ({ ...p, [key]: e[key] }));
   };
 
+  // No username field in the UI — Clerk still needs one, so derive it from the
+  // email's local part. On a collision (astronomically unlikely, but Clerk's
+  // username uniqueness is real), retry once with a random suffix — silently,
+  // since there's no field to point a "taken" error at.
+  const genUsername = (suffix) => {
+    const base = (f.email.trim().toLowerCase().split('@')[0] || 'user').replace(/[^a-z0-9_]/g, '_').slice(0, 16) || 'user';
+    return suffix ? `${base}_${suffix}` : base;
+  };
+  const attemptSignUp = (username) => signUp.create({
+    emailAddress: f.email.trim().toLowerCase(),
+    password:     f.password,
+    username,
+    firstName:    f.name.split(' ')[0],
+    lastName:     f.name.split(' ').slice(1).join(' ') || undefined,
+  });
+
    const handle = async () => {
     setSubmitted(true);
     const errs = {};
     if (!f.name.trim())                       errs.name     = "Full name is required.";
-    if (!f.username.trim())                   errs.username = "Username is required.";
     if (!f.email.trim())                      errs.email    = "Email is required.";
     else if (!emailRegex.test(f.email.trim())) errs.email   = "Please enter a valid email.";
     if (f.password.length < 8)                errs.password = "Password must be at least 8 characters.";
@@ -3742,22 +3756,23 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
     setErrors({}); setLoading(true);
 
     try {
-      await signUp.create({
-        emailAddress: f.email.trim().toLowerCase(),
-        password:     f.password,
-        username:     f.username.trim().toLowerCase(),
-        firstName:    f.name.split(' ')[0],
-        lastName:     f.name.split(' ').slice(1).join(' ') || undefined,
-      });
+      try {
+        await attemptSignUp(genUsername());
+      } catch (e1) {
+        const err1 = e1?.errors?.[0];
+        if (err1?.code === 'form_identifier_exists' && err1?.meta?.paramName === 'username') {
+          await attemptSignUp(genUsername(Math.random().toString(36).slice(2, 6)));
+        } else {
+          throw e1;
+        }
+      }
       await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
-      onContinue(f.email.trim().toLowerCase(), f.password);
+      onContinue(f.email.trim().toLowerCase());
     } catch (e) {
       const clerkErr = e?.errors?.[0];
       if (clerkErr?.code === 'form_identifier_exists') {
-        // Clerk uses this same code for a taken email AND a taken username —
-        // meta.paramName says which one so the message doesn't blame the wrong field.
         setErrors({ general: clerkErr?.meta?.paramName === 'username'
-          ? "That username is already taken."
+          ? "We couldn't create your account right now — please try again."
           : "An account with this email already exists." });
       } else if (clerkErr?.code === 'form_password_pwned' || clerkErr?.code?.includes('password')) {
         setErrors({ general: clerkErr?.longMessage || clerkErr?.message || "Password does not meet requirements." });
@@ -3771,7 +3786,6 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
 
   const fields = [
     { key:"name",     icon:"user",  placeholder:"Full name",        type:"text"     },
-    { key:"username", icon:"user",  placeholder:"Username",         type:"text"     },
     { key:"email",    icon:"email", placeholder:"Email address",    type:"email"    },
     { key:"password", icon:"lock",  placeholder:"Password (min 8)", type:"password", toggle: true, show: showPass, setShow: setShowPass },
     { key:"confirm",  icon:"lock",  placeholder:"Confirm password", type:"password", toggle: true, show: showConfirm, setShow: setShowConfirm },
