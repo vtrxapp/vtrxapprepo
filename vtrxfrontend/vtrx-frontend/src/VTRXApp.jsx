@@ -3602,10 +3602,6 @@ function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
 
       {/* Form */}
       <div style={{ padding:"0 26px 48px", display:"flex", flexDirection:"column", gap:14 }}>
-        {oauthError && <div style={{ fontFamily:FONT, fontSize:13, color:"#EF4444", textAlign:"center", padding:"10px 16px", background:"rgba(239,68,68,0.1)", borderRadius:12, border:"1px solid rgba(239,68,68,0.3)" }}>{oauthError}</div>}
-        <OAuthButtons onGoogle={()=>handleOAuth('google')} onApple={()=>handleOAuth('apple')} loadingProvider={oauthLoading}/>
-        <OrDivider label="OR SIGN IN WITH EMAIL"/>
-
         {/* Email field */}
         <div style={{ position:"relative" }}>
           <div style={{ position:"absolute", left:18, top:"50%", transform:"translateY(-50%)", zIndex:1, display:"flex", alignItems:"center" }}>
@@ -3666,6 +3662,10 @@ function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
         <div style={{ marginTop:4 }}>
           <CTA label={loading ? "SIGNING IN..." : "SIGN IN"} onClick={handle}/>
         </div>
+
+        <OrDivider label="OR"/>
+        {oauthError && <div style={{ fontFamily:FONT, fontSize:13, color:"#EF4444", textAlign:"center", padding:"10px 16px", background:"rgba(239,68,68,0.1)", borderRadius:12, border:"1px solid rgba(239,68,68,0.3)" }}>{oauthError}</div>}
+        <OAuthButtons onGoogle={()=>handleOAuth('google')} onApple={()=>handleOAuth('apple')} loadingProvider={oauthLoading}/>
 
         {/* Sign up link */}
         <div style={{ textAlign:"center" }}>
@@ -3797,9 +3797,6 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
 
       {/* Form */}
       <div style={{ padding:"0 26px 40px", display:"flex", flexDirection:"column", gap:12 }}>
-        {oauthError && <div style={{ fontFamily:FONT, fontSize:13, color:"#EF4444", textAlign:"center", padding:"10px 16px", background:"rgba(239,68,68,0.1)", borderRadius:12, border:"1px solid rgba(239,68,68,0.3)" }}>{oauthError}</div>}
-        <OAuthButtons onGoogle={()=>handleOAuth('google')} onApple={()=>handleOAuth('apple')} loadingProvider={oauthLoading}/>
-        <OrDivider label="OR SIGN UP WITH EMAIL"/>
 
         {fields.map(({ key, icon, placeholder, type, toggle, show, setShow }) => (
           <div key={key} style={{ position:"relative" }}>
@@ -3839,6 +3836,10 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
         <div style={{ marginTop:4 }}>
           <CTA label={loading ? "CREATING ACCOUNT..." : "SIGN UP"} onClick={handle}/>
         </div>
+
+        <OrDivider label="OR"/>
+        {oauthError && <div style={{ fontFamily:FONT, fontSize:13, color:"#EF4444", textAlign:"center", padding:"10px 16px", background:"rgba(239,68,68,0.1)", borderRadius:12, border:"1px solid rgba(239,68,68,0.3)" }}>{oauthError}</div>}
+        <OAuthButtons onGoogle={()=>handleOAuth('google')} onApple={()=>handleOAuth('apple')} loadingProvider={oauthLoading}/>
 
         {/* Log in link */}
         <div style={{ textAlign:"center" }}>
