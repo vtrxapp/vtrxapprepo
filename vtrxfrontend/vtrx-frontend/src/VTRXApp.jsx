@@ -10420,7 +10420,6 @@ function VTRXAppInner({ setPaymentPlan }) {
       email={pendingEmail}
       onVerified={()=>{
         // Clerk already established the session in EmailVerifyScreen via setActive()
-        setPendingPassword("");
         setPhase("preferences"); setScreen(2);
       }}
       onBack={()=>setPhase("login")}
@@ -10447,7 +10446,7 @@ function VTRXAppInner({ setPaymentPlan }) {
 
   if (phase==="preferences") {
     const SCREENS = [
-      <SignUpScreen              key={0} onContinue={(email, password)=>{ if(email){ setPendingEmail(email); setPendingPassword(password||""); setPhase("emailVerify"); } else goNext(); }} onBack={()=>setPhase("onboarding")} onLogin={()=>setPhase("login")}/>,
+      <SignUpScreen              key={0} onContinue={(email)=>{ if(email){ setPendingEmail(email); setPhase("emailVerify"); } else goNext(); }} onBack={()=>setPhase("onboarding")} onLogin={()=>setPhase("login")}/>,
       <EmailVerifyScreen   key={1} email={pendingEmail} onVerified={goNext} onBack={goPrev}/>,
       <BodyScreen                key={2} onContinue={goNext} onBack={goPrev}/>,
       <WorkoutScreen             key={3} onContinue={goNext} onBack={goPrev}/>,
