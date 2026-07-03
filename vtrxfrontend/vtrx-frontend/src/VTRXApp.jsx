@@ -516,26 +516,9 @@ const ONBOARDING_SLIDES = [
     tag: "WELCOME TO VTRX",
     headline: ["Transform your body.", "Break past limits.", "Become unstoppable."],
     body: "This isn't just about workouts — it's about redefining what you're capable of. Your goals, your pace, your evolution.",
-  },
-  {
-    id: 1, bg: "https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?w=800&q=80",
-    overlay: "linear-gradient(180deg,rgba(0,0,0,0.25) 0%,rgba(0,0,0,0.5) 40%,rgba(0,0,0,0.88) 100%)",
-    tag: "CUSTOM WORKOUTS",
-    headline: ["Move with purpose.", "Build strength at your pace.", "Track every gain."],
-    features: [{ icon: "bolt",   text: "AI-powered workout plans" },
-               { icon: "fire",   text: "High-intensity interval training" },
-               { icon: "chart",  text: "Progressive overload tracking" },
-               { icon: "muscle", text: "Strength & conditioning" }],
-  },
-  {
-    id: 2, bg: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=800&q=80",
-    overlay: "linear-gradient(180deg,rgba(0,10,20,0.35) 0%,rgba(0,10,20,0.55) 40%,rgba(0,10,20,0.9) 100%)",
-    tag: "NUTRITION MASTERY",
-    headline: ["Fuel your body with care.", "Make simple, smart choices.", "Feel better inside out."],
-    features: [{ icon: "fork",  text: "Macro-based meal planning" },
-               { icon: "bar",   text: "Calorie & nutrient tracking" },
-               { icon: "fire",  text: "Goal-aligned meal recipes" },
-               { icon: "drop",  text: "Hydration & supplement guides" }],
+    features: [{ icon: "bolt",  text: "AI-powered workout plans" },
+               { icon: "fork",  text: "Macro-based meal planning" },
+               { icon: "chart", text: "Progressive overload tracking" }],
   },
   {
     id: 4, bg: "https://images.unsplash.com/photo-1550345332-09e3ac987658?w=800&q=80",
@@ -3436,6 +3419,19 @@ function ForgotPasswordPage({ onBack }) {
   );
 }
 
+// A labelled divider between the OAuth buttons and the email/password form —
+// used on both sides of the split (leads with OAuth first, so this sits
+// between the two groups either way).
+function OrDivider({ label = "OR" }) {
+  return (
+    <div style={{ display:"flex", alignItems:"center", gap:12, margin:"2px 0" }}>
+      <div style={{ flex:1, height:1, background:"rgba(255,255,255,0.15)" }}/>
+      <span style={{ fontFamily:FONT, fontSize:11, color:"rgba(255,255,255,0.4)", letterSpacing:1 }}>{label}</span>
+      <div style={{ flex:1, height:1, background:"rgba(255,255,255,0.15)" }}/>
+    </div>
+  );
+}
+
 // Shared "Continue with Google/Apple" row — used by both LoginScreen and
 // SignUpScreen. Each caller supplies its own signIn/signUp.authenticateWithRedirect.
 function OAuthButtons({ onGoogle, onApple, loadingProvider }) {
@@ -3447,11 +3443,6 @@ function OAuthButtons({ onGoogle, onApple, loadingProvider }) {
   };
   return (
     <>
-      <div style={{ display:"flex", alignItems:"center", gap:12, margin:"2px 0" }}>
-        <div style={{ flex:1, height:1, background:"rgba(255,255,255,0.15)" }}/>
-        <span style={{ fontFamily:FONT, fontSize:11, color:"rgba(255,255,255,0.4)", letterSpacing:1 }}>OR</span>
-        <div style={{ flex:1, height:1, background:"rgba(255,255,255,0.15)" }}/>
-      </div>
       <button onClick={onGoogle} disabled={!!loadingProvider} style={btnStyle}>
         <svg width="18" height="18" viewBox="0 0 24 24">
           <path fill="#4285F4" d="M23.52 12.27c0-.85-.08-1.67-.22-2.45H12v4.63h6.47c-.28 1.5-1.13 2.77-2.4 3.62v3h3.89c2.28-2.1 3.56-5.19 3.56-8.8z"/>
@@ -3611,6 +3602,10 @@ function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
 
       {/* Form */}
       <div style={{ padding:"0 26px 48px", display:"flex", flexDirection:"column", gap:14 }}>
+        {oauthError && <div style={{ fontFamily:FONT, fontSize:13, color:"#EF4444", textAlign:"center", padding:"10px 16px", background:"rgba(239,68,68,0.1)", borderRadius:12, border:"1px solid rgba(239,68,68,0.3)" }}>{oauthError}</div>}
+        <OAuthButtons onGoogle={()=>handleOAuth('google')} onApple={()=>handleOAuth('apple')} loadingProvider={oauthLoading}/>
+        <OrDivider label="OR SIGN IN WITH EMAIL"/>
+
         {/* Email field */}
         <div style={{ position:"relative" }}>
           <div style={{ position:"absolute", left:18, top:"50%", transform:"translateY(-50%)", zIndex:1, display:"flex", alignItems:"center" }}>
@@ -3671,9 +3666,6 @@ function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
         <div style={{ marginTop:4 }}>
           <CTA label={loading ? "SIGNING IN..." : "SIGN IN"} onClick={handle}/>
         </div>
-
-        {oauthError && <div style={{ fontFamily:FONT, fontSize:13, color:"#EF4444", textAlign:"center", marginTop:-2, padding:"10px 16px", background:"rgba(239,68,68,0.1)", borderRadius:12, border:"1px solid rgba(239,68,68,0.3)" }}>{oauthError}</div>}
-        <OAuthButtons onGoogle={()=>handleOAuth('google')} onApple={()=>handleOAuth('apple')} loadingProvider={oauthLoading}/>
 
         {/* Sign up link */}
         <div style={{ textAlign:"center" }}>
@@ -3805,6 +3797,9 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
 
       {/* Form */}
       <div style={{ padding:"0 26px 40px", display:"flex", flexDirection:"column", gap:12 }}>
+        {oauthError && <div style={{ fontFamily:FONT, fontSize:13, color:"#EF4444", textAlign:"center", padding:"10px 16px", background:"rgba(239,68,68,0.1)", borderRadius:12, border:"1px solid rgba(239,68,68,0.3)" }}>{oauthError}</div>}
+        <OAuthButtons onGoogle={()=>handleOAuth('google')} onApple={()=>handleOAuth('apple')} loadingProvider={oauthLoading}/>
+        <OrDivider label="OR SIGN UP WITH EMAIL"/>
 
         {fields.map(({ key, icon, placeholder, type, toggle, show, setShow }) => (
           <div key={key} style={{ position:"relative" }}>
@@ -3844,9 +3839,6 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
         <div style={{ marginTop:4 }}>
           <CTA label={loading ? "CREATING ACCOUNT..." : "SIGN UP"} onClick={handle}/>
         </div>
-
-        {oauthError && <div style={{ fontFamily:FONT, fontSize:13, color:"#EF4444", textAlign:"center", padding:"10px 16px", background:"rgba(239,68,68,0.1)", borderRadius:12, border:"1px solid rgba(239,68,68,0.3)" }}>{oauthError}</div>}
-        <OAuthButtons onGoogle={()=>handleOAuth('google')} onApple={()=>handleOAuth('apple')} loadingProvider={oauthLoading}/>
 
         {/* Log in link */}
         <div style={{ textAlign:"center" }}>
@@ -4063,7 +4055,7 @@ function BodyScreen({ onContinue, onBack }) {
   return (
     <Shell bg="https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=800&q=80"
            overlay="linear-gradient(180deg,rgba(0,0,0,0.55) 0%,rgba(0,0,0,0.88) 100%)">
-      <NavBar title="Body Measurements" step={1} total={3} onBack={onBack} onSkip={onContinue}/>
+      <NavBar title="Body Measurements" step={1} total={2} onBack={onBack} onSkip={onContinue}/>
       <div style={{ flex:1,overflowY:"auto",padding:"0 24px 40px" }}>
 
         {/* Weight */}
@@ -4140,21 +4132,73 @@ function WorkoutTypeIcon({ type }) {
   if (type==="strength")                 return <svg {...s}><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>;
   return <svg {...s}><circle cx="12" cy="12" r="10"/></svg>;
 }
-function WorkoutScreen({ onContinue, onBack }) {
+// Combines the old separate Workout + Nutrition steps into one screen — same
+// questions, one less full-screen transition. Skip applies sensible defaults
+// (rather than leaving goal/fitnessLevel blank) since the dashboard guard
+// requires them; a "Skip" that just bounces you back isn't really a skip.
+function TrainingScreen({ onContinue, onBack }) {
   const { user, setUser } = useUser();
   const daysToChip = (d) => !d ? "" : d<=2 ? "1–2 Days/Week" : d<=4 ? "3–4 Days/Week" : "5+ Days/Week";
   const[goal,setGoal]=useState(user.goal||"");const[level,setLevel]=useState(user.fitnessLevel||user.level||"");const[style,setStyle]=useState(user.preferredStyles||[]);const[days,setDays]=useState(daysToChip(user.daysPerWeek||user.days));const[time,setTime]=useState(user.sessionDuration||"");const[location,setLocation]=useState(user.location||user.workoutLocation||"");const[equip,setEquip]=useState(user.equipment||[]);
-  return <Shell bg="https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=800&q=80" overlay="linear-gradient(180deg,rgba(0,0,0,0.55) 0%,rgba(0,0,0,0.55) 30%,rgba(0,0,0,0.85) 100%)"><NavBar title="Customize Workout" step={2} total={3} onBack={onBack} onSkip={onContinue}/><div style={{ flex:1,overflowY:"auto",padding:"0 24px 24px" }}><Q n="1" text="What is your primary goal?" sub="(Select one)"/><ChipGroup options={["Build Muscle","Lose Weight","Stay Active","Improve Endurance","Get Toned"]} value={goal} onChange={setGoal}/><Q n="2" text="What is your experience level?" sub="(Select one)"/><ChipGroup options={["Beginner","Intermediate","Advanced","Professional"]} value={level} onChange={setLevel}/><Q n="3" text="What is your preferred workout style?" sub="(Pick 1–3)"/><ChipGroup options={["Strength Training","Cardio","HIIT","Bodyweight","Functional Fitness"]} value={style} onChange={setStyle} multi/><Q n="4" text="How many times do you want to work out each week?"/><ChipGroup options={["1–2 Days/Week","3–4 Days/Week","5+ Days/Week"]} value={days} onChange={setDays}/><Q n="5" text="Where do you usually work out?" sub="(Select one)"/><ChipGroup options={["Full Gym","Home","Outdoors","Mix of both"]} value={location} onChange={setLocation}/><Q n="6" text="What equipment do you have access to?" sub="(Select all that apply)"/><ChipGroup options={["Dumbbells","Barbell & Plates","Pull-up Bar","Resistance Bands","Kettlebells","Bench","Cable Machine","No Equipment"]} value={equip} onChange={setEquip} multi/><Q n="7" text="How much time can you dedicate to fitness daily?"/><ChipGroup options={["15–30 minutes","30–45 minutes","45–60 minutes","60+ minutes"]} value={time} onChange={setTime}/><div style={{marginTop:28}}><CTA label="CONTINUE" onClick={()=>{ const newPrefs={goal:goal||user.goal, fitnessLevel:level||user.fitnessLevel, workoutTime:time, workoutLocation:location, location:location, workoutStyle:style, equipment:equip, daysPerWeek:parseInt(days)||user.daysPerWeek}; setUser(u=>({...u,...newPrefs})); if(getAuthToken()){apiCall('/users/profile',{method:'PUT',skipAuthRedirect:true,body:JSON.stringify({goal:newPrefs.goal,fitnessLevel:newPrefs.fitnessLevel,daysPerWeek:newPrefs.daysPerWeek,equipment:newPrefs.equipment,location:newPrefs.location,sessionDuration:time,preferredStyles:Array.isArray(style)?style:[style].filter(Boolean)})}).catch(()=>{}); } onContinue(); }}/></div></div></Shell>;
-}
-function NutritionScreen({ onContinue, onBack }) {
-  const { user, setUser } = useUser();
+
   const GOAL_MAP  = {"Lose Fat":"lose_fat","Build Muscle":"build_muscle","Maintain":"maintain","Eat clean":"eat_clean","Improve Energy":"improve_energy"};
   const TRACK_MAP = {"Yes, both":"yes_both","Only Calories":"only_calories","No, but I'd like to":"no_but_interested","No, not interested":"no_not_interested"};
   const DIET_MAP  = {"Vegan":"vegan","Vegetarian":"vegetarian","Gluten Free":"gluten_free","Dairy-Free":"dairy_free","No Peanuts":"no_peanuts","Other?":"other"};
   const MEALS_MAP = {"2 meals":"2","3 meals":"3","4+ meals":"4_plus","It varies":"varies"};
   const revMap = (map, val) => Object.keys(map).find(k => map[k] === val) || "";
   const[want,setWant]=useState(user.wantsMealSuggestions===true?"Yes":user.wantsMealSuggestions===false?"No":"");const[nutGoal,setNutGoal]=useState(revMap(GOAL_MAP,user.nutritionGoal));const[track,setTrack]=useState(revMap(TRACK_MAP,user.trackingPreference));const[diet,setDiet]=useState((user.dietaryRestrictions||[]).map(d=>revMap(DIET_MAP,d)||d));const[meals,setMeals]=useState(revMap(MEALS_MAP,user.mealsPerDay));
-  return <Shell bg="https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=800&q=80" overlay="linear-gradient(180deg,rgba(0,10,20,0.45) 0%,rgba(0,10,20,0.55) 30%,rgba(0,10,20,0.9) 100%)"><NavBar title="Customize Nutrition" step={3} total={3} onBack={onBack} onSkip={onContinue}/><div style={{ flex:1,overflowY:"auto",padding:"0 24px 24px" }}><Q n="1" text="Would you like meal suggestions based on your goals?"/><ChipGroup options={["Yes","No"]} value={want} onChange={setWant}/><Q n="2" text="What's your main nutrition goal?"/><ChipGroup options={["Lose Fat","Build Muscle","Maintain","Eat clean","Improve Energy"]} value={nutGoal} onChange={setNutGoal}/><Q n="3" text="Do you track your calories or macros?"/><ChipGroup options={["Yes, both","Only Calories","No, but I'd like to","No, not interested"]} value={track} onChange={setTrack}/><Q n="4" text="Do you have any dietary preferences or restrictions?"/><ChipGroup options={["Vegan","Vegetarian","Gluten Free","Dairy-Free","No Peanuts","Other?"]} value={diet} onChange={setDiet} multi/><Q n="5" text="How many meals do you eat daily?"/><ChipGroup options={["2 meals","3 meals","4+ meals","It varies"]} value={meals} onChange={setMeals}/><div style={{marginTop:28}}><CTA label="CONTINUE" onClick={()=>{ const prefs={ wantsMealSuggestions:want==="Yes", nutritionGoal:GOAL_MAP[nutGoal]||nutGoal||"maintain", trackingPreference:TRACK_MAP[track]||track||"no_not_interested", dietaryRestrictions:diet.map(d=>DIET_MAP[d]||d.toLowerCase().replace(/\s+/g,"_")), mealsPerDay:MEALS_MAP[meals]||meals||"3" }; setUser(u=>({...u,...prefs})); if(getAuthToken()){apiCall('/users/profile',{method:'PUT',skipAuthRedirect:true,body:JSON.stringify(prefs)}).catch(()=>{});} onContinue(); }}/></div></div></Shell>;
+
+  const save = (overrides = {}) => {
+    const g  = overrides.goal  ?? (goal  || user.goal);
+    const lv = overrides.level ?? (level || user.fitnessLevel);
+    const dy = overrides.days  ?? days;
+    const workoutPrefs = {
+      goal: g, fitnessLevel: lv,
+      workoutTime: time, workoutLocation: location, location,
+      workoutStyle: style, equipment: equip,
+      daysPerWeek: parseInt(dy) || user.daysPerWeek,
+    };
+    const nutritionPrefs = {
+      wantsMealSuggestions: want === "Yes",
+      nutritionGoal: GOAL_MAP[nutGoal] || nutGoal || "maintain",
+      trackingPreference: TRACK_MAP[track] || track || "no_not_interested",
+      dietaryRestrictions: diet.map(d => DIET_MAP[d] || d.toLowerCase().replace(/\s+/g, "_")),
+      mealsPerDay: MEALS_MAP[meals] || meals || "3",
+    };
+    setUser(u => ({ ...u, ...workoutPrefs, ...nutritionPrefs }));
+    if (getAuthToken()) {
+      apiCall('/users/profile', { method:'PUT', skipAuthRedirect:true, body: JSON.stringify({
+        goal: workoutPrefs.goal, fitnessLevel: workoutPrefs.fitnessLevel,
+        daysPerWeek: workoutPrefs.daysPerWeek, equipment: workoutPrefs.equipment,
+        location: workoutPrefs.location, sessionDuration: time,
+        preferredStyles: Array.isArray(style) ? style : [style].filter(Boolean),
+        ...nutritionPrefs,
+      })}).catch(()=>{});
+    }
+  };
+
+  const handleContinue = () => { save(); onContinue(); };
+  const handleSkip = () => { save({ goal: goal || "Stay Active", level: level || "Beginner", days: days || "3–4 Days/Week" }); onContinue(); };
+
+  return <Shell bg="https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=800&q=80" overlay="linear-gradient(180deg,rgba(0,0,0,0.55) 0%,rgba(0,0,0,0.55) 30%,rgba(0,0,0,0.85) 100%)"><NavBar title="Training & Nutrition" step={2} total={2} onBack={onBack} onSkip={handleSkip}/><div style={{ flex:1,overflowY:"auto",padding:"0 24px 24px" }}>
+    <div style={{ fontFamily:FONT,fontWeight:800,fontSize:12,color:PRIMARY,letterSpacing:2,marginTop:6,marginBottom:14 }}>YOUR TRAINING</div>
+    <Q n="1" text="What is your primary goal?" sub="(Select one)"/><ChipGroup options={["Build Muscle","Lose Weight","Stay Active","Improve Endurance","Get Toned"]} value={goal} onChange={setGoal}/>
+    <Q n="2" text="What is your experience level?" sub="(Select one)"/><ChipGroup options={["Beginner","Intermediate","Advanced","Professional"]} value={level} onChange={setLevel}/>
+    <Q n="3" text="What is your preferred workout style?" sub="(Pick 1–3)"/><ChipGroup options={["Strength Training","Cardio","HIIT","Bodyweight","Functional Fitness"]} value={style} onChange={setStyle} multi/>
+    <Q n="4" text="How many times do you want to work out each week?"/><ChipGroup options={["1–2 Days/Week","3–4 Days/Week","5+ Days/Week"]} value={days} onChange={setDays}/>
+    <Q n="5" text="Where do you usually work out?" sub="(Select one)"/><ChipGroup options={["Full Gym","Home","Outdoors","Mix of both"]} value={location} onChange={setLocation}/>
+    <Q n="6" text="What equipment do you have access to?" sub="(Select all that apply)"/><ChipGroup options={["Dumbbells","Barbell & Plates","Pull-up Bar","Resistance Bands","Kettlebells","Bench","Cable Machine","No Equipment"]} value={equip} onChange={setEquip} multi/>
+    <Q n="7" text="How much time can you dedicate to fitness daily?"/><ChipGroup options={["15–30 minutes","30–45 minutes","45–60 minutes","60+ minutes"]} value={time} onChange={setTime}/>
+
+    <div style={{ fontFamily:FONT,fontWeight:800,fontSize:12,color:PRIMARY,letterSpacing:2,marginTop:30,marginBottom:14,paddingTop:22,borderTop:"1px solid rgba(255,255,255,0.12)" }}>YOUR NUTRITION</div>
+    <Q n="8" text="Would you like meal suggestions based on your goals?"/><ChipGroup options={["Yes","No"]} value={want} onChange={setWant}/>
+    <Q n="9" text="What's your main nutrition goal?"/><ChipGroup options={["Lose Fat","Build Muscle","Maintain","Eat clean","Improve Energy"]} value={nutGoal} onChange={setNutGoal}/>
+    <Q n="10" text="Do you track your calories or macros?"/><ChipGroup options={["Yes, both","Only Calories","No, but I'd like to","No, not interested"]} value={track} onChange={setTrack}/>
+    <Q n="11" text="Do you have any dietary preferences or restrictions?"/><ChipGroup options={["Vegan","Vegetarian","Gluten Free","Dairy-Free","No Peanuts","Other?"]} value={diet} onChange={setDiet} multi/>
+    <Q n="12" text="How many meals do you eat daily?"/><ChipGroup options={["2 meals","3 meals","4+ meals","It varies"]} value={meals} onChange={setMeals}/>
+
+    <div style={{marginTop:28}}><CTA label="CONTINUE" onClick={handleContinue}/></div>
+  </div></Shell>;
 }
 function PricingScreen({ onContinue, onBack }) {
   const subscribe = (plan) => {
@@ -10540,10 +10584,9 @@ function VTRXAppInner({ setPaymentPlan }) {
       <SignUpScreen              key={0} onContinue={(email)=>{ if(email){ setPendingEmail(email); setPhase("emailVerify"); } else goNext(); }} onBack={()=>setPhase("onboarding")} onLogin={()=>setPhase("login")}/>,
       <EmailVerifyScreen   key={1} email={pendingEmail} onVerified={goNext} onBack={goPrev}/>,
       <BodyScreen                key={2} onContinue={goNext} onBack={goPrev}/>,
-      <WorkoutScreen             key={3} onContinue={goNext} onBack={goPrev}/>,
-      <NutritionScreen           key={4} onContinue={goNext} onBack={goPrev}/>,
-      <PricingScreen             key={5} onContinue={goNext} onBack={goPrev}/>,
-      <ReadyScreen               key={6} onFinish={goToDashboard}/>,
+      <TrainingScreen            key={3} onContinue={goNext} onBack={goPrev}/>,
+      <PricingScreen             key={4} onContinue={goNext} onBack={goPrev}/>,
+      <ReadyScreen               key={5} onFinish={goToDashboard}/>,
     ];
     return SCREENS[Math.min(screen, SCREENS.length-1)];
   }
