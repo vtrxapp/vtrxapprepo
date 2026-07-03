@@ -18,12 +18,11 @@ const prisma = new PrismaClient({
     : ['error'],                           // Only errors in production
 });
 
-// Test the connection when the app starts
+// Test the connection when the app starts (non-fatal — Prisma retries on first query)
 prisma.$connect()
   .then(() => console.log('✅ Database connected'))
   .catch((err) => {
     console.error('❌ Database connection failed:', err.message);
-    process.exit(1); // Stop the server if DB is unreachable
   });
 
 module.exports = prisma;
