@@ -3808,21 +3808,35 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
 
 function BodyScreen({ onContinue, onBack }) {
   const { user, setUser } = useUser();
-  const [weightUnit, setWeightUnit] = useState("lbs");
-  const [heightUnit, setHeightUnit] = useState("ft");
-  const [weight,  setWeight]  = useState(user.weight || "");
-  const [height,  setHeight]  = useState("");  // always stored as display string
-  const [dob,     setDob]     = useState("");
+  const storedHtIsFt = typeof user.height === "string" && user.height.includes("'");
+  const [weightUnit, setWeightUnit] = useState(() => getUnitPref("vtrx_weight_unit", "lbs"));
+  const [heightUnit, setHeightUnit] = useState(() => storedHtIsFt ? "ft" : getUnitPref("vtrx_height_unit", "ft"));
+  const [weight,  setWeight]  = useState(() => kgToDisplay(user.weight, weightUnit));
+  const [height,  setHeight]  = useState(() => {  // always stored as display string
+    if (storedHtIsFt) return String(user.height);
+    const n = parseFloat(user.height);
+    return (isNaN(n) || n < 50) ? "" : cmToDisplay(n, heightUnit);
+  });
+  const [dob,     setDob]     = useState(() => { if (user.dob) return user.dob; try { return localStorage.getItem("vtrx_user_dob") || ""; } catch { return ""; } });
   const [gender,  setGender]  = useState(user.gender || "");
-  const [goalW,   setGoalW]   = useState("");
-  const [bf,      setBf]      = useState("");
+  const [goalW,   setGoalW]   = useState(() => {
+    const lbs = parseFloat(user.goalWeightLbs);
+    if (isNaN(lbs) || lbs <= 0) return "";
+    return weightUnit === "kg" ? (lbs * 0.453592).toFixed(1) : String(lbs);
+  });
+  const [bf,      setBf]      = useState(() => { const v = parseFloat(user.bodyFatPercentage); return isNaN(v) ? "" : String(v); });
 
-  // When switching weight unit, convert value
+  // When switching weight unit, convert value (bodyweight + goal weight)
   const switchWeightUnit = (u) => {
     if (weight && !isNaN(parseFloat(weight))) {
       const v = parseFloat(weight);
       if (u === "kg" && weightUnit === "lbs") setWeight((v * 0.453592).toFixed(1));
       if (u === "lbs" && weightUnit === "kg")  setWeight((v * 2.20462).toFixed(1));
+    }
+    if (goalW && !isNaN(parseFloat(goalW))) {
+      const gv = parseFloat(goalW);
+      if (u === "kg" && weightUnit === "lbs") setGoalW((gv * 0.453592).toFixed(1));
+      if (u === "lbs" && weightUnit === "kg")  setGoalW((gv * 2.20462).toFixed(1));
     }
     setWeightUnit(u);
   };
@@ -3873,12 +3887,22 @@ function BodyScreen({ onContinue, onBack }) {
     const weightKg = toKg(weight, weightUnit);
     const heightCm = toCm(height, heightUnit);
     const ageVal   = calcAgeFromDob(dob);
+    const goalWLbs = goalW && !isNaN(parseFloat(goalW))
+      ? (weightUnit === "kg" ? parseFloat((parseFloat(goalW) * 2.20462).toFixed(1)) : parseFloat(goalW))
+      : null;
+    const bfVal    = bf && !isNaN(parseFloat(bf)) ? parseFloat(bf) : null;
     try {
       localStorage.setItem("vtrx_weight_unit", weightUnit);
       localStorage.setItem("vtrx_height_unit", heightUnit);
       if (dob) localStorage.setItem("vtrx_user_dob", dob);
     } catch {}
-    setUser(u=>({...u, weight: weightKg, height: heightCm, dob, age: ageVal, gender}));
+    setUser(u=>({...u, weight: weightKg, height: heightCm, dob, age: ageVal, gender, goalWeightLbs: goalWLbs, bodyFatPercentage: bfVal}));
+    if (getAuthToken()) {
+      apiCall('/users/profile', { method:'PUT', skipAuthRedirect:true, body: JSON.stringify({
+        gender, weight: weightKg, height: heightCm, age: ageVal,
+        goalWeightLbs: goalWLbs, bodyFatPercentage: bfVal,
+      })}).catch(()=>{});
+    }
     onContinue();
   };
 
@@ -3975,16 +3999,18 @@ function WorkoutTypeIcon({ type }) {
 }
 function WorkoutScreen({ onContinue, onBack }) {
   const { user, setUser } = useUser();
-  const[goal,setGoal]=useState("");const[level,setLevel]=useState("");const[style,setStyle]=useState([]);const[days,setDays]=useState("");const[time,setTime]=useState("");const[location,setLocation]=useState("");const[equip,setEquip]=useState([]);
+  const daysToChip = (d) => !d ? "" : d<=2 ? "1–2 Days/Week" : d<=4 ? "3–4 Days/Week" : "5+ Days/Week";
+  const[goal,setGoal]=useState(user.goal||"");const[level,setLevel]=useState(user.fitnessLevel||user.level||"");const[style,setStyle]=useState(user.preferredStyles||[]);const[days,setDays]=useState(daysToChip(user.daysPerWeek||user.days));const[time,setTime]=useState(user.sessionDuration||"");const[location,setLocation]=useState(user.location||user.workoutLocation||"");const[equip,setEquip]=useState(user.equipment||[]);
   return <Shell bg="https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=800&q=80" overlay="linear-gradient(180deg,rgba(0,0,0,0.55) 0%,rgba(0,0,0,0.55) 30%,rgba(0,0,0,0.85) 100%)"><NavBar title="Customize Workout" step={2} total={3} onBack={onBack} onSkip={onContinue}/><div style={{ flex:1,overflowY:"auto",padding:"0 24px 24px" }}><Q n="1" text="What is your primary goal?" sub="(Select one)"/><ChipGroup options={["Build Muscle","Lose Weight","Stay Active","Improve Endurance","Get Toned"]} value={goal} onChange={setGoal}/><Q n="2" text="What is your experience level?" sub="(Select one)"/><ChipGroup options={["Beginner","Intermediate","Advanced","Professional"]} value={level} onChange={setLevel}/><Q n="3" text="What is your preferred workout style?" sub="(Pick 1–3)"/><ChipGroup options={["Strength Training","Cardio","HIIT","Bodyweight","Functional Fitness"]} value={style} onChange={setStyle} multi/><Q n="4" text="How many times do you want to work out each week?"/><ChipGroup options={["1–2 Days/Week","3–4 Days/Week","5+ Days/Week"]} value={days} onChange={setDays}/><Q n="5" text="Where do you usually work out?" sub="(Select one)"/><ChipGroup options={["Full Gym","Home","Outdoors","Mix of both"]} value={location} onChange={setLocation}/><Q n="6" text="What equipment do you have access to?" sub="(Select all that apply)"/><ChipGroup options={["Dumbbells","Barbell & Plates","Pull-up Bar","Resistance Bands","Kettlebells","Bench","Cable Machine","No Equipment"]} value={equip} onChange={setEquip} multi/><Q n="7" text="How much time can you dedicate to fitness daily?"/><ChipGroup options={["15–30 minutes","30–45 minutes","45–60 minutes","60+ minutes"]} value={time} onChange={setTime}/><div style={{marginTop:28}}><CTA label="CONTINUE" onClick={()=>{ const newPrefs={goal:goal||user.goal, fitnessLevel:level||user.fitnessLevel, workoutTime:time, workoutLocation:location, location:location, workoutStyle:style, equipment:equip, daysPerWeek:parseInt(days)||user.daysPerWeek}; setUser(u=>({...u,...newPrefs})); if(getAuthToken()){apiCall('/users/profile',{method:'PUT',skipAuthRedirect:true,body:JSON.stringify({goal:newPrefs.goal,fitnessLevel:newPrefs.fitnessLevel,daysPerWeek:newPrefs.daysPerWeek,equipment:newPrefs.equipment,location:newPrefs.location,sessionDuration:time,preferredStyles:Array.isArray(style)?style:[style].filter(Boolean)})}).catch(()=>{}); } onContinue(); }}/></div></div></Shell>;
 }
 function NutritionScreen({ onContinue, onBack }) {
-  const { setUser } = useUser();
-  const[want,setWant]=useState("");const[nutGoal,setNutGoal]=useState("");const[track,setTrack]=useState("");const[diet,setDiet]=useState([]);const[meals,setMeals]=useState("");
+  const { user, setUser } = useUser();
   const GOAL_MAP  = {"Lose Fat":"lose_fat","Build Muscle":"build_muscle","Maintain":"maintain","Eat clean":"eat_clean","Improve Energy":"improve_energy"};
   const TRACK_MAP = {"Yes, both":"yes_both","Only Calories":"only_calories","No, but I'd like to":"no_but_interested","No, not interested":"no_not_interested"};
   const DIET_MAP  = {"Vegan":"vegan","Vegetarian":"vegetarian","Gluten Free":"gluten_free","Dairy-Free":"dairy_free","No Peanuts":"no_peanuts","Other?":"other"};
   const MEALS_MAP = {"2 meals":"2","3 meals":"3","4+ meals":"4_plus","It varies":"varies"};
+  const revMap = (map, val) => Object.keys(map).find(k => map[k] === val) || "";
+  const[want,setWant]=useState(user.wantsMealSuggestions===true?"Yes":user.wantsMealSuggestions===false?"No":"");const[nutGoal,setNutGoal]=useState(revMap(GOAL_MAP,user.nutritionGoal));const[track,setTrack]=useState(revMap(TRACK_MAP,user.trackingPreference));const[diet,setDiet]=useState((user.dietaryRestrictions||[]).map(d=>revMap(DIET_MAP,d)||d));const[meals,setMeals]=useState(revMap(MEALS_MAP,user.mealsPerDay));
   return <Shell bg="https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=800&q=80" overlay="linear-gradient(180deg,rgba(0,10,20,0.45) 0%,rgba(0,10,20,0.55) 30%,rgba(0,10,20,0.9) 100%)"><NavBar title="Customize Nutrition" step={3} total={3} onBack={onBack} onSkip={onContinue}/><div style={{ flex:1,overflowY:"auto",padding:"0 24px 24px" }}><Q n="1" text="Would you like meal suggestions based on your goals?"/><ChipGroup options={["Yes","No"]} value={want} onChange={setWant}/><Q n="2" text="What's your main nutrition goal?"/><ChipGroup options={["Lose Fat","Build Muscle","Maintain","Eat clean","Improve Energy"]} value={nutGoal} onChange={setNutGoal}/><Q n="3" text="Do you track your calories or macros?"/><ChipGroup options={["Yes, both","Only Calories","No, but I'd like to","No, not interested"]} value={track} onChange={setTrack}/><Q n="4" text="Do you have any dietary preferences or restrictions?"/><ChipGroup options={["Vegan","Vegetarian","Gluten Free","Dairy-Free","No Peanuts","Other?"]} value={diet} onChange={setDiet} multi/><Q n="5" text="How many meals do you eat daily?"/><ChipGroup options={["2 meals","3 meals","4+ meals","It varies"]} value={meals} onChange={setMeals}/><div style={{marginTop:28}}><CTA label="CONTINUE" onClick={()=>{ const prefs={ wantsMealSuggestions:want==="Yes", nutritionGoal:GOAL_MAP[nutGoal]||nutGoal||"maintain", trackingPreference:TRACK_MAP[track]||track||"no_not_interested", dietaryRestrictions:diet.map(d=>DIET_MAP[d]||d.toLowerCase().replace(/\s+/g,"_")), mealsPerDay:MEALS_MAP[meals]||meals||"3" }; setUser(u=>({...u,...prefs})); if(getAuthToken()){apiCall('/users/profile',{method:'PUT',skipAuthRedirect:true,body:JSON.stringify(prefs)}).catch(()=>{});} onContinue(); }}/></div></div></Shell>;
 }
 function PricingScreen({ onContinue, onBack }) {
@@ -9950,6 +9976,7 @@ function VTRXAppInner({ setPaymentPlan }) {
             gender:               user.gender,
             weight:               user.weight,
             height:               user.height,
+            age:                  user.age,
             goal:                 user.goal,
             fitnessLevel:         user.level || user.fitnessLevel,
             daysPerWeek:          parseInt(user.days || user.daysPerWeek) || 5,
@@ -9962,6 +9989,8 @@ function VTRXAppInner({ setPaymentPlan }) {
             trackingPreference:   user.trackingPreference,
             preferredStyles:      user.preferredStyles || [],
             sessionDuration:      user.sessionDuration,
+            bodyFatPercentage:    user.bodyFatPercentage,
+            goalWeightLbs:        user.goalWeightLbs,
           }),
         });
       } catch(_e){}
