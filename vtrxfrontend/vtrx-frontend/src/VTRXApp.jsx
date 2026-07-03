@@ -3436,10 +3436,63 @@ function ForgotPasswordPage({ onBack }) {
   );
 }
 
+// Shared "Continue with Google/Apple" row — used by both LoginScreen and
+// SignUpScreen. Each caller supplies its own signIn/signUp.authenticateWithRedirect.
+function OAuthButtons({ onGoogle, onApple, loadingProvider }) {
+  const btnStyle = {
+    width:"100%", display:"flex", alignItems:"center", justifyContent:"center", gap:10,
+    padding:"14px 0", borderRadius:50, border:"1.5px solid rgba(255,255,255,0.18)",
+    background:"rgba(255,255,255,0.05)", fontFamily:FONT, fontWeight:700, fontSize:13.5,
+    color:"#fff", cursor: loadingProvider ? "not-allowed" : "pointer", opacity: loadingProvider ? 0.6 : 1,
+  };
+  return (
+    <>
+      <div style={{ display:"flex", alignItems:"center", gap:12, margin:"2px 0" }}>
+        <div style={{ flex:1, height:1, background:"rgba(255,255,255,0.15)" }}/>
+        <span style={{ fontFamily:FONT, fontSize:11, color:"rgba(255,255,255,0.4)", letterSpacing:1 }}>OR</span>
+        <div style={{ flex:1, height:1, background:"rgba(255,255,255,0.15)" }}/>
+      </div>
+      <button onClick={onGoogle} disabled={!!loadingProvider} style={btnStyle}>
+        <svg width="18" height="18" viewBox="0 0 24 24">
+          <path fill="#4285F4" d="M23.52 12.27c0-.85-.08-1.67-.22-2.45H12v4.63h6.47c-.28 1.5-1.13 2.77-2.4 3.62v3h3.89c2.28-2.1 3.56-5.19 3.56-8.8z"/>
+          <path fill="#34A853" d="M12 24c3.24 0 5.95-1.07 7.93-2.9l-3.89-3.02c-1.08.72-2.45 1.15-4.04 1.15-3.1 0-5.73-2.09-6.67-4.9H1.32v3.11C3.29 21.3 7.31 24 12 24z"/>
+          <path fill="#FBBC05" d="M5.33 14.33c-.24-.72-.38-1.49-.38-2.28s.14-1.56.38-2.28V6.66H1.32A11.96 11.96 0 000 12c0 1.93.46 3.76 1.32 5.34l4.01-3.01z"/>
+          <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.45-3.45C17.94 1.19 15.24 0 12 0 7.31 0 3.29 2.7 1.32 6.66l4.01 3.01c.94-2.81 3.57-4.92 6.67-4.92z"/>
+        </svg>
+        {loadingProvider === 'google' ? "Connecting…" : "Continue with Google"}
+      </button>
+      <button onClick={onApple} disabled={!!loadingProvider} style={btnStyle}>
+        <svg width="16" height="16" viewBox="0 0 384 512" fill="#fff">
+          <path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/>
+        </svg>
+        {loadingProvider === 'apple' ? "Connecting…" : "Continue with Apple"}
+      </button>
+    </>
+  );
+}
+
 function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
   const { setUser } = useUser();   // ← This was missing
   const { signIn, setActive } = useClerkSignIn();
   const { isLoaded: clerkLoaded, isSignedIn } = useClerkAuth();
+  const [oauthLoading, setOauthLoading] = useState(null); // 'google' | 'apple' | null
+  const [oauthError,   setOauthError]   = useState("");
+
+  const handleOAuth = async (provider) => {
+    setOauthLoading(provider); setOauthError("");
+    try {
+      await signIn.authenticateWithRedirect({
+        strategy: `oauth_${provider}`,
+        redirectUrl: '/sso-callback',
+        redirectUrlComplete: '/',
+      });
+      // Browser navigates away here — nothing after this line runs on success.
+    } catch (e) {
+      setOauthLoading(null);
+      const clerkErr = e?.errors?.[0];
+      setOauthError(clerkErr?.longMessage || clerkErr?.message || `Couldn't connect to ${provider === 'google' ? 'Google' : 'Apple'}. Please try again.`);
+    }
+  };
 
   React.useEffect(() => {
     if (!clerkLoaded || !isSignedIn) return;
@@ -3619,6 +3672,9 @@ function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
           <CTA label={loading ? "SIGNING IN..." : "SIGN IN"} onClick={handle}/>
         </div>
 
+        {oauthError && <div style={{ fontFamily:FONT, fontSize:13, color:"#EF4444", textAlign:"center", marginTop:-2, padding:"10px 16px", background:"rgba(239,68,68,0.1)", borderRadius:12, border:"1px solid rgba(239,68,68,0.3)" }}>{oauthError}</div>}
+        <OAuthButtons onGoogle={()=>handleOAuth('google')} onApple={()=>handleOAuth('apple')} loadingProvider={oauthLoading}/>
+
         {/* Sign up link */}
         <div style={{ textAlign:"center" }}>
           <span style={{ fontFamily:FONT, fontSize:13, color:"rgba(255,255,255,0.6)" }}>Don't have an account? </span>
@@ -3639,6 +3695,24 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
   const [showPass, setShowPass] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const { signUp } = useClerkSignUp();
+  const [oauthLoading, setOauthLoading] = useState(null); // 'google' | 'apple' | null
+  const [oauthError,   setOauthError]   = useState("");
+
+  const handleOAuth = async (provider) => {
+    setOauthLoading(provider); setOauthError("");
+    try {
+      await signUp.authenticateWithRedirect({
+        strategy: `oauth_${provider}`,
+        redirectUrl: '/sso-callback',
+        redirectUrlComplete: '/',
+      });
+      // Browser navigates away here — nothing after this line runs on success.
+    } catch (e) {
+      setOauthLoading(null);
+      const clerkErr = e?.errors?.[0];
+      setOauthError(clerkErr?.longMessage || clerkErr?.message || `Couldn't connect to ${provider === 'google' ? 'Google' : 'Apple'}. Please try again.`);
+    }
+  };
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -3756,6 +3830,9 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
         <div style={{ marginTop:4 }}>
           <CTA label={loading ? "CREATING ACCOUNT..." : "SIGN UP"} onClick={handle}/>
         </div>
+
+        {oauthError && <div style={{ fontFamily:FONT, fontSize:13, color:"#EF4444", textAlign:"center", padding:"10px 16px", background:"rgba(239,68,68,0.1)", borderRadius:12, border:"1px solid rgba(239,68,68,0.3)" }}>{oauthError}</div>}
+        <OAuthButtons onGoogle={()=>handleOAuth('google')} onApple={()=>handleOAuth('apple')} loadingProvider={oauthLoading}/>
 
         {/* Log in link */}
         <div style={{ textAlign:"center" }}>
