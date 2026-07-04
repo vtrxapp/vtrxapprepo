@@ -2532,18 +2532,47 @@ function AISummaryPage({ energyKey, logId, onBack }) {
   // ── Onboarding analysis state (when no logId) ──
   const [onboardingData, setOnboardingData] = useState(null);
   const [onboardingLoading, setOnboardingLoading] = useState(!logId);
+  const [onboardingPending, setOnboardingPending] = useState(false);
   const [onboardingTwText, setOnboardingTwText] = useState("");
   const [onboardingTwDone, setOnboardingTwDone] = useState(false);
 
+  // Generates in the background (a couple of Claude calls) — trigger it on
+  // mount (idempotent: backend no-ops if a fresh summary already exists) and
+  // retry with backoff so the page fills in instead of showing a dead end if
+  // it lands before generation finishes.
   useEffect(() => {
     if (logId) return;
-    setOnboardingLoading(true);
-    apiCall('/ai/onboarding-analysis')
-      .then(res => {
-        if (res?.data) setOnboardingData(res.data);
-      })
-      .catch(() => {})
-      .finally(() => setOnboardingLoading(false));
+    let cancelled = false;
+    let attempt = 0;
+    const RETRY_DELAYS_MS = [5000, 10000, 20000, 35000, 50000];
+
+    const fetchAnalysis = (isFirst) => {
+      if (isFirst) setOnboardingLoading(true);
+      apiCall('/ai/onboarding-analysis')
+        .then(res => {
+          if (cancelled) return;
+          if (res?.data) setOnboardingData(res.data);
+          if (res?.data?.workoutSummary) { setOnboardingPending(false); return; }
+          setOnboardingPending(true);
+          if (attempt < RETRY_DELAYS_MS.length) {
+            const delay = RETRY_DELAYS_MS[attempt++];
+            setTimeout(() => { if (!cancelled) fetchAnalysis(false); }, delay);
+          }
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setOnboardingPending(true);
+          if (attempt < RETRY_DELAYS_MS.length) {
+            const delay = RETRY_DELAYS_MS[attempt++];
+            setTimeout(() => { if (!cancelled) fetchAnalysis(false); }, delay);
+          }
+        })
+        .finally(() => { if (!cancelled && isFirst) setOnboardingLoading(false); });
+    };
+
+    apiCall('/ai/onboarding-analysis', { method: 'POST' }).catch(() => {});
+    fetchAnalysis(true);
+    return () => { cancelled = true; };
   }, [logId]);
 
   // Typewriter for onboarding summary
@@ -2763,20 +2792,29 @@ function AISummaryPage({ energyKey, logId, onBack }) {
               )}
             </>
           ) : (
-            /* No workout logged yet */
+            /* Analysis still generating in the background, or not yet triggered */
             <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"40px 24px",textAlign:"center",marginTop:20 }}>
               <div style={{ width:64,height:64,borderRadius:"50%",background:"rgba(124,58,237,0.12)",border:"1.5px solid rgba(124,58,237,0.35)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px" }}>
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
               </div>
-              <div style={{ fontFamily:FONT,fontWeight:900,fontSize:18,color:"#fff",marginBottom:10 }}>No Workouts Logged Yet</div>
+              <div style={{ fontFamily:FONT,fontWeight:900,fontSize:18,color:"#fff",marginBottom:10 }}>{onboardingPending ? "Preparing Your Analysis" : "No Analysis Yet"}</div>
               <div style={{ fontFamily:FONT,fontSize:13,color:"#888",lineHeight:1.7,marginBottom:24 }}>
-                Complete your first workout to unlock your personalised VTRX analysis — strength scores, progress tracking, and coaching insights all in one place.
+                {onboardingPending
+                  ? "Your personalised VTRX analysis is being generated — this usually takes just a few seconds. Check back shortly."
+                  : "We couldn't generate your personalised analysis yet. Give it another try."}
               </div>
               <button
-                onClick={() => onBack()}
+                onClick={() => {
+                  setOnboardingLoading(true);
+                  apiCall('/ai/onboarding-analysis', { method: 'POST' }).catch(() => {});
+                  apiCall('/ai/onboarding-analysis')
+                    .then(res => { if (res?.data) setOnboardingData(res.data); setOnboardingPending(!res?.data?.workoutSummary); })
+                    .catch(() => {})
+                    .finally(() => setOnboardingLoading(false));
+                }}
                 style={{ padding:"13px 32px",borderRadius:50,background:"linear-gradient(135deg,#7C3AED,#4C1D95)",border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",letterSpacing:0.8,boxShadow:"0 4px 20px rgba(124,58,237,0.35)" }}
               >
-                START A WORKOUT
+                CHECK AGAIN
               </button>
             </div>
           )}
