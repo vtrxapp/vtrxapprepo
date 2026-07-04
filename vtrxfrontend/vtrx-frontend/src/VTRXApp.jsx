@@ -4248,11 +4248,16 @@ function BodyScreen({ onContinue, onBack }) {
       if (dob) localStorage.setItem("vtrx_user_dob", dob);
     } catch {}
     setUser(u=>({...u, weight: weightKg, height: heightCm, dob, age: ageVal, gender, goalWeightLbs: goalWLbs, bodyFatPercentage: bfVal}));
-    if (getAuthToken()) {
+    // Not gated on getAuthToken() — that flag mirrors Clerk's isSignedIn via a
+    // useEffect and can still be false in the brief window right after
+    // EmailVerifyScreen establishes the session, silently skipping this save
+    // entirely. apiCall fetches a fresh Clerk token itself and already retries
+    // once on 401, so just always attempt it.
+    if (!DEMO_MODE) {
       apiCall('/users/profile', { method:'PUT', skipAuthRedirect:true, body: JSON.stringify({
         gender, weight: weightKg, height: heightCm, age: ageVal,
         goalWeightLbs: goalWLbs, bodyFatPercentage: bfVal,
-      })}).catch(()=>{});
+      })}).catch(e => track("profile_save_failed", { screen: "body", message: e?.message }));
     }
     onContinue();
   };
@@ -4382,14 +4387,18 @@ function TrainingScreen({ onContinue, onBack }) {
       mealsPerDay: MEALS_MAP[meals] || meals || "3",
     };
     setUser(u => ({ ...u, ...workoutPrefs, ...nutritionPrefs }));
-    if (getAuthToken()) {
+    // Not gated on getAuthToken() — see BodyScreen's handleContinue for why that
+    // check can race right after onboarding establishes the session.
+    // NOTE: this component has a local `track` state var (tracking preference),
+    // so use console.warn here rather than the analytics track() import.
+    if (!DEMO_MODE) {
       apiCall('/users/profile', { method:'PUT', skipAuthRedirect:true, body: JSON.stringify({
         goal: workoutPrefs.goal, fitnessLevel: workoutPrefs.fitnessLevel,
         daysPerWeek: workoutPrefs.daysPerWeek, equipment: workoutPrefs.equipment,
         location: workoutPrefs.location, sessionDuration: time,
         preferredStyles: Array.isArray(style) ? style : [style].filter(Boolean),
         ...nutritionPrefs,
-      })}).catch(()=>{});
+      })}).catch(e => console.warn('profile_save_failed:training', e?.message));
     }
   };
 
@@ -6600,10 +6609,10 @@ function SubShell({ title, onBack, children }) {
 }
 
 // ─ SaveBtn ────────────────────────────────────────────────────────────────────
-function SaveBtn({ onClick, saved, label="SAVE CHANGES" }) {
+function SaveBtn({ onClick, saved, label="SAVE CHANGES", saving=false }) {
   return (
-    <button onClick={onClick} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:saved?"#22C55E":`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1,cursor:"pointer",transition:"background 0.3s",boxShadow:`0 4px 20px rgba(0,163,255,0.35)`,marginTop:8 }}>
-      {saved?"SAVED!":label}
+    <button onClick={onClick} disabled={saving} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:saved?"#22C55E":saving?"#1a1a1a":`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:saving?`1px solid ${BORDER}`:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:saving?"#555":"#fff",letterSpacing:1,cursor:saving?"not-allowed":"pointer",transition:"background 0.3s",boxShadow:saving?"none":`0 4px 20px rgba(0,163,255,0.35)`,marginTop:8 }}>
+      {saved?"SAVED!":saving?"SAVING...":label}
     </button>
   );
 }
@@ -6682,6 +6691,8 @@ function PersonalDetailsPage({ onBack }) {
     return (isNaN(n) || n < 50) ? "" : cmToDisplay(n, initHU);
   });
   const [saved,      setSaved]      = useState(false);
+  const [saving,     setSaving]     = useState(false);
+  const [saveError,  setSaveError]  = useState(false);
 
   // Weight unit conversion
   const switchWeightUnit = (u) => {
@@ -6733,11 +6744,28 @@ function PersonalDetailsPage({ onBack }) {
       localStorage.setItem("vtrx_height_unit", heightUnit);
       if (dob) localStorage.setItem("vtrx_user_dob", dob);
     } catch {}
-    setUser(u=>({...u, name, dob, age: ageVal, gender, weight: weightKg, height: heightCm}));
-    setSaved(true);
-    setTimeout(()=>setSaved(false), 2200);
-    if (!DEMO_MODE && getAuthToken()) {
-      apiCall("/users/profile", { method:"PUT", body:JSON.stringify({ name, age: ageVal, gender, weight: weightKg, height: heightCm }) }).catch(_e=>{});
+    setSaveError(false);
+    // DEMO_MODE has no real backend to confirm against — keep the old optimistic
+    // behavior there. Otherwise only show "Saved!" (and update the shared user
+    // state) once the backend actually confirms it, instead of assuming success
+    // and silently losing the write on failure.
+    if (DEMO_MODE) {
+      setUser(u=>({...u, name, dob, age: ageVal, gender, weight: weightKg, height: heightCm}));
+      setSaved(true);
+      setTimeout(()=>setSaved(false), 2200);
+      return;
+    }
+    setSaving(true);
+    try {
+      await apiCall("/users/profile", { method:"PUT", body:JSON.stringify({ name, age: ageVal, gender, weight: weightKg, height: heightCm }) });
+      setUser(u=>({...u, name, dob, age: ageVal, gender, weight: weightKg, height: heightCm}));
+      setSaved(true);
+      setTimeout(()=>setSaved(false), 2200);
+    } catch (e) {
+      track("profile_save_failed", { screen: "personal_details", message: e?.message });
+      setSaveError(true);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -6821,7 +6849,12 @@ function PersonalDetailsPage({ onBack }) {
         </div>
       </div>
 
-      <SaveBtn onClick={save} saved={saved}/>
+      <SaveBtn onClick={save} saved={saved} saving={saving}/>
+      {saveError && (
+        <div style={{ fontFamily:FONT,fontSize:12,color:"#EF4444",textAlign:"center",marginTop:10 }}>
+          Couldn't save — check your connection and try again.
+        </div>
+      )}
     </SubShell>
   );
 }
@@ -6843,6 +6876,8 @@ function FitnessGoalPage({ onBack }) {
   const [level, setLevel] = useState(user.fitnessLevel || user.level || "");
   const [days, setDays]   = useState(Number(user.daysPerWeek || user.days) || 5);
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(false);
 
   const goals = [
     { key:"Lose Weight",                ico:"fire", desc:"Burn fat and reduce body weight" },
@@ -6889,13 +6924,31 @@ function FitnessGoalPage({ onBack }) {
       </div>
 
       <SaveBtn onClick={async ()=>{
-      setUser(u=>({...u,goal,level,days,fitnessLevel:level,daysPerWeek:parseInt(days)||5}));
-      setSaved(true);
-      setTimeout(()=>setSaved(false),2200);
-      if (!DEMO_MODE && getAuthToken()) {
-        apiCall('/users/profile',{ method:'PUT', body:JSON.stringify({ goal, fitnessLevel:level, daysPerWeek:parseInt(days)||5 }) }).catch(()=>{});
+      if (DEMO_MODE) {
+        setUser(u=>({...u,goal,level,days,fitnessLevel:level,daysPerWeek:parseInt(days)||5}));
+        setSaved(true);
+        setTimeout(()=>setSaved(false),2200);
+        return;
       }
-    }} saved={saved}/>
+      setSaving(true);
+      setSaveError(false);
+      try {
+        await apiCall('/users/profile',{ method:'PUT', body:JSON.stringify({ goal, fitnessLevel:level, daysPerWeek:parseInt(days)||5 }) });
+        setUser(u=>({...u,goal,level,days,fitnessLevel:level,daysPerWeek:parseInt(days)||5}));
+        setSaved(true);
+        setTimeout(()=>setSaved(false),2200);
+      } catch (e) {
+        track("profile_save_failed", { screen: "fitness_goal", message: e?.message });
+        setSaveError(true);
+      } finally {
+        setSaving(false);
+      }
+    }} saved={saved} saving={saving}/>
+      {saveError && (
+        <div style={{ fontFamily:FONT,fontSize:12,color:"#EF4444",textAlign:"center",marginTop:10 }}>
+          Couldn't save — check your connection and try again.
+        </div>
+      )}
     </SubShell>
   );
 }
@@ -7838,12 +7891,14 @@ function FitnessPreferencesPage({ onBack }) {
   const [days,  setDays]  = useState(Number(user.daysPerWeek || user.days) || 5);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(false);
 
   const handleSave = async () => {
     setSaving(true);
+    setSaveError(false);
     // Map env back to the canonical location value
     const locationVal = env === "Gym" ? "Full Gym" : env === "Mix" ? "Mix of both" : env;
-    setUser(u => ({
+    const applyLocal = () => setUser(u => ({
       ...u,
       goal,
       fitnessLevel: level,
@@ -7853,17 +7908,27 @@ function FitnessPreferencesPage({ onBack }) {
       location:     locationVal,
       workoutLocation: locationVal,
     }));
-    if (getAuthToken()) {
-      try {
-        await apiCall("/users/profile", {
-          method: "PUT",
-          body: JSON.stringify({ goal, fitnessLevel: level, daysPerWeek: days, location: locationVal }),
-        });
-      } catch (_e) {}
+    if (DEMO_MODE) {
+      applyLocal();
+      setSaving(false);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2200);
+      return;
     }
-    setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2200);
+    try {
+      await apiCall("/users/profile", {
+        method: "PUT",
+        body: JSON.stringify({ goal, fitnessLevel: level, daysPerWeek: days, location: locationVal }),
+      });
+      applyLocal();
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2200);
+    } catch (e) {
+      track("profile_save_failed", { screen: "fitness_preferences", message: e?.message });
+      setSaveError(true);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -7899,6 +7964,11 @@ function FitnessPreferencesPage({ onBack }) {
         <button onClick={handleSave} disabled={saving} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:saved?"#22C55E":saving?"#1a1a1a":`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:saving?`1px solid ${BORDER}`:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:saving?"#555":"#fff",letterSpacing:1,cursor:saving?"not-allowed":"pointer",transition:"background 0.3s",boxShadow:saving?"none":`0 4px 20px ${PRIMARY}44` }}>
           {saved ? "SAVED!" : saving ? "Saving..." : "SAVE PREFERENCES"}
         </button>
+        {saveError && (
+          <div style={{ fontFamily:FONT,fontSize:12,color:"#EF4444",textAlign:"center",marginTop:10 }}>
+            Couldn't save — check your connection and try again.
+          </div>
+        )}
       </div>
     </div>
   );
