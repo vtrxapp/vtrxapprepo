@@ -10148,16 +10148,16 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
           </div>
           <div style={{ display:"flex",gap:9,marginBottom:16,overflowX:"auto" }}>
             {exPreview.map((ex, i) => {
-              const imgSrc = ex?.thumbnailUrl || ex?.img || null;
-              const initials = (ex?.name || '').split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase() || '•';
+              // Same fallback stock photo as WorkoutDetailPage's exercise list — AI
+              // plan exercises don't always have a cached thumbnail yet (only
+              // populated after someone's viewed that exercise's video at least
+              // once), so falling back to text initials here (while the detail
+              // page falls back to an image) made this preview look broken by
+              // comparison even though both were "working as coded."
+              const imgSrc = ex?.thumbnailUrl || ex?.img || "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=200&q=70";
               return (
                 <div key={i} onClick={()=>onNavigate("workoutDetail", workout)} style={{ minWidth:76,width:76,height:76,borderRadius:12,overflow:"hidden",flexShrink:0,cursor:"pointer" }}>
-                  {imgSrc
-                    ? <img src={imgSrc} alt={ex?.name||''} style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
-                    : <div style={{ width:"100%",height:"100%",background:"linear-gradient(135deg,#1a1a2e,#16213e)",display:"flex",alignItems:"center",justifyContent:"center" }}>
-                        <span style={{ fontFamily:FONT,fontWeight:800,fontSize:15,color:"#556" }}>{initials}</span>
-                      </div>
-                  }
+                  <img src={imgSrc} alt={ex?.name||''} loading="lazy" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
                 </div>
               );
             })}

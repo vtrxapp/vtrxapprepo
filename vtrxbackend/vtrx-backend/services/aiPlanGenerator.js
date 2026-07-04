@@ -91,7 +91,8 @@ function buildExercise(validatedEx, sets) {
     isTimedExercise: lib.isTimed,
     durationSecs:    lib.isTimed ? (validatedEx.durationSecs || lib.defaultSecs || 30) : null,
     reps:            lib.isTimed ? null : (validatedEx.reps || lib.defaultReps || 10),
-    videoUrl:        lib.videoUrl || '',
+    videoUrl:        lib.videoUrl     || '',
+    thumbnailUrl:    lib.thumbnailUrl || null,
   };
 }
 
