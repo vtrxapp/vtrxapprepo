@@ -1181,6 +1181,17 @@ function AiTipIcon({ type }) {
   if (type==="lightbulb") return <svg {...s}><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 017 7c0 2.38-1.19 4.47-3 5.74V17H8v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 017-7z"/></svg>;
   return <svg {...s}><circle cx="12" cy="12" r="10"/></svg>;
 }
+// Streak display: raw days below the user's own weekly goal, then whole weeks once
+// that goal is reached — a 5-day goal shows "1 day"…"4 days", then "1 week" through
+// day 9, "2 weeks" from day 10, etc.
+function formatStreak(days, daysPerWeek) {
+  const goal = Math.max(1, daysPerWeek || 3);
+  const d = Math.max(0, days || 0);
+  if (d < goal) return `${d} day${d !== 1 ? 's' : ''}`;
+  const weeks = Math.floor(d / goal);
+  return `${weeks} week${weeks !== 1 ? 's' : ''}`;
+}
+
 // Convert reps range "8-12" → single target "10" (midpoint)
 function parseReps(repsStr) {
   if (!repsStr) return '10';
@@ -5564,9 +5575,9 @@ function WeightsHub({ onLogout=null, onNavigate=null, weekPlanSessions=[], onSwa
 
   // Per-month stats — current month from API, older months from static fallback
   const MONTH_STATS_FALLBACK = {
-    "-1": { days:"16/16", streak:"4 week", rate:"100%", pct:100, label:"Completed!" },
-    "-2": { days:"14/16", streak:"2 week", rate:"88%",  pct:88,  label:"Great month" },
-    "-3": { days:"11/16", streak:"1 week", rate:"69%",  pct:69,  label:"Keep going"  },
+    "-1": { days:"16/16", streak:"4 weeks", rate:"100%", pct:100, label:"Completed!" },
+    "-2": { days:"14/16", streak:"2 weeks", rate:"88%",  pct:88,  label:"Great month" },
+    "-3": { days:"11/16", streak:"1 week",  rate:"69%",  pct:69,  label:"Keep going"  },
   };
   const stats = monthOffset === 0 && hubStats ? (() => {
     const completed = hubStats.monthlyCompletedDays || 0;
@@ -5575,12 +5586,12 @@ function WeightsHub({ onLogout=null, onNavigate=null, weekPlanSessions=[], onSwa
     const streak    = hubStats.currentStreak || 0;
     return {
       days:   `${completed}/${target}`,
-      streak: `${streak} day${streak !== 1 ? 's' : ''}`,
+      streak: formatStreak(streak, hubStats.daysPerWeek),
       rate:   `${pct}%`,
       pct,
       label:  pct >= 100 ? "Completed!" : "In progress",
     };
-  })() : MONTH_STATS_FALLBACK[String(monthOffset)] || { days:"0/16", streak:"0 day", rate:"0%", pct:0, label:"No data" };
+  })() : MONTH_STATS_FALLBACK[String(monthOffset)] || { days:"0/16", streak:"0 days", rate:"0%", pct:0, label:"No data" };
 
   // Day-label helper: "Day 1", "Day 2" … based on sorted schedule order
   const sortedForDayLabels = React.useMemo(
