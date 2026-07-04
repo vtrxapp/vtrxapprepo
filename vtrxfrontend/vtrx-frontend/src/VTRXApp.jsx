@@ -5461,7 +5461,7 @@ function CustomizePage({ onBack }) {
 }
 
 
-function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
+function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[], weekPlanSessions=[], onSwapSessionOrder=null }){
   const { dark } = useTheme();
   const T = dark ? DARK : LIGHT;
   const { user: wUser } = useUser();
@@ -5478,6 +5478,7 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [hubStats,         setHubStats]         = useState(null);
   const [previewPRs,       setPreviewPRs]       = useState([]);
+  const [swapFromPos,      setSwapFromPos]      = useState(null); // AI plan session reorder — position picking its swap target
   useEffect(()=>{
     const now = Date.now();
     if (_weightsCache.fetchedAt && (now - _weightsCache.fetchedAt) < CACHE_TTL_MS && _weightsCache.data) {
@@ -5632,6 +5633,133 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[] }){
 
         {/* ── WEEKLY PLAN ── */}
         {(()=>{
+          // AI-generated plan takes priority over the legacy calendar-based
+          // schedule below — shows every session for the week in the user's
+          // chosen order, with a swap picker so "Day 4" can go before "Day 1"
+          // (as long as every session still happens exactly once per cycle).
+          if (weekPlanSessions.length > 0) {
+            const current  = weekPlanSessions.find(s => s.isCurrent) || null;
+            const upcoming = weekPlanSessions.filter(s => !s.isDone && !s.isCurrent);
+            const done     = weekPlanSessions.filter(s => s.isDone);
+            const swapTargets = swapFromPos !== null ? weekPlanSessions.filter(s => !s.isDone && s.position !== swapFromPos) : [];
+
+            return (
+              <>
+                <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12 }}>
+                  <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#fff",letterSpacing:1 }}>THIS WEEK'S PLAN</div>
+                  <div style={{ fontFamily:FONT,fontSize:11,color:"#666" }}>{done.length}/{weekPlanSessions.length} done</div>
+                </div>
+
+                {current && (()=>{
+                  const nc  = PRIMARY;
+                  const exs = current.workout.exercises || [];
+                  return (
+                    <div style={{ background:CARD,borderRadius:20,border:`1px solid ${nc}44`,marginBottom:12,overflow:"hidden" }}>
+                      <div style={{ background:`linear-gradient(135deg,${nc}22,${nc}08)`,padding:"16px 16px 12px" }}>
+                        <div style={{ fontFamily:FONT,fontWeight:600,fontSize:10,color:nc,letterSpacing:1.5,marginBottom:3 }}>UP NEXT — {current.workout.dayLabel}</div>
+                        <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff",marginBottom:6 }}>{generateWorkoutTitle(exs) || current.workout.name}</div>
+                        <div style={{ fontFamily:FONT,fontSize:12,color:"#888" }}>{current.workout.duration} min · {current.workout.calories} cal · {current.workout.target}</div>
+                      </div>
+                      {exs.length>0 && (
+                        <div style={{ display:"flex",gap:4,padding:"12px 16px 0" }}>
+                          {exs.slice(0,4).map((ex,i)=>(
+                            <div key={i} style={{ flex:1,aspectRatio:"1",borderRadius:10,overflow:"hidden",background:"#1a1a1a" }}>
+                              {ex.thumbnailUrl || ex.img
+                                ? <img src={ex.thumbnailUrl || ex.img} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+                                : <div style={{ width:"100%",height:"100%",background:`${nc}22` }}/>
+                              }
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <div style={{ padding:"12px 16px" }}>
+                        {exs.map((ex,j)=>(
+                          <div key={j} style={{ display:"flex",alignItems:"center",gap:10,paddingBottom:j<exs.length-1?10:0,marginBottom:j<exs.length-1?10:0,borderBottom:j<exs.length-1?`1px solid ${BORDER}`:"none" }}>
+                            <div style={{ width:28,height:28,borderRadius:8,background:nc,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:FONT,fontWeight:800,fontSize:11,color:"#fff" }}>{j+1}</div>
+                            <div style={{ flex:1,minWidth:0 }}>
+                              <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{ex.name}</div>
+                              {(()=>{const r=parseReps(ex.reps);const lbl=/^\d+s$/.test(r)?`${ex.sets} sets × ${r.replace(/s$/,' sec')}`:`${ex.sets} sets × ${r} reps`;return<div style={{fontFamily:FONT,fontSize:11,color:"#666"}}>{lbl}</div>;})()}
+                            </div>
+                            {ex.muscles && <div style={{ fontFamily:FONT,fontSize:10,color:"#444",flexShrink:0 }}>{ex.muscles}</div>}
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{ padding:"0 16px 16px" }}>
+                        <button onClick={()=>onNavigate&&onNavigate("workoutDetail", current.workout)} style={{ width:"100%",padding:"14px 0",borderRadius:50,background:nc,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",letterSpacing:1,marginBottom:upcoming.length>0?8:0 }}>
+                          START WORKOUT
+                        </button>
+                        {upcoming.length>0 && (
+                          <button onClick={()=>setSwapFromPos(current.position)} style={{ width:"100%",padding:"10px 0",borderRadius:50,background:"#1a1a1a",border:`1px solid ${BORDER}`,fontFamily:FONT,fontWeight:700,fontSize:12,color:"#ccc",cursor:"pointer" }}>
+                            SWAP WITH ANOTHER DAY
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {upcoming.map(s=>{
+                  const exs = s.workout.exercises||[];
+                  return (
+                    <div key={s.position} style={{ background:CARD,borderRadius:16,border:`1px solid ${BORDER}`,padding:"14px 16px",marginBottom:10,display:"flex",alignItems:"center",gap:12 }}>
+                      <div style={{ width:38,height:38,borderRadius:10,background:"#1a1a1a",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:FONT,fontWeight:800,fontSize:11,color:"#888" }}>{s.workout.dayLabel.replace('Day ','D')}</div>
+                      <div style={{ flex:1,minWidth:0 }}>
+                        <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{generateWorkoutTitle(exs) || s.workout.name}</div>
+                        <div style={{ fontFamily:FONT,fontSize:11,color:"#666" }}>{s.workout.duration} min · {s.workout.target}</div>
+                      </div>
+                      <button onClick={()=>setSwapFromPos(s.position)} style={{ padding:"7px 14px",borderRadius:20,background:"#1a1a1a",border:`1px solid ${BORDER}`,fontFamily:FONT,fontWeight:700,fontSize:11,color:"#ccc",cursor:"pointer",flexShrink:0 }}>
+                        SWAP
+                      </button>
+                    </div>
+                  );
+                })}
+
+                {done.map(s=>(
+                  <div key={s.position} style={{ borderRadius:16,border:`1px solid ${BORDER}`,padding:"12px 16px",marginBottom:10,display:"flex",alignItems:"center",gap:12,opacity:0.5 }}>
+                    <div style={{ width:28,height:28,borderRadius:"50%",background:"#22C55E22",border:"1px solid #22C55E55",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                    </div>
+                    <div style={{ flex:1,minWidth:0 }}>
+                      <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#aaa",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{generateWorkoutTitle(s.workout.exercises) || s.workout.name}</div>
+                      <div style={{ fontFamily:FONT,fontSize:11,color:"#555" }}>{s.workout.dayLabel} · Completed</div>
+                    </div>
+                  </div>
+                ))}
+
+                {/* SWAP MODAL */}
+                {swapFromPos !== null && (
+                  <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:200,display:"flex",alignItems:"flex-end" }} onClick={()=>setSwapFromPos(null)}>
+                    <div onClick={e=>e.stopPropagation()} style={{ width:"100%",background:"#111",borderRadius:"24px 24px 0 0",padding:"24px 20px 40px",maxHeight:"80vh",overflowY:"auto" }}>
+                      <div style={{ width:40,height:4,borderRadius:2,background:"#333",margin:"0 auto 20px" }}/>
+                      <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:"#fff",marginBottom:4 }}>Swap Workout</div>
+                      <div style={{ fontFamily:FONT,fontSize:13,color:"#555",marginBottom:20 }}>
+                        Choose which day to swap with {weekPlanSessions[swapFromPos]?.workout.dayLabel}
+                      </div>
+                      {swapTargets.length===0 && (
+                        <div style={{ fontFamily:FONT,fontSize:13,color:"#555",textAlign:"center",padding:"20px 0" }}>No other days available to swap with.</div>
+                      )}
+                      {swapTargets.map(s=>(
+                        <div key={s.position} onClick={()=>{ onSwapSessionOrder&&onSwapSessionOrder(swapFromPos, s.position); setSwapFromPos(null); }}
+                          style={{ display:"flex",alignItems:"center",gap:12,padding:"14px 16px",borderRadius:14,marginBottom:8,background:"#1a1a1a",border:"1px solid #222",cursor:"pointer" }}>
+                          <div style={{ width:48,textAlign:"center",flexShrink:0 }}>
+                            <div style={{ fontFamily:FONT,fontWeight:800,fontSize:13,color:"#888" }}>{s.workout.dayLabel}</div>
+                          </div>
+                          <div style={{ flex:1,minWidth:0 }}>
+                            <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#ccc",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{generateWorkoutTitle(s.workout.exercises) || s.workout.name}</div>
+                            <div style={{ fontFamily:FONT,fontSize:11,color:"#555" }}>{s.isCurrent ? "Currently up next" : "Upcoming"}</div>
+                          </div>
+                        </div>
+                      ))}
+                      <button onClick={()=>setSwapFromPos(null)} style={{ width:"100%",padding:"14px 0",borderRadius:50,background:"#1a1a1a",border:"1px solid #333",fontFamily:FONT,fontWeight:700,fontSize:14,color:"#888",cursor:"pointer",marginTop:8 }}>
+                        CANCEL
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            );
+          }
+
           const TYPE_C = { STRENGTH:PRIMARY, CARDIO:"#F59E0B", HIIT:"#6366F1", RECOVERY:"#22C55E", MOBILITY:"#22C55E" };
 
           const refreshSchedule = () => {
@@ -10328,6 +10456,20 @@ function SplashScreen() {
   );
 }
 
+// Reads the user's saved training-session order for a plan, falling back to
+// the AI's original order (identity) if nothing's saved yet or the saved
+// order doesn't match the current session count (e.g. after regenerating).
+const loadSessionOrder = (planId, count) => {
+  if (!count) return [];
+  try {
+    const saved = JSON.parse(localStorage.getItem(`vtrx_plan_order_${planId}`) || 'null');
+    if (Array.isArray(saved) && saved.length === count && new Set(saved).size === count && saved.every(i => i >= 0 && i < count)) {
+      return saved;
+    }
+  } catch (_e) {}
+  return Array.from({ length: count }, (_, i) => i);
+};
+
 function VTRXAppInner({ setPaymentPlan }) {
 
   const { user, setUser, profileImg, isPremium, setIsPremium } = useUser();
@@ -10434,6 +10576,11 @@ function VTRXAppInner({ setPaymentPlan }) {
   const [activePlan,     setActivePlan]     = useState(null);
   const [planSessionIdx, setPlanSessionIdx] = useState(0);
   const [planVersion,    setPlanVersion]    = useState(0);
+  // User's preferred order of this week's training sessions — lets someone do
+  // "Day 4" before "Day 1" while still doing every session exactly once per
+  // cycle. An array of original-plan-order indices; planSessionIdx (position)
+  // maps through this to find which session is actually up next.
+  const [sessionOrder, setSessionOrder] = useState([]);
   // Show "Enable notifications" banner if permission not yet decided
   const [showPushBanner, setShowPushBanner] = useState(false);
   const [navExpanded,    setNavExpanded]    = useState(true);
@@ -10501,6 +10648,29 @@ function VTRXAppInner({ setPaymentPlan }) {
       .catch(()=>{});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveUser?.id, planVersion]);
+
+  useEffect(() => {
+    if (!activePlan?.plan || !activePlan?.planId) { setSessionOrder([]); return; }
+    const week = activePlan.plan.weeks?.[activePlan.weekNumber - 1];
+    const count = (week?.sessions || []).filter(s => !s.isRestDay).length;
+    setSessionOrder(loadSessionOrder(activePlan.planId, count));
+  }, [activePlan?.planId, activePlan?.weekNumber, activePlan?.plan]);
+
+  // Swaps two positions in this week's session order (e.g. do "Day 4" before
+  // "Day 1") — persisted per plan so it carries across weeks until the plan
+  // is regenerated. Only ever called with positions >= planSessionIdx (not
+  // yet completed) from the Workouts page.
+  const swapSessionOrder = (posA, posB) => {
+    setSessionOrder(prev => {
+      if (posA === posB || !prev.length) return prev;
+      const next = [...prev];
+      [next[posA], next[posB]] = [next[posB], next[posA]];
+      if (activePlan?.planId) {
+        try { localStorage.setItem(`vtrx_plan_order_${activePlan.planId}`, JSON.stringify(next)); } catch (_e) {}
+      }
+      return next;
+    });
+  };
 
   // Load real data on mount — also drives splash → onboarding/dashboard transition
   const _splashRanRef = useRef(false);
@@ -10894,13 +11064,7 @@ function VTRXAppInner({ setPaymentPlan }) {
 
   if (phase !== "dashboard") return null;
 
-  const planWorkout = (() => {
-    if (!activePlan?.plan) return null;
-    const week = activePlan.plan.weeks?.[activePlan.weekNumber - 1];
-    const trainingSessions = (week?.sessions || []).filter(s => !s.isRestDay);
-    if (!trainingSessions.length) return null;
-    const idx = planSessionIdx % trainingSessions.length;
-    const session = trainingSessions[idx];
+  const buildSessionWorkout = (session, pos, total) => {
     const muscleGroups = [...new Set((session.exercises||[]).map(e=>e.muscleGroup).filter(Boolean))];
     return {
       id: null, name: session.sessionName, type: 'STRENGTH',
@@ -10908,9 +11072,42 @@ function VTRXAppInner({ setPaymentPlan }) {
       calories: Math.round((session.durationMins || 45) * 5.5),
       target: muscleGroups.slice(0, 3).join(', ') || 'Full Body',
       exercises: (session.exercises||[]).map(ex => normaliseExercise({...ex, muscles: ex.muscleGroup, restSecs: ex.restSeconds})),
-      dayLabel: `Day ${idx + 1}`, fromPlan: true,
-      planSessionIdx: idx, totalSessions: trainingSessions.length,
+      dayLabel: `Day ${pos + 1}`, fromPlan: true,
+      planSessionIdx: pos, totalSessions: total,
     };
+  };
+
+  const planWorkout = (() => {
+    if (!activePlan?.plan) return null;
+    const week = activePlan.plan.weeks?.[activePlan.weekNumber - 1];
+    const trainingSessions = (week?.sessions || []).filter(s => !s.isRestDay);
+    if (!trainingSessions.length) return null;
+    const pos = planSessionIdx % trainingSessions.length;
+    const origIdx = sessionOrder[pos] ?? pos;
+    const session = trainingSessions[origIdx];
+    if (!session) return null;
+    return buildSessionWorkout(session, pos, trainingSessions.length);
+  })();
+
+  // Full week in the user's current order, for the Workouts page — shows
+  // every session (done/current/upcoming) so the user can reorder what's
+  // still ahead, not just see today's single session.
+  const weekPlanSessions = (() => {
+    if (!activePlan?.plan) return [];
+    const week = activePlan.plan.weeks?.[activePlan.weekNumber - 1];
+    const trainingSessions = (week?.sessions || []).filter(s => !s.isRestDay);
+    if (!trainingSessions.length) return [];
+    const currentPos = planSessionIdx % trainingSessions.length;
+    return trainingSessions.map((_, pos) => {
+      const origIdx = sessionOrder[pos] ?? pos;
+      const session = trainingSessions[origIdx];
+      return {
+        position:  pos,
+        workout:   buildSessionWorkout(session, pos, trainingSessions.length),
+        isDone:    pos < currentPos,
+        isCurrent: pos === currentPos,
+      };
+    });
   })();
 
   // Inner pages
@@ -11157,7 +11354,8 @@ function VTRXAppInner({ setPaymentPlan }) {
           <NutritionHub onBack={()=>setActiveTab(0)} energyKey={energyKey} onLogout={handleLogout}/>
         )}
         {activeTab===2&&!innerPage&&(
-          <WeightsHub onLogout={handleLogout} onNavigate={navigate} loggedWorkouts={loggedWorkouts}/>
+          <WeightsHub onLogout={handleLogout} onNavigate={navigate} loggedWorkouts={loggedWorkouts}
+            weekPlanSessions={weekPlanSessions} onSwapSessionOrder={swapSessionOrder}/>
         )}
       </div>
 
