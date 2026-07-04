@@ -7,6 +7,28 @@ const notifService = require('../services/notificationService');
 const prisma       = require('../config/database');
 const logger       = require('../utils/logger');
 
+// ── Strip stray markdown from AI prose (headings, bold/italic, list markers) ──
+const stripMarkdown = (text) => {
+  if (!text) return text;
+  return text
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/^[-*+]\s+/gm, '')
+    .replace(/^\d+\.\s+/gm, '')
+    .replace(/`{1,3}/g, '')
+    .trim();
+};
+
+// ── Guarantee a "Hi {name}," opener regardless of what the model produced ────
+const ensureGreeting = (text, firstName) => {
+  if (!text) return text;
+  const trimmed = text.trim();
+  const safeName = (firstName || 'there').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (new RegExp(`^hi\\s+${safeName}\\b`, 'i').test(trimmed)) return trimmed;
+  return `Hi ${firstName || 'there'}, ${trimmed}`;
+};
+
 // ── POST /api/ai/mood-recommendation ─────────────────────────────────────────
 const getMoodRecommendation = async (req, res) => {
   const { mood, notes } = req.body;
@@ -198,16 +220,18 @@ const getOnboardingAnalysis = async (req, res) => {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
       select: {
+        name: true,
         aiWorkoutSummary: true,
         aiNutritionSummary: true,
         onboardingAnalysisReady: true,
       },
     });
+    const firstName = user?.name?.split(' ')[0] || 'there';
     res.json({
       success: true,
       data: {
-        workoutSummary:   user?.aiWorkoutSummary   || null,
-        nutritionSummary: user?.aiNutritionSummary || null,
+        workoutSummary:   ensureGreeting(stripMarkdown(user?.aiWorkoutSummary),   firstName) || null,
+        nutritionSummary: ensureGreeting(stripMarkdown(user?.aiNutritionSummary), firstName) || null,
         ready:            user?.onboardingAnalysisReady || false,
       },
     });
@@ -229,12 +253,19 @@ const generateOnboardingAnalysis = async (req, res) => {
         nutritionGoal: true, dietaryRestrictions: true, mealsPerDay: true,
         dailyCalorieTarget: true, goalWeightLbs: true,
         onboardingAnalysisReady: true,
+        aiWorkoutSummary: true, aiNutritionSummary: true,
       },
     });
 
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-    if (user.onboardingAnalysisReady && user.aiNutritionSummary && user.aiWorkoutSummary) {
+    // Self-heal: force a fresh regeneration if either summary is missing or still
+    // carries markdown artifacts from before prompts required plain prose.
+    const hasMarkdownArtifacts = (text) => !!text && /(\*\*|^#{1,6}\s|^[-*+]\s|^\d+\.\s)/m.test(text);
+    const isStale = !user.aiNutritionSummary || !user.aiWorkoutSummary
+      || hasMarkdownArtifacts(user.aiNutritionSummary) || hasMarkdownArtifacts(user.aiWorkoutSummary);
+
+    if (user.onboardingAnalysisReady && !isStale) {
       return res.json({ success: true, data: { cached: true } });
     }
 
@@ -270,7 +301,7 @@ const generateOnboardingAnalysis = async (req, res) => {
           client.messages.create({
             model: 'claude-haiku-4-5-20251001',
             max_tokens: 400,
-            system: 'You are VTRX AI Coach — a world-class personal trainer. Write in a warm, direct, motivating tone. Be specific to the user\'s profile. Avoid generic clichés.',
+            system: 'You are VTRX AI Coach — a world-class personal trainer. Write in a warm, direct, motivating tone. Be specific to the user\'s profile. Avoid generic clichés. Respond in plain prose only — never use markdown syntax (no **bold**, no # headings, no bullet/numbered lists, no asterisks of any kind).',
             messages: [{
               role: 'user',
               content: `Write a personalised onboarding fitness analysis for ${name}.
@@ -289,17 +320,17 @@ ${user.gender ? `- Gender: ${user.gender}` : ''}
 ${user.age ? `- Age: ${user.age}` : ''}
 
 Write 2-3 paragraphs (max 220 words) that:
-1. Greet ${name} by name and summarise their training approach based on their goal and level
+1. Start with the exact greeting "Hi ${name}," then summarise their training approach based on their goal and level
 2. Describe what their weekly plan will look like (days, intensity, style)
 3. End with one specific, motivating insight about their chosen goal
 
-Be specific, not generic. Don't say "great choice" or "you've got this". Address them as ${name}.`,
+Be specific, not generic. Don't say "great choice" or "you've got this". Plain prose only — no markdown, no **asterisks**, no headings, no lists.`,
             }],
           }),
           client.messages.create({
             model: 'claude-haiku-4-5-20251001',
             max_tokens: 300,
-            system: 'You are VTRX Nutrition Coach. Write practical, specific nutrition guidance. No generic advice.',
+            system: 'You are VTRX Nutrition Coach. Write practical, specific nutrition guidance. No generic advice. Respond in plain prose only — never use markdown syntax (no **bold**, no # headings, no bullet/numbered lists, no asterisks of any kind).',
             messages: [{
               role: 'user',
               content: `Write a personalised nutrition overview for ${name}.
@@ -313,16 +344,16 @@ ${user.goalWeightLbs ? `- Goal weight: ${user.goalWeightLbs} lbs` : ''}
 ${user.dailyCalorieTarget ? `- Daily calorie target: ${Math.round(user.dailyCalorieTarget)} kcal` : ''}
 
 Write 2 paragraphs (max 160 words):
-1. Explain their personalised nutrition approach for ${goalLabel}
+1. Start with the exact greeting "Hi ${name}," then explain their personalised nutrition approach for ${goalLabel}
 2. Give 2-3 specific, actionable food tips for their goal and restrictions
 
-Be practical. Use real foods, not abstractions. Address them as ${name}.`,
+Be practical. Use real foods, not abstractions. Plain prose only — no markdown, no **asterisks**, no headings, no lists.`,
             }],
           }),
         ]);
 
-        const workoutSummary   = workoutRes.content[0].text?.trim() || '';
-        const nutritionSummary = nutritionRes.content[0].text?.trim() || '';
+        const workoutSummary   = ensureGreeting(stripMarkdown(workoutRes.content[0].text?.trim()),   name) || '';
+        const nutritionSummary = ensureGreeting(stripMarkdown(nutritionRes.content[0].text?.trim()), name) || '';
 
         await prisma.user.update({
           where: { id: req.user.id },
