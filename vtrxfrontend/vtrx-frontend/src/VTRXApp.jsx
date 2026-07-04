@@ -578,6 +578,16 @@ const ENERGY_LEVELS = [
   { key: "peak",  faceType: "peak",  label: "Let's Go Hard",      sub: "Maximum effort — this is your day",     color: PRIMARY,   bg: "rgba(0,163,255,0.1)"  },
 ];
 
+// How today's mood check-in scales an AI-generated plan session for display —
+// one-directional (only ever trims, never adds to, what's programmed). "okay",
+// "good" and "peak" (or no mood set yet) render the session exactly as planned;
+// the 4-week plan itself, its progressive-overload sets-per-week logic, and
+// session ordering are never touched, only what's shown/logged for today.
+const MOOD_SESSION_ADAPTATION = {
+  empty: { durationFactor: 0.6, setsFactor: 0.6, minSets: 2, dropTrailing: 2 },
+  low:   { durationFactor: 0.8, setsFactor: 0.8, minSets: 2, dropTrailing: 1 },
+};
+
 
 // ── Onboarding slide feature icons (SVG, no emojis) ─────────────────────────
 function SlideIcon({ type }) {
@@ -1419,7 +1429,17 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onStop, onExercise, co
         {/* Summary card */}
         <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,margin:"0 16px 16px",padding:"20px" }}>
           <div style={{ fontFamily:FONT,fontWeight:800,fontSize:17,color:"#fff",textAlign:"center",marginBottom:6 }}>Today's Workout</div>
-          <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#aaa",textAlign:"center",marginBottom:18 }}>{generateWorkoutTitle(workout.exercises) || workout.name}</div>
+          <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#aaa",textAlign:"center",marginBottom:workout.moodAdapted?8:18 }}>{generateWorkoutTitle(workout.exercises) || workout.name}</div>
+          {workout.moodAdapted && (()=>{
+            const moodLvl = ENERGY_LEVELS.find(l=>l.key===workout.moodAdapted);
+            return (
+              <div style={{ textAlign:"center", marginBottom:18 }}>
+                <span style={{ fontFamily:FONT,fontSize:11,fontWeight:700,color:moodLvl?.color||PRIMARY,background:moodLvl?.bg||`${PRIMARY}18`,borderRadius:20,padding:"4px 12px" }}>
+                  Adjusted for today's energy check-in
+                </span>
+              </div>
+            );
+          })()}
           <div style={{ display:"flex",justifyContent:"space-around" }}>
             {[
               {val:exercises.length,                            lbl:"Exercises",col:"#FF6B35",svg:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FF6B35" strokeWidth="2"><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>},
@@ -5735,6 +5755,9 @@ function WeightsHub({ onLogout=null, onNavigate=null, weekPlanSessions=[], onSwa
                         <div style={{ fontFamily:FONT,fontWeight:600,fontSize:10,color:nc,letterSpacing:1.5,marginBottom:3 }}>UP NEXT — {current.workout.dayLabel}</div>
                         <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff",marginBottom:6 }}>{generateWorkoutTitle(exs) || current.workout.name}</div>
                         <div style={{ fontFamily:FONT,fontSize:12,color:"#888" }}>{current.workout.duration} min · {current.workout.calories} cal · {current.workout.target}</div>
+                        {current.workout.moodAdapted && (
+                          <div style={{ fontFamily:FONT,fontSize:10.5,color:nc,marginTop:4 }}>Adjusted for today's check-in</div>
+                        )}
                       </div>
                       {exs.length>0 && (
                         <div style={{ display:"flex",gap:4,padding:"12px 16px 0" }}>
@@ -10435,6 +10458,11 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
               <span style={{ fontFamily:FONT,fontWeight:700,fontSize:10.5,color:lvl?lvl.color:PRIMARY,letterSpacing:1 }}>{workout.dayLabel || workout.type}</span>
             </div>
           </div>
+          {workout.moodAdapted && (
+            <div style={{ fontFamily:FONT,fontSize:11,color:lvl?.color||PRIMARY,marginBottom:12 }}>
+              Adjusted for today's check-in — shorter session, fewer sets
+            </div>
+          )}
           <div style={{ display:"flex",gap:13,marginBottom:15 }}>
             <div style={{ width:88,height:88,borderRadius:14,overflow:"hidden",flexShrink:0 }}>
               <img src={workoutBanner} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
@@ -11174,16 +11202,31 @@ function VTRXAppInner({ setPaymentPlan }) {
 
   if (phase !== "dashboard") return null;
 
-  const buildSessionWorkout = (session, pos, total) => {
+  const buildSessionWorkout = (session, pos, total, applyMood=false) => {
     const muscleGroups = [...new Set((session.exercises||[]).map(e=>e.muscleGroup).filter(Boolean))];
+    const adaptation = applyMood ? (MOOD_SESSION_ADAPTATION[energyKey] || null) : null;
+    const rawExercises = session.exercises || [];
+    // Trim trailing (accessory) exercises first, then scale sets on what's left —
+    // never drop below 1 exercise regardless of how low energy is today.
+    const keptExercises = adaptation
+      ? rawExercises.slice(0, Math.max(1, rawExercises.length - adaptation.dropTrailing))
+      : rawExercises;
+    const exercises = keptExercises.map(ex => {
+      const normalised = normaliseExercise({...ex, muscles: ex.muscleGroup, restSecs: ex.restSeconds});
+      if (!adaptation) return normalised;
+      return { ...normalised, sets: Math.max(adaptation.minSets, Math.round(normalised.sets * adaptation.setsFactor)) };
+    });
+    const baseDuration = session.durationMins || 45;
+    const duration = adaptation ? Math.max(10, Math.round(baseDuration * adaptation.durationFactor)) : baseDuration;
     return {
       id: null, name: session.sessionName, type: 'STRENGTH',
-      duration: session.durationMins || 45,
-      calories: Math.round((session.durationMins || 45) * 5.5),
+      duration,
+      calories: Math.round(duration * 5.5),
       target: muscleGroups.slice(0, 3).join(', ') || 'Full Body',
-      exercises: (session.exercises||[]).map(ex => normaliseExercise({...ex, muscles: ex.muscleGroup, restSecs: ex.restSeconds})),
+      exercises,
       dayLabel: `Day ${pos + 1}`, fromPlan: true,
       planSessionIdx: pos, totalSessions: total,
+      moodAdapted: adaptation ? energyKey : null,
     };
   };
 
@@ -11196,7 +11239,7 @@ function VTRXAppInner({ setPaymentPlan }) {
     const origIdx = sessionOrder[pos] ?? pos;
     const session = trainingSessions[origIdx];
     if (!session) return null;
-    return buildSessionWorkout(session, pos, trainingSessions.length);
+    return buildSessionWorkout(session, pos, trainingSessions.length, true);
   })();
 
   // Full week in the user's current order, for the Workouts page — shows
@@ -11213,7 +11256,9 @@ function VTRXAppInner({ setPaymentPlan }) {
       const session = trainingSessions[origIdx];
       return {
         position:  pos,
-        workout:   buildSessionWorkout(session, pos, trainingSessions.length),
+        // Mood only ever adapts today's session — done sessions already
+        // happened, and upcoming ones will get their own day's check-in.
+        workout:   buildSessionWorkout(session, pos, trainingSessions.length, pos === currentPos),
         isDone:    pos < currentPos,
         isCurrent: pos === currentPos,
       };
