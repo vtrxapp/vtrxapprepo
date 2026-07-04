@@ -20,13 +20,28 @@ const stripMarkdown = (text) => {
     .trim();
 };
 
-// ── Guarantee a "Hi {name}," opener regardless of what the model produced ────
+// ── Guarantee a "Hi {name}," opener with the name mentioned exactly once ─────
+// Strips every occurrence the model wrote (title-style openers, mid-text
+// repeats) and prepends one canonical greeting. This makes the saved text
+// immune to the name-repetition staleness check below — without it, a model
+// response that keeps repeating the name would re-trigger regeneration on
+// every app open instead of generating once and caching.
 const ensureGreeting = (text, firstName) => {
   if (!text) return text;
-  const trimmed = text.trim();
-  const safeName = (firstName || 'there').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  if (new RegExp(`^hi\\s+${safeName}\\b`, 'i').test(trimmed)) return trimmed;
-  return `Hi ${firstName || 'there'}, ${trimmed}`;
+  const name = firstName || 'there';
+  const safeName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  let body = text.trim().replace(/\s+/g, ' ');
+  body = body.replace(new RegExp(`^hi\\s+${safeName}\\b[,!.]?\\s*`, 'i'), '');
+  body = body
+    .replace(new RegExp(`\\b${safeName}\\b`, 'gi'), '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([,.!?])/g, '$1')
+    .replace(/,\s*,/g, ',')
+    .replace(/^[,.\s]+/, '')
+    .trim();
+
+  return `Hi ${name}, ${body}`;
 };
 
 // ── POST /api/ai/mood-recommendation ─────────────────────────────────────────
