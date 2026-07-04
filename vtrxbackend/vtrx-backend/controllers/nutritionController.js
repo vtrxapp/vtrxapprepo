@@ -111,6 +111,12 @@ const getRecipes = async (req, res) => {
 const _recipeCache    = new Map();
 const RECIPE_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
+// The frontend's "Recommended For You" strip pulls up to 5 picks from this
+// same tab-specific response and hides them from the grid below it, so it
+// needs headroom above the 10 the grid should end up showing — same reason
+// getCategorizedRecipes fetches CATEGORY_LIMIT (15) per category.
+const PERSONALISED_FETCH_LIMIT = 15;
+
 // ── GET /api/nutrition/recipes/personalised ───────────────────────────────────
 // Returns ≤10 recipes tailored to the user's dietary restrictions + goal.
 // Tab values: all | high_protein | low_carb | vegan | vegetarian
@@ -135,7 +141,7 @@ const getPersonalisedRecipes = async (req, res) => {
     }
 
     // 3. Build ymove query params — base dietary filter first
-    const params = { limit: 10, page: 1 };
+    const params = { limit: PERSONALISED_FETCH_LIMIT, page: 1 };
     if      (restrictions.includes('vegan'))       params.diet = 'vegan';
     else if (restrictions.includes('vegetarian'))  params.diet = 'vegetarian';
     else if (restrictions.includes('gluten_free')) params.diet = 'gluten-free';

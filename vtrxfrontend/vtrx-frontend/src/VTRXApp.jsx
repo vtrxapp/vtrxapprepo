@@ -8599,8 +8599,12 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
     return (pool.length >= 3 ? pool : dietFiltered.sort((a,b)=>(b.protein||0)-(a.protein||0))).slice(0, 5);
   })();
   const recommendedIds = new Set(recommended.map(r => String(r.id)));
-  // Main grid excludes already-recommended recipes so users never see the same recipe twice
-  const filteredGrid = filtered.filter(r => !recommendedIds.has(String(r.id)));
+  // Main grid excludes already-recommended recipes so users never see the same
+  // recipe twice, then caps at RECIPE_PAGE_SIZE (10) — the backend fetches
+  // PERSONALISED_FETCH_LIMIT (15) per tab specifically so that after
+  // subtracting up to 5 recommended picks, a full 10 remain here, matching
+  // the "All" tab's category rows.
+  const filteredGrid = filtered.filter(r => !recommendedIds.has(String(r.id))).slice(0, RECIPE_PAGE_SIZE);
 
   // Fixed-width tile for horizontal-scroll category rows (mirrors the "Recommended" tile style)
   const renderCategoryTile = (r, i) => {
