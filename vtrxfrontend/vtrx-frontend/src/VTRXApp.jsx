@@ -186,10 +186,13 @@ const resolveExerciseMedia = async (ex) => {
 // Module-level ref so any component can open the sheet without prop-drilling.
 // VTRXAppInner registers the setter; everything else just calls openPaymentSheet().
 let _openPaymentSheet = null;
-const openPaymentSheet = (plan = "monthly") => {
+// opts.skipPicker: true when the caller already had the user pick a plan (e.g.
+// UpgradePlanPage) — skips PaymentSheet's own duplicate monthly/annual picker
+// instead of asking the same question twice back to back.
+const openPaymentSheet = (plan = "monthly", opts = {}) => {
   track("upgrade_clicked", { plan });
   if (_openPaymentSheet) {
-    _openPaymentSheet(plan);
+    _openPaymentSheet(plan, opts);
   } else {
     // Fallback redirect if the sheet isn't mounted (e.g. onboarding phase)
     apiCall("/payments/create-checkout", { method:"POST", body:JSON.stringify({ plan }) })
@@ -6883,10 +6886,17 @@ function UpgradePlanPage({ onBack }) {
     { key:"annual",  label:"Annual",  price:"$69.99", period:"/year",  savings:"Save 41%",  badge:"BEST VALUE" },
   ];
 
-  const features = ["Unlimited workout videos","AI-powered summaries","Money-backed challenges","Advanced analytics","Priority support","Custom workout builder"];
+  // Only list features that actually ship today — "Money-backed challenges",
+  // "Priority support" and "Custom workout builder" were advertised here but
+  // don't exist (challenges is marked "coming soon" elsewhere in the app,
+  // there's no differentiated support queue, and the workout-builder "Save"
+  // button never persisted anything).
+  const features = ["Unlimited workout videos & AI coaching","Full analytics, history & weekly AI report","Complete meal plans & grocery list","Monthly Streak Freeze","Regenerate your AI plan anytime"];
 
   const handleUpgrade = () => {
-    openPaymentSheet(selected);
+    // Plan already chosen on this page — skip PaymentSheet's own duplicate
+    // monthly/annual picker and go straight to the Stripe payment form.
+    openPaymentSheet(selected, { skipPicker: true });
   };
 
   return (
@@ -6956,11 +6966,11 @@ function CancelSubscriptionPage({ onBack }) {
           <div style={{ background:"#1c0c0c",border:"1px solid #EF444433",borderRadius:20,padding:"24px 20px",textAlign:"center",marginBottom:20 }}>
             <div style={{ width:64,height:64,borderRadius:"50%",background:"#EF444422",border:"1px solid #EF444455",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 12px" }}><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></div>
             <div style={{ fontFamily:FONT,fontWeight:800,fontSize:18,color:"#fff",marginBottom:8 }}>We're sorry to see you go</div>
-            <div style={{ fontFamily:FONT,fontSize:14,color:"#888888",lineHeight:1.65 }}>Cancelling will end your Premium access at the end of your current billing period. You'll lose access to AI summaries, unlimited videos, and challenges.</div>
+            <div style={{ fontFamily:FONT,fontSize:14,color:"#888888",lineHeight:1.65 }}>Cancelling will end your Premium access at the end of your current billing period. You'll lose access to AI summaries, unlimited videos, and your meal plans.</div>
           </div>
           <div style={{ background:"rgba(255,255,255,0.05)",borderRadius:20,border:`1px solid ${BORDER}`,padding:"18px",marginBottom:16 }}>
             <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#888888",marginBottom:14 }}>BEFORE YOU GO, YOU'LL LOSE:</div>
-            {["Unlimited workout videos","AI-powered summaries","Money-backed challenges","Advanced analytics"].map((f,i)=>(
+            {["Unlimited workout videos","AI-powered summaries","Complete meal plans & grocery list","Advanced analytics"].map((f,i)=>(
               <div key={i} style={{ display:"flex",alignItems:"center",gap:12,marginBottom:i<3?12:0 }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                 <span style={{ fontFamily:FONT,fontSize:14,color:"#aaa" }}>{f}</span>
@@ -7046,7 +7056,7 @@ const STRIPE_APPEARANCE = {
 };
 
 // ── In-app payment bottom sheet ───────────────────────────────────────────────
-function PaymentSheet({ initialPlan = "monthly", onClose }) {
+function PaymentSheet({ initialPlan = "monthly", skipPicker = false, onClose }) {
   const [plan,         setPlan]         = useState(initialPlan);
   const [clientSecret, setClientSecret] = useState(null);
   const [isTrial,      setIsTrial]      = useState(false);
@@ -7081,6 +7091,14 @@ function PaymentSheet({ initialPlan = "monthly", onClose }) {
     }
   };
 
+  // Plan was already chosen upstream (e.g. UpgradePlanPage) — skip this sheet's
+  // own picker entirely and go straight to fetching the payment intent instead
+  // of asking the user to pick monthly/annual a second time.
+  useEffect(() => {
+    if (skipPicker) fetchIntent(initialPlan);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div style={{ position:"fixed",inset:0,zIndex:400,display:"flex",flexDirection:"column",justifyContent:"flex-end" }}>
       <div onClick={onClose} style={{ position:"absolute",inset:0,background:"rgba(0,0,0,0.88)" }}/>
@@ -7100,7 +7118,23 @@ function PaymentSheet({ initialPlan = "monthly", onClose }) {
         </div>
 
         <div style={{ flex:1,overflowY:"auto",padding:"18px 22px 44px" }}>
-          {!clientSecret ? (
+          {!clientSecret && skipPicker ? (
+            <div style={{ textAlign:"center",padding:"70px 0" }}>
+              {err ? (
+                <>
+                  <div style={{ fontFamily:FONT,fontSize:13,color:"#EF4444",marginBottom:18,lineHeight:1.6 }}>{err}</div>
+                  <button onClick={()=>fetchIntent(plan)} style={{ padding:"13px 32px",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",letterSpacing:0.5 }}>
+                    Try Again
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div style={{ width:32,height:32,border:`3px solid ${BORDER}`,borderTop:`3px solid ${PRIMARY}`,borderRadius:"50%",margin:"0 auto",animation:"spin 0.8s linear infinite" }}/>
+                  <div style={{ fontFamily:FONT,fontSize:13,color:"#888",marginTop:16 }}>Loading secure payment form…</div>
+                </>
+              )}
+            </div>
+          ) : !clientSecret ? (
             <>
               {/* Plan selector */}
               <div style={{ display:"flex",gap:10,marginBottom:18 }}>
@@ -10573,7 +10607,7 @@ function VTRXAppInner({ setPaymentPlan }) {
 
   // Register the module-level bridge so any component can call openPaymentSheet()
   useEffect(()=>{
-    _openPaymentSheet = (plan) => setPaymentPlan(plan || "monthly");
+    _openPaymentSheet = (plan, opts) => setPaymentPlan({ plan: plan || "monthly", skipPicker: !!opts?.skipPicker });
     return () => { _openPaymentSheet = null; };
   }, []);
 
@@ -11209,7 +11243,7 @@ function VTRXApp() {
   return (
     <UserCtx.Provider value={{ user, setUser, profileImg, setProfileImg, isPremium, setIsPremium }}>
       <VTRXAppInner setPaymentPlan={setPaymentPlan}/>
-      {paymentPlan && <PaymentSheet initialPlan={paymentPlan} onClose={()=>setPaymentPlan(null)}/>}
+      {paymentPlan && <PaymentSheet initialPlan={paymentPlan.plan} skipPicker={paymentPlan.skipPicker} onClose={()=>setPaymentPlan(null)}/>}
     </UserCtx.Provider>
   );
 }
