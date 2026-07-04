@@ -8,9 +8,27 @@ const aiService = require('../services/aiService');
 const logger    = require('../utils/logger');
 const { RECIPE_CATEGORIES, CATEGORY_LIMIT } = require('../data/recipeCategories');
 
-// ── GET /api/nutrition/recipes/categorized — All 11 categories, ≤10 each ──────
+// user.nutritionGoal (snake_case: lose_fat/build_muscle/maintain/eat_clean/
+// improve_energy) drives recipe personalisation, but not every user has
+// answered that onboarding question. Fall back to the primary fitness goal
+// chip (Title Case: "Build Muscle","Lose Weight","Stay Active","Improve
+// Endurance","Get Toned") mapped onto the same vocabulary — comparing it
+// directly never matches, since it's never actually snake_case.
+const GOAL_TO_NUTRITION_GOAL = {
+  'Build Muscle':      'build_muscle',
+  'Lose Weight':       'lose_fat',
+  'Get Toned':         'lose_fat',
+  'Stay Active':       'maintain',
+  'Improve Endurance': 'improve_energy',
+};
+const resolveNutritionGoal = (user) =>
+  user?.nutritionGoal || GOAL_TO_NUTRITION_GOAL[user?.goal] || '';
+
+// ── GET /api/nutrition/recipes/categorized — All 11 categories, ≤CATEGORY_LIMIT each ──
 // DB-sourced (not live ymove) so results are fast, consistent, and match the
-// standardized taxonomy in data/recipeCategories.js.
+// standardized taxonomy in data/recipeCategories.js. Fetches CATEGORY_LIMIT
+// (15) per category so that after the frontend dedupes against up to 5
+// "Recommended For You" picks, at least 10 remain per row.
 const getCategorizedRecipes = async (req, res) => {
   try {
     const categories = await Promise.all(RECIPE_CATEGORIES.map(async (cat) => {
@@ -107,11 +125,10 @@ const getPersonalisedRecipes = async (req, res) => {
       select: { dietaryRestrictions: true, nutritionGoal: true, goal: true },
     });
     const restrictions  = user?.dietaryRestrictions || [];
-    const nutritionGoal = user?.nutritionGoal || '';
-    const primaryGoal   = user?.goal          || '';
+    const effectiveGoal = resolveNutritionGoal(user);
 
     // 2. Cache lookup
-    const cacheKey = `r_${userId}_${tab}_${[...restrictions].sort().join(',')}`;
+    const cacheKey = `r_${userId}_${tab}_${effectiveGoal}_${[...restrictions].sort().join(',')}`;
     const hit = _recipeCache.get(cacheKey);
     if (hit && Date.now() < hit.expiresAt) {
       return res.json({ success: true, data: hit.data, fromCache: true });
@@ -126,16 +143,16 @@ const getPersonalisedRecipes = async (req, res) => {
 
     const isVegan       = restrictions.includes('vegan');
     const isVeg         = restrictions.includes('vegetarian');
-    const isLoseFat     = nutritionGoal === 'lose_fat' || nutritionGoal === 'lose_weight' || primaryGoal === 'lose_weight';
-    const isBuildMuscle = nutritionGoal === 'build_muscle' || primaryGoal === 'build_muscle';
+    const isLoseFat     = effectiveGoal === 'lose_fat';
+    const isBuildMuscle = effectiveGoal === 'build_muscle';
 
     // 4. Tab-specific overrides
     switch (tab) {
       case 'all':
-        if (isLoseFat)                           { params.maxCalories = 500; params.minProtein = 20; }
-        else if (isBuildMuscle)                  { params.minProtein = 30; }
-        else if (nutritionGoal === 'eat_clean')  { params.query = 'whole food'; }
-        else if (nutritionGoal === 'improve_energy') { params.query = 'complex carbs'; }
+        if (isLoseFat)                              { params.maxCalories = 500; params.minProtein = 20; }
+        else if (isBuildMuscle)                     { params.minProtein = 30; }
+        else if (effectiveGoal === 'eat_clean')      { params.query = 'whole food'; }
+        else if (effectiveGoal === 'improve_energy') { params.query = 'complex carbs'; }
         break;
       case 'high_protein':
         if (isVegan)    { params.query = 'high protein vegan';        params.minProtein = 15; }

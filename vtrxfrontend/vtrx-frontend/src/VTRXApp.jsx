@@ -249,6 +249,31 @@ const MEALS = [
   { name:"Egg White Veggie Omelette", desc:"Low calorie, high protein breakfast. Great for weight loss days.", cal:280, protein:32, carbs:10, fats:10, mins:12, servings:1, img:"https://images.unsplash.com/photo-1510693206972-df098062cb71?w=600&q=80", ingredients:["5 egg whites","1 whole egg","½ cup spinach","¼ cup mushrooms","¼ cup cherry tomatoes","1 tsp olive oil","Salt and pepper"], steps:[{title:"Step 1",body:"Whisk egg whites and whole egg together."},{title:"Step 2",body:"Heat olive oil in a non-stick pan."},{title:"Step 3",body:"Sauté vegetables 2 minutes."},{title:"Step 4",body:"Pour egg mixture over vegetables."},{title:"Step 5",body:"Fold omelette, cook until set and serve."}] },
 ];
 
+// ── Build the "Meal of the Day" pool: filtered by dietary restrictions, sorted
+// by nutrition goal. Shared by the Dashboard card and the full nutrition detail
+// page so the same mealIdx always resolves to the same meal in both places —
+// indexing MEALS directly in one place and this filtered/sorted pool in
+// another let mealIdx point at two different recipes for the same number.
+function getMealPool(user) {
+  const restrictions = user?.dietaryRestrictions || [];
+  const goal         = user?.nutritionGoal || '';
+  const eligible = MEALS.filter(m => {
+    const text = ((m.name || '') + ' ' + (m.ingredients || []).join(' ')).toLowerCase();
+    if (restrictions.includes('vegan')       && /chicken|beef|pork|fish|egg|dairy|milk|cheese/i.test(text)) return false;
+    if (restrictions.includes('vegetarian')  && /chicken|beef|pork|fish/i.test(text))                        return false;
+    if (restrictions.includes('gluten_free') && /bread|pasta|wheat|granola/i.test(text))                     return false;
+    if (restrictions.includes('dairy_free')  && /yogurt|cheese|\bmilk\b/i.test(text))                        return false;
+    if (restrictions.includes('no_peanuts')  && /peanut/i.test(text))                                        return false;
+    return true;
+  }).sort((a, b) => {
+    if (goal === 'build_muscle')   return (b.protein || 0) - (a.protein || 0);
+    if (goal === 'lose_fat')       return (a.cal || 999) - (b.cal || 999);
+    if (goal === 'eat_clean')      return (a.ingredients?.length || 99) - (b.ingredients?.length || 99);
+    if (goal === 'improve_energy') return ((b.carbs || 0) - (a.carbs || 0)) || ((b.protein || 0) - (a.protein || 0));
+    return 0; // maintain, or unset — balanced baseline, no skew
+  });
+  return eligible.length ? eligible : MEALS;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ── NUTRITION DATA ────────────────────────────────────────────────────────────
@@ -350,6 +375,49 @@ const normalizeRecipe = (r) => {
   tags:        r.tags || r.categories || r.cat || [],
   });
 };
+
+// Does this recipe violate any of the user's dietary restrictions? Shared by
+// the flat recipe grid and the "Recommended For You" ranking.
+//
+// Checks recipe name + ingredients text, not tags — recipe tags in this app
+// are category labels (High Protein, Muscle Gain, ...), which never contain
+// words like "chicken" or "dairy", so a tag-keyword check silently matches
+// nothing and never actually excludes anything.
+// Lookbehind on DAIRY_RE excludes common plant-based compounds (coconut/
+// almond/oat/soy/cashew milk, peanut/almond/cashew butter) so a vegan recipe
+// using them isn't wrongly flagged as containing dairy.
+const MEAT_RE   = /chicken|beef|pork|turkey|salmon|tuna|shrimp|cod\b|fish|bacon|sausage/i;
+const EGG_RE    = /\beggs?\b/i;
+const DAIRY_RE  = /(?<!coconut |almond |oat |soy |cashew |peanut |vegan )\b(milk|yogurt|butter|cream|cheese)\b/i;
+const HONEY_RE  = /honey/i;
+const GLUTEN_RE = /\bbread\b|\bpasta\b|\bwheat\b|noodles|tortilla|bagel|muffin|pancake/i;
+const PEANUT_RE = /peanut/i;
+const recipePassesDietaryRestrictions = (r, restrictions) => {
+  if (!restrictions?.length) return true;
+  const text = ((r.name || '') + ' ' + (r.ingredients || []).join(' ')).toLowerCase();
+  if (restrictions.includes('vegan')       && (MEAT_RE.test(text) || EGG_RE.test(text) || DAIRY_RE.test(text) || HONEY_RE.test(text))) return false;
+  if (restrictions.includes('vegetarian')  && MEAT_RE.test(text))   return false;
+  if (restrictions.includes('gluten_free') && GLUTEN_RE.test(text)) return false;
+  if (restrictions.includes('dairy_free')  && DAIRY_RE.test(text))  return false;
+  if (restrictions.includes('no_peanuts')  && PEANUT_RE.test(text)) return false;
+  return true;
+};
+
+// user.nutritionGoal (snake_case: lose_fat/build_muscle/maintain/eat_clean/
+// improve_energy) drives recipe personalisation, but not every user has
+// answered that onboarding question. Fall back to the primary fitness goal
+// chip (Title Case: "Build Muscle","Lose Weight","Stay Active","Improve
+// Endurance","Get Toned") mapped onto the same vocabulary, instead of
+// comparing it directly — it never matches the snake_case values as-is.
+const GOAL_TO_NUTRITION_GOAL = {
+  'Build Muscle':      'build_muscle',
+  'Lose Weight':       'lose_fat',
+  'Get Toned':         'lose_fat',
+  'Stay Active':       'maintain',
+  'Improve Endurance': 'improve_energy',
+};
+const resolveNutritionGoal = (user) =>
+  user?.nutritionGoal || GOAL_TO_NUTRITION_GOAL[user?.goal] || '';
 
 const WEEK_DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
@@ -8221,7 +8289,8 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
   const [loadingRecipes, setLoadingRecipes] = useState(false);
   const [totalRecipes,   setTotalRecipes]   = useState(0);
   const [recipePage,     setRecipePage]     = useState(1);
-  // Categorized recipe sections (11 fixed categories, <=10 recipes each) — default Discover view
+  // Categorized recipe sections (11 fixed categories; each shows <=10 recipes
+  // after excluding whatever's in "Recommended For You") — default Discover view
   const [categorized,        setCategorized]        = useState([]);
   const [categorizedLoading, setCategorizedLoading]  = useState(false);
   const [savedRecipes,   setSavedRecipes]   = useState([]);
@@ -8385,11 +8454,14 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
   const showCalTracking  = trackPref === 'yes_both' || trackPref === 'only_calories' || trackPref === 'no_but_interested';
   const calTarget = aiNutritionPlan?.daily_targets?.calories || currentUser?.dailyCalorieTarget || 2000;
 
-  // Fetch personalised recipes (≤10) from backend whenever tab or user changes
+  // Fetch personalised recipes (≤10) from backend whenever tab, user, or goal changes.
+  // Goal is part of the cache key (and the dep array) so changing it in Profile
+  // is reflected immediately instead of serving a stale pool for up to 30 min.
+  const _personalisedGoal = resolveNutritionGoal(currentUser);
   useEffect(()=>{
     if (!getAuthToken()) return;
     const now = Date.now();
-    const cacheKey = `${filter}_${currentUser?.id}`;
+    const cacheKey = `${filter}_${currentUser?.id}_${_personalisedGoal}`;
     const hit = _nutritionCache[cacheKey];
     if (hit && (now - hit.fetchedAt) < CACHE_TTL_MS) {
       setApiRecipes(hit.recipes);
@@ -8411,10 +8483,11 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
       .catch(()=>{})
       .finally(()=>setLoadingRecipes(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[filter, currentUser?.id]);
+  },[filter, currentUser?.id, _personalisedGoal]);
 
-  // Fetch categorized recipe sections (11 fixed categories, <=10 each) once —
-  // this is the default Discover view shown when there's no active search/filter.
+  // Fetch categorized recipe sections (11 fixed categories, <=10 each after
+  // dedup against "Recommended For You") once — this is the default Discover
+  // view shown when there's no active search/filter.
   useEffect(()=>{
     if (!getAuthToken()) return;
     const now = Date.now();
@@ -8485,33 +8558,21 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
   if (showUpgrade) return <UpgradePlanPage onBack={()=>setShowUpgrade(false)}/>;
 
   const displayRecipes = apiRecipes.length > 0 ? apiRecipes : RECIPES.map(normalizeRecipe);
+  const userRestrictions = currentUser?.dietaryRestrictions || [];
   // Diet filter is applied server-side; apply local search and dietary restriction filtering here
   const filtered = displayRecipes.filter(r => {
     if (search && !(r.name||'').toLowerCase().includes(search.toLowerCase())) return false;
-    // Filter out recipes that violate user's dietary restrictions
-    const restrictions = currentUser?.dietaryRestrictions || [];
-    if (restrictions.includes('vegan') && (r.tags||[]).some(t => /meat|chicken|beef|pork|fish|egg|dairy|milk|cheese/i.test(t))) return false;
-    if (restrictions.includes('vegetarian') && (r.tags||[]).some(t => /meat|chicken|beef|pork|fish/i.test(t))) return false;
-    if (restrictions.includes('gluten_free') && (r.tags||[]).some(t => /gluten|wheat|bread|pasta/i.test(t))) return false;
-    if (restrictions.includes('dairy_free') && (r.tags||[]).some(t => /dairy|milk|cheese|yogurt/i.test(t))) return false;
-    return true;
+    return recipePassesDietaryRestrictions(r, userRestrictions);
   });
 
   // ── Recommended recipes — computed once here, reused for strip + dedup ──────
-  const _recGoal = currentUser?.nutritionGoal || currentUser?.goal || '';
+  const _recGoal = resolveNutritionGoal(currentUser);
   const _isDessert = (r) => /cookie|cookies|cake|brownie|browni|muffin|donut|doughnut|chocolate chip|pudding|dessert|tart|pastry|candy/i.test(r.name || '');
   const recommended = (() => {
     if (!displayRecipes.length) return [];
-    const restrictions = currentUser?.dietaryRestrictions || [];
-    const dietFiltered = displayRecipes.filter(r => {
-      if (restrictions.includes('vegan') && (r.tags||[]).some(t => /meat|chicken|beef|pork|fish|egg|dairy|milk|cheese/i.test(t))) return false;
-      if (restrictions.includes('vegetarian') && (r.tags||[]).some(t => /meat|chicken|beef|pork|fish/i.test(t))) return false;
-      if (restrictions.includes('gluten_free') && (r.tags||[]).some(t => /gluten|wheat|bread|pasta/i.test(t))) return false;
-      if (restrictions.includes('dairy_free') && (r.tags||[]).some(t => /dairy|milk|cheese|yogurt/i.test(t))) return false;
-      return true;
-    });
+    const dietFiltered = displayRecipes.filter(r => recipePassesDietaryRestrictions(r, userRestrictions));
     let pool = [...dietFiltered];
-    if (_recGoal === 'lose_fat' || _recGoal === 'lose_weight') {
+    if (_recGoal === 'lose_fat') {
       pool = pool.filter(r => (r.cal || 999) <= 600);
       const nonDesserts = pool.filter(r => !_isDessert(r));
       const desserts    = pool.filter(r => _isDessert(r));
@@ -9845,23 +9906,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
   const workoutDays = weeklyWorkoutDays;
   const dayOfYear   = Math.floor((new Date() - new Date(new Date().getFullYear(),0,0)) / 86400000);
   const quote       = QUOTES[dayOfYear % QUOTES.length];
-  // Filter MEALS by dietary restrictions and goal
-  const userRestrictions = user?.dietaryRestrictions || [];
-  const userNutritionGoal = user?.nutritionGoal || '';
-  const eligibleMeals = MEALS.filter(m => {
-    const name = (m.name || m.title || '').toLowerCase();
-    const ingredients = (m.ingredients || []).join(' ').toLowerCase();
-    const text = name + ' ' + ingredients;
-    if (userRestrictions.includes('vegan') && /chicken|beef|pork|fish|egg|dairy|milk|cheese/i.test(text)) return false;
-    if (userRestrictions.includes('vegetarian') && /chicken|beef|pork|fish/i.test(text)) return false;
-    return true;
-  }).sort((a,b) => {
-    // Sort by goal alignment: build_muscle → high protein first, lose_fat → low cal first
-    if (userNutritionGoal === 'build_muscle') return (b.protein||0) - (a.protein||0);
-    if (userNutritionGoal === 'lose_fat') return (a.cal||a.calories||999) - (b.cal||b.calories||999);
-    return 0;
-  });
-  const mealPool = eligibleMeals.length > 0 ? eligibleMeals : MEALS;
+  const mealPool = getMealPool(user);
   const meal        = mealPool[mealIdx % mealPool.length];
   const altMeals    = mealPool.filter((_,i) => i !== (mealIdx % mealPool.length)).slice(0,2);
   const workout     = apiWorkout || getTailoredWorkout(user, energyKey);
@@ -10044,7 +10089,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
               <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888",letterSpacing:1,marginBottom:10 }}>PICK AN ALTERNATIVE</div>
               <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
                 {altMeals.map((m,i)=>(
-                  <button key={i} onClick={()=>{ setMealIdx(MEALS.indexOf(m)); setShowSwap(false); }} style={{ display:"flex",alignItems:"center",gap:12,padding:"10px 14px",borderRadius:14,background:"#1e1e1e",border:`1px solid ${BORDER}`,cursor:"pointer",textAlign:"left" }}>
+                  <button key={i} onClick={()=>{ setMealIdx(mealPool.indexOf(m)); setShowSwap(false); }} style={{ display:"flex",alignItems:"center",gap:12,padding:"10px 14px",borderRadius:14,background:"#1e1e1e",border:`1px solid ${BORDER}`,cursor:"pointer",textAlign:"left" }}>
                     <img src={m.img} alt="" style={{ width:48,height:48,borderRadius:10,objectFit:"cover",flexShrink:0 }}/>
                     <div style={{ flex:1 }}>
                       <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#fff" }}>{m.name}</div>
@@ -10776,7 +10821,7 @@ function VTRXAppInner({ setPaymentPlan }) {
   if (innerPage==="myPlan")        return <MyPlanPage onBack={goBack} onNavigate={navigate} onPlanChanged={()=>{ setPlanVersion(v=>v+1); setPlanSessionIdx(0); }}/>;
   if (innerPage==="upgrade")       return <UpgradePlanPage onBack={goBack}/>;
   if (innerPage==="aiSummary")     return <AISummaryPage energyKey={energyKey} workoutDone={workoutDone} logId={lastWorkoutLogId} onBack={goBack}/>;
-  if (innerPage==="nutrition")     return <NutritionPage meal={MEALS[mealIdx % MEALS.length]} onBack={goBack}/>;
+  if (innerPage==="nutrition")     { const _mealPool = getMealPool(user); return <NutritionPage meal={_mealPool[mealIdx % _mealPool.length]} onBack={goBack}/>; }
   if (innerPage==="fitnessStats")  return <FitnessStatsPage onBack={goBack} loggedWorkouts={loggedWorkouts}/>;
   if (innerPage==="notifications") return <NotificationsPage onBack={goBack}/>;
   if (innerPage==="profile") return <ProfilePage onBack={goBack} onLogout={handleLogout} onNavigate={navigate} streakDay={streakDay} workoutsTotal={workoutsTotal}/>;
