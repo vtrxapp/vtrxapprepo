@@ -1,12 +1,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // services/aiPlanGenerator.js — AI-powered workout plan generator
 //
-// Uses GPT-4o-mini to build a 4-week personalised plan.
+// Uses Claude Haiku to build a 4-week personalised plan.
 // Exercise IDs are validated against the ExerciseLibrary table — hallucinated
 // IDs are replaced automatically; exercises are never silently dropped.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const { getOpenAIClient } = require('./openaiClient');
+const { getAnthropicClient } = require('./anthropicClient');
 const prisma              = require('../config/database');
 const logger              = require('../utils/logger');
 
@@ -113,8 +113,8 @@ Return ONLY valid JSON with no markdown fencing or extra text.`;
 // libraryOverride: optional Exercise[] array — if omitted, loads from DB
 // ─────────────────────────────────────────────────────────────────────────────
 async function generateAIPlan(user, libraryOverride = null) {
-  const openai = getOpenAIClient();
-  if (!openai) throw new Error('OPENAI_API_KEY not configured');
+  const client = getAnthropicClient();
+  if (!client) throw new Error('ANTHROPIC_API_KEY not configured');
 
   const { rows, byId } = await loadLibrary(libraryOverride);
   const allowedEquipment = getAllowedEquipment(user);
@@ -171,20 +171,19 @@ Rules:
 - Rep-based exercises: reps = the exercise default, durationSecs = null
 - libraryId MUST be exactly from the list above — never invent new IDs`;
 
-  const response = await openai.chat.completions.create({
-    model:           'gpt-4o-mini',
-    response_format: { type: 'json_object' },
+  const response = await client.messages.create({
+    model:      'claude-haiku-4-5-20251001',
+    max_tokens: 8000,
+    system:     SYSTEM_PROMPT,
     messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user',   content: userPrompt },
+      { role: 'user', content: userPrompt },
     ],
-    temperature: 0.6,
-    max_tokens:  8000,
   });
 
   let aiPlan;
   try {
-    aiPlan = JSON.parse(response.choices[0].message.content);
+    const raw = response.content[0].text.replace(/^```json\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+    aiPlan = JSON.parse(raw);
   } catch {
     throw new Error('AI returned invalid JSON for plan');
   }
