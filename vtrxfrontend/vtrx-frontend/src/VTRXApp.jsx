@@ -2690,20 +2690,33 @@ function AISummaryPage({ energyKey, logId, onBack }) {
     return () => { cancelled = true; };
   }, [logId]);
 
-  // Typewriter for onboarding summary
+  // Typewriter for onboarding summary — only the first time it's ever shown;
+  // every visit after that just displays the full saved text immediately.
   useEffect(() => {
     if (logId || onboardingLoading) return;
     const text = onboardingData?.workoutSummary || '';
     if (!text) return;
+    const seenKey = `vtrx_workout_summary_seen_${currentUser?.id || 'anon'}`;
+    let alreadySeen = false;
+    try { alreadySeen = localStorage.getItem(seenKey) === '1'; } catch (_e) {}
+    if (alreadySeen) {
+      setOnboardingTwText(text);
+      setOnboardingTwDone(true);
+      return;
+    }
     setOnboardingTwText(''); setOnboardingTwDone(false);
     let i = 0;
     const iv = setInterval(() => {
       i++;
       setOnboardingTwText(text.slice(0, i));
-      if (i >= text.length) { clearInterval(iv); setOnboardingTwDone(true); }
+      if (i >= text.length) {
+        clearInterval(iv);
+        setOnboardingTwDone(true);
+        try { localStorage.setItem(seenKey, '1'); } catch (_e) {}
+      }
     }, 16);
     return () => clearInterval(iv);
-  }, [logId, onboardingLoading, onboardingData]);
+  }, [logId, onboardingLoading, onboardingData, currentUser?.id]);
 
   // ── Polling state ──
   const [summaryData, setSummaryData] = useState(null);
@@ -8591,8 +8604,18 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
     return () => { cancelled = true; };
   }, []);
 
+  // Typewriter only the first time this summary is ever shown; every visit
+  // after that just displays the full saved text immediately.
   useEffect(() => {
     if (!onboardingNutrition || onboardingNutritionLoading) return;
+    const seenKey = `vtrx_nutrition_summary_seen_${currentUser?.id || 'anon'}`;
+    let alreadySeen = false;
+    try { alreadySeen = localStorage.getItem(seenKey) === '1'; } catch (_e) {}
+    if (alreadySeen) {
+      setOnboardingNutritionTwText(onboardingNutrition);
+      setOnboardingNutritionTwDone(true);
+      return;
+    }
     setOnboardingNutritionTwText(''); setOnboardingNutritionTwDone(false);
     let i = 0;
     const iv = setInterval(() => {
@@ -8601,7 +8624,7 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
       if (i >= onboardingNutrition.length) { clearInterval(iv); setOnboardingNutritionTwDone(true); }
     }, 14);
     return () => clearInterval(iv);
-  }, [onboardingNutrition, onboardingNutritionLoading]);
+  }, [onboardingNutrition, onboardingNutritionLoading, currentUser?.id]);
 
   // Mark the summary as seen once it's actually loaded and on screen — the
   // next time this page mounts, it defaults to collapsed instead of expanded.
