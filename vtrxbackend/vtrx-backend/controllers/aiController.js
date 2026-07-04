@@ -250,8 +250,8 @@ const generateOnboardingAnalysis = async (req, res) => {
     // Generate both summaries in background
     setImmediate(async () => {
       try {
-        const { getOpenAIClient } = require('../services/openaiClient');
-        const client = getOpenAIClient();
+        const { getAnthropicClient } = require('../services/anthropicClient');
+        const client = getAnthropicClient();
         if (!client) return;
 
         const name        = user.name?.split(' ')[0] || 'there';
@@ -267,13 +267,11 @@ const generateOnboardingAnalysis = async (req, res) => {
         }[user.nutritionGoal] || user.nutritionGoal || 'improve fitness';
 
         const [workoutRes, nutritionRes] = await Promise.all([
-          client.chat.completions.create({
-            model: 'gpt-4o-mini',
+          client.messages.create({
+            model: 'claude-haiku-4-5-20251001',
             max_tokens: 400,
+            system: 'You are VTRX AI Coach — a world-class personal trainer. Write in a warm, direct, motivating tone. Be specific to the user\'s profile. Avoid generic clichés.',
             messages: [{
-              role: 'system',
-              content: 'You are VTRX AI Coach — a world-class personal trainer. Write in a warm, direct, motivating tone. Be specific to the user\'s profile. Avoid generic clichés.',
-            }, {
               role: 'user',
               content: `Write a personalised onboarding fitness analysis for ${name}.
 
@@ -298,13 +296,11 @@ Write 2-3 paragraphs (max 220 words) that:
 Be specific, not generic. Don't say "great choice" or "you've got this". Address them as ${name}.`,
             }],
           }),
-          client.chat.completions.create({
-            model: 'gpt-4o-mini',
+          client.messages.create({
+            model: 'claude-haiku-4-5-20251001',
             max_tokens: 300,
+            system: 'You are VTRX Nutrition Coach. Write practical, specific nutrition guidance. No generic advice.',
             messages: [{
-              role: 'system',
-              content: 'You are VTRX Nutrition Coach. Write practical, specific nutrition guidance. No generic advice.',
-            }, {
               role: 'user',
               content: `Write a personalised nutrition overview for ${name}.
 
@@ -325,8 +321,8 @@ Be practical. Use real foods, not abstractions. Address them as ${name}.`,
           }),
         ]);
 
-        const workoutSummary   = workoutRes.choices[0].message.content?.trim() || '';
-        const nutritionSummary = nutritionRes.choices[0].message.content?.trim() || '';
+        const workoutSummary   = workoutRes.content[0].text?.trim() || '';
+        const nutritionSummary = nutritionRes.content[0].text?.trim() || '';
 
         await prisma.user.update({
           where: { id: req.user.id },

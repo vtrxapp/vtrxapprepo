@@ -1,8 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// services/nutritionPlanService.js — AI Nutrition Plan Generator (OpenAI)
+// services/nutritionPlanService.js — AI Nutrition Plan Generator (Claude)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const { getOpenAIClient } = require('./openaiClient');
+const { getAnthropicClient } = require('./anthropicClient');
 const logger              = require('../utils/logger');
 const ymove               = require('./ymoveService');
 
@@ -300,22 +300,22 @@ const calculateNutritionTargets = (user) => {
 
 // ── Main export ───────────────────────────────────────────────────────────────
 const generateNutritionPlan = async (user, context = {}) => {
-  const client = getOpenAIClient();
-  if (!client) throw new Error('OPENAI_API_KEY not configured');
+  const client = getAnthropicClient();
+  if (!client) throw new Error('ANTHROPIC_API_KEY not configured');
 
   const calcs = calculateNutritionTargets(user);
   logger.info(`Generating nutrition plan for user ${user.id} (goal=${user.nutritionGoal}, ${calcs.calorieTarget} cal/day)`);
 
-  const response = await client.chat.completions.create({
-    model:      'gpt-4o-mini',
+  const response = await client.messages.create({
+    model:      'claude-haiku-4-5-20251001',
     max_tokens: 10000,
+    system:     SYSTEM_PROMPT,
     messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user',   content: buildPrompt(user, calcs, context) },
+      { role: 'user', content: buildPrompt(user, calcs, context) },
     ],
   });
 
-  const raw  = response.choices[0].message.content || '';
+  const raw  = response.content[0].text || '';
   const plan = parseJSON(raw);
   logger.info(`Nutrition plan generated for user ${user.id}: "${plan.plan_name}" (${response.usage?.completion_tokens || 0} tokens)`);
 

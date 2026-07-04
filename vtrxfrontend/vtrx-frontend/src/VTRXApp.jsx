@@ -8305,7 +8305,7 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
     try {
       const res = await apiCall('/nutrition/generate-plan', { method: 'POST' });
       if (res?.data?.plan) setAiNutritionPlan(res.data.plan);
-    } catch(_) { setAiPlanError('Generation failed — please try again.'); }
+    } catch(err) { setAiPlanError(err?.code === 'AI_UNAVAILABLE' ? 'AI generation is temporarily unavailable — please try again later.' : 'Generation failed — please try again.'); }
     setAiPlanGenerating(false);
   };
 
@@ -8872,14 +8872,18 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
                     <div style={{ fontFamily:FONT,fontSize:12,color:"#555",lineHeight:1.65 }}>Check back soon — new recipes are added regularly.</div>
                   </div>
                 )}
-                {categorized.map(cat => (
-                  <div key={cat.key} style={{ marginBottom:20 }}>
-                    <div style={{ fontFamily:FONT,fontWeight:900,fontSize:15,color:"#fff",marginBottom:10 }}>{cat.label}</div>
-                    <div style={{ display:"flex",gap:12,overflowX:"auto",paddingBottom:4,scrollbarWidth:"none",msOverflowStyle:"none" }}>
-                      {cat.recipes.map((r,i) => renderCategoryTile(r,i))}
+                {categorized.map(cat => {
+                  const catRecipes = cat.recipes.filter(r => !recommendedIds.has(String(r.id))).slice(0, 10);
+                  if (!catRecipes.length) return null;
+                  return (
+                    <div key={cat.key} style={{ marginBottom:20 }}>
+                      <div style={{ fontFamily:FONT,fontWeight:900,fontSize:15,color:"#fff",marginBottom:10 }}>{cat.label}</div>
+                      <div style={{ display:"flex",gap:12,overflowX:"auto",paddingBottom:4,scrollbarWidth:"none",msOverflowStyle:"none" }}>
+                        {catRecipes.map((r,i) => renderCategoryTile(r,i))}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
             {/* Flat filtered grid — shown while searching or a specific filter pill is active */}
@@ -9543,7 +9547,7 @@ function MyPlanPage({ onBack, onNavigate }) {
     try {
       const res = await apiCall('/workouts/generate-plan', { method: 'POST' });
       if (res?.data?.plan) applyPlan(res.data);
-    } catch(_) { setError('Generation failed — please try again.'); }
+    } catch(err) { setError(err?.code === 'AI_UNAVAILABLE' ? 'AI generation is temporarily unavailable — please try again later.' : 'Generation failed — please try again.'); }
     setGenerating(false);
   };
 
