@@ -9493,7 +9493,7 @@ function NutriRegenPage({ onBack, onNavigate }) {
 
 // MY PLAN PAGE — AI-generated 4-week personalised workout programme
 // ─────────────────────────────────────────────────────────────────────────────
-function MyPlanPage({ onBack, onNavigate }) {
+function MyPlanPage({ onBack, onNavigate, onPlanChanged }) {
   const [plan,            setPlan]            = useState(null);
   const [weekNumber,      setWeekNumber]      = useState(1);
   const [selectedSession, setSelectedSession] = useState(null);
@@ -9546,7 +9546,7 @@ function MyPlanPage({ onBack, onNavigate }) {
     setGenerating(true); setError(null); setConfirmRegen(false);
     try {
       const res = await apiCall('/workouts/generate-plan', { method: 'POST' });
-      if (res?.data?.plan) applyPlan(res.data);
+      if (res?.data?.plan) { applyPlan(res.data); onPlanChanged?.(); }
     } catch(err) { setError(err?.code === 'AI_UNAVAILABLE' ? 'AI generation is temporarily unavailable — please try again later.' : 'Generation failed — please try again.'); }
     setGenerating(false);
   };
@@ -9660,7 +9660,7 @@ function MyPlanPage({ onBack, onNavigate }) {
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={sel?"#fff":"#555"} strokeWidth="1.8"><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>
                   </div>
                   <div style={{ flex:1 }}>
-                    <div style={{ fontFamily:FONT,fontWeight:800,fontSize:13,color:sel?PRIMARY:"#fff",marginBottom:2 }}>{sess.dayOfWeek}</div>
+                    <div style={{ fontFamily:FONT,fontWeight:800,fontSize:13,color:sel?PRIMARY:"#fff",marginBottom:2 }}>{`Day ${i + 1}`}</div>
                     <div style={{ fontFamily:FONT,fontSize:11,color:"#555" }}>{sessLabel} · {sess.durationMins}min · {sess.exercises?.length||0} exercises</div>
                   </div>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={sel?PRIMARY:"#444"} strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
@@ -10023,7 +10023,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
           <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14 }}>
             <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#fff" }}>Today's Workout</div>
             <div style={{ background:lvl?lvl.bg:`${PRIMARY}18`,border:`1px solid ${lvl?lvl.color:PRIMARY}55`,borderRadius:20,padding:"4px 13px" }}>
-              <span style={{ fontFamily:FONT,fontWeight:700,fontSize:10.5,color:lvl?lvl.color:PRIMARY,letterSpacing:1 }}>{workout.type}</span>
+              <span style={{ fontFamily:FONT,fontWeight:700,fontSize:10.5,color:lvl?lvl.color:PRIMARY,letterSpacing:1 }}>{workout.dayLabel || workout.type}</span>
             </div>
           </div>
           <div style={{ display:"flex",gap:13,marginBottom:15 }}>
@@ -10236,6 +10236,9 @@ function VTRXAppInner({ setPaymentPlan }) {
   const [notifCount,    setNotifCount]    = useState(0);
   const [liveUser,      setLiveUser]      = useState(null);
   const [apiWorkout,    setApiWorkout]    = useState(null);
+  const [activePlan,     setActivePlan]     = useState(null);
+  const [planSessionIdx, setPlanSessionIdx] = useState(0);
+  const [planVersion,    setPlanVersion]    = useState(0);
   // Show "Enable notifications" banner if permission not yet decided
   const [showPushBanner, setShowPushBanner] = useState(false);
   const [navExpanded,    setNavExpanded]    = useState(true);
@@ -10287,6 +10290,22 @@ function VTRXAppInner({ setPaymentPlan }) {
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveUser?.id]);
+
+  useEffect(()=>{
+    const userId = liveUser?.id;
+    if (!isSignedIn || !userId) return;
+    apiCall('/workouts/active-plan')
+      .then(d => {
+        if (d?.data?.plan) {
+          const p = { plan: d.data.plan, planId: d.data.planId, weekNumber: d.data.weekNumber || 1 };
+          setActivePlan(p);
+          const saved = parseInt(localStorage.getItem(`vtrx_plan_sess_${p.planId}`) || '0');
+          setPlanSessionIdx(saved);
+        }
+      })
+      .catch(()=>{});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveUser?.id, planVersion]);
 
   // Load real data on mount — also drives splash → onboarding/dashboard transition
   const _splashRanRef = useRef(false);
@@ -10680,8 +10699,27 @@ function VTRXAppInner({ setPaymentPlan }) {
 
   if (phase !== "dashboard") return null;
 
+  const planWorkout = (() => {
+    if (!activePlan?.plan) return null;
+    const week = activePlan.plan.weeks?.[activePlan.weekNumber - 1];
+    const trainingSessions = (week?.sessions || []).filter(s => !s.isRestDay);
+    if (!trainingSessions.length) return null;
+    const idx = planSessionIdx % trainingSessions.length;
+    const session = trainingSessions[idx];
+    const muscleGroups = [...new Set((session.exercises||[]).map(e=>e.muscleGroup).filter(Boolean))];
+    return {
+      id: null, name: session.sessionName, type: 'STRENGTH',
+      duration: session.durationMins || 45,
+      calories: Math.round((session.durationMins || 45) * 5.5),
+      target: muscleGroups.slice(0, 3).join(', ') || 'Full Body',
+      exercises: (session.exercises||[]).map(ex => normaliseExercise({...ex, muscles: ex.muscleGroup, restSecs: ex.restSeconds})),
+      dayLabel: `Day ${idx + 1}`, fromPlan: true,
+      planSessionIdx: idx, totalSessions: trainingSessions.length,
+    };
+  })();
+
   // Inner pages
-  if (innerPage==="myPlan")        return <MyPlanPage onBack={goBack} onNavigate={navigate}/>;
+  if (innerPage==="myPlan")        return <MyPlanPage onBack={goBack} onNavigate={navigate} onPlanChanged={()=>{ setPlanVersion(v=>v+1); setPlanSessionIdx(0); }}/>;
   if (innerPage==="upgrade")       return <UpgradePlanPage onBack={goBack}/>;
   if (innerPage==="aiSummary")     return <AISummaryPage energyKey={energyKey} workoutDone={workoutDone} logId={lastWorkoutLogId} onBack={goBack}/>;
   if (innerPage==="nutrition")     return <NutritionPage meal={MEALS[mealIdx % MEALS.length]} onBack={goBack}/>;
@@ -10772,6 +10810,21 @@ function VTRXAppInner({ setPaymentPlan }) {
         if (shouldLog) {
           track("workout_completed", { name: activeW?.name, type: wType, durationMins: mins, caloriesBurned: actCal, exercisesLogged: snapExNames.length, energyLevel: energyKey });
           setWorkoutDone(true);
+          if (activeW?.fromPlan && activePlan) {
+            const _week = activePlan.plan.weeks?.[activePlan.weekNumber - 1];
+            const _trainingSessions = (_week?.sessions||[]).filter(s=>!s.isRestDay);
+            const _nextIdx = (activeW.planSessionIdx ?? planSessionIdx) + 1;
+            if (_nextIdx >= _trainingSessions.length) {
+              const _newWeek = Math.min(activePlan.weekNumber + 1, 4);
+              apiCall('/workouts/active-plan/advance-week', { method:'PATCH' }).catch(()=>{});
+              setActivePlan(prev => prev ? {...prev, weekNumber: _newWeek} : prev);
+              setPlanSessionIdx(0);
+              if (activePlan.planId) localStorage.setItem(`vtrx_plan_sess_${activePlan.planId}`, '0');
+            } else {
+              setPlanSessionIdx(_nextIdx);
+              if (activePlan.planId) localStorage.setItem(`vtrx_plan_sess_${activePlan.planId}`, String(_nextIdx));
+            }
+          }
           setStreakDay(s=>s+1);
           setWorkoutsTotal(t=>t+1);
           setWeeklyWorkoutDays(d=>d+1);
@@ -10885,7 +10938,7 @@ function VTRXAppInner({ setPaymentPlan }) {
             weeklyWorkoutDays={weeklyWorkoutDays}
             weeklyAvgCal={weeklyAvgCal}
             weeklyAvgMin={weeklyAvgMin}
-            apiWorkout={apiWorkout}
+            apiWorkout={planWorkout || apiWorkout}
             scrollRef={dashScrollRef}
             mealIdx={mealIdx}
             setMealIdx={setMealIdx}
@@ -10901,7 +10954,7 @@ function VTRXAppInner({ setPaymentPlan }) {
                 apiCall("/users/mood", { method:"POST", body:JSON.stringify({ mood:key }) }).catch(()=>{});
               }
             }}
-            onNavigate={(page)=>{ if(page==="workoutDetail"){ setWorkoutDone(false); setWorkoutStarted(false); setWorkoutElapsed(0); setSelectedScheduleWorkout(null); } if(page==="nutritionPlan"){setActiveTab(1);return;} navigate(page); }}
+            onNavigate={(page, workoutData)=>{ if(page==="workoutDetail"){ setWorkoutDone(false); setWorkoutStarted(false); setWorkoutElapsed(0); setSelectedScheduleWorkout(null); } if(page==="nutritionPlan"){setActiveTab(1);return;} navigate(page, workoutData||undefined); }}
             onLogout={handleLogout}
           />
         )}
