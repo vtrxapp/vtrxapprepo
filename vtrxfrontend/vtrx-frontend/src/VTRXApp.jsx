@@ -5492,6 +5492,24 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[], weekPla
   const [hubStats,         setHubStats]         = useState(null);
   const [previewPRs,       setPreviewPRs]       = useState([]);
   const [swapFromPos,      setSwapFromPos]      = useState(null); // AI plan session reorder — position picking its swap target
+  const [planExThumbs,     setPlanExThumbs]     = useState({}); // name → thumbnailUrl, resolved live for the AI plan's "up next" preview
+
+  // Real thumbnails only exist once an exercise's video has been looked up at
+  // least once — resolve any of the current AI-plan session's preview
+  // exercises that don't have one cached yet, same as Today's Workout does.
+  const planCurrentSession = weekPlanSessions.find(s => s.isCurrent) || null;
+  const planExPreview      = planCurrentSession?.workout?.exercises?.slice(0, 4) || [];
+  const planExPreviewKey   = planExPreview.map(e => e?.name || '').join('|');
+  useEffect(() => {
+    planExPreview.forEach(ex => {
+      if (!ex?.name || ex?.thumbnailUrl || ex?.img) return;
+      resolveExerciseMedia(ex).then(media => {
+        if (media?.thumbnailUrl) setPlanExThumbs(prev => ({ ...prev, [ex.name]: media.thumbnailUrl }));
+      });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planExPreviewKey]);
+
   useEffect(()=>{
     const now = Date.now();
     if (_weightsCache.fetchedAt && (now - _weightsCache.fetchedAt) < CACHE_TTL_MS && _weightsCache.data) {
@@ -5675,14 +5693,14 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[], weekPla
                       </div>
                       {exs.length>0 && (
                         <div style={{ display:"flex",gap:4,padding:"12px 16px 0" }}>
-                          {exs.slice(0,4).map((ex,i)=>(
-                            <div key={i} style={{ flex:1,aspectRatio:"1",borderRadius:10,overflow:"hidden",background:"#1a1a1a" }}>
-                              {ex.thumbnailUrl || ex.img
-                                ? <img src={ex.thumbnailUrl || ex.img} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
-                                : <div style={{ width:"100%",height:"100%",background:`${nc}22` }}/>
-                              }
-                            </div>
-                          ))}
+                          {exs.slice(0,4).map((ex,i)=>{
+                            const imgSrc = planExThumbs[ex.name] || ex.thumbnailUrl || ex.img || "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=200&q=70";
+                            return (
+                              <div key={i} style={{ flex:1,aspectRatio:"1",borderRadius:10,overflow:"hidden",background:"#1a1a1a" }}>
+                                <img src={imgSrc} alt="" loading="lazy" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                       <div style={{ padding:"12px 16px" }}>
@@ -5711,21 +5729,9 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[], weekPla
                   );
                 })()}
 
-                {upcoming.map(s=>{
-                  const exs = s.workout.exercises||[];
-                  return (
-                    <div key={s.position} style={{ background:CARD,borderRadius:16,border:`1px solid ${BORDER}`,padding:"14px 16px",marginBottom:10,display:"flex",alignItems:"center",gap:12 }}>
-                      <div style={{ width:38,height:38,borderRadius:10,background:"#1a1a1a",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:FONT,fontWeight:800,fontSize:11,color:"#888" }}>{s.workout.dayLabel.replace('Day ','D')}</div>
-                      <div style={{ flex:1,minWidth:0 }}>
-                        <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{generateWorkoutTitle(exs) || s.workout.name}</div>
-                        <div style={{ fontFamily:FONT,fontSize:11,color:"#666" }}>{s.workout.duration} min · {s.workout.target}</div>
-                      </div>
-                      <button onClick={()=>setSwapFromPos(s.position)} style={{ padding:"7px 14px",borderRadius:20,background:"#1a1a1a",border:`1px solid ${BORDER}`,fontFamily:FONT,fontWeight:700,fontSize:11,color:"#ccc",cursor:"pointer",flexShrink:0 }}>
-                        SWAP
-                      </button>
-                    </div>
-                  );
-                })}
+                {/* Upcoming days are intentionally not listed here — they're
+                    already shown, with the same swap action, inside the
+                    "SWAP WITH ANOTHER DAY" picker above. */}
 
                 {done.map(s=>(
                   <div key={s.position} style={{ borderRadius:16,border:`1px solid ${BORDER}`,padding:"12px 16px",marginBottom:10,display:"flex",alignItems:"center",gap:12,opacity:0.5 }}>
