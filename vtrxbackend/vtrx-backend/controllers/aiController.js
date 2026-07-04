@@ -259,11 +259,21 @@ const generateOnboardingAnalysis = async (req, res) => {
 
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-    // Self-heal: force a fresh regeneration if either summary is missing or still
-    // carries markdown artifacts from before prompts required plain prose.
+    // Self-heal: force a fresh regeneration if either summary is missing, still
+    // carries markdown artifacts from before prompts required plain prose, or
+    // repeats the user's name (a sign of a title-style opener colliding with
+    // our prepended "Hi {name}," greeting).
     const hasMarkdownArtifacts = (text) => !!text && /(\*\*|^#{1,6}\s|^[-*+]\s|^\d+\.\s)/m.test(text);
+    const firstName = user.name?.split(' ')[0];
+    const hasNameRepetition = (text) => {
+      if (!text || !firstName) return false;
+      const safeName = firstName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const matches = text.match(new RegExp(`\\b${safeName}\\b`, 'gi'));
+      return (matches?.length || 0) > 1;
+    };
     const isStale = !user.aiNutritionSummary || !user.aiWorkoutSummary
-      || hasMarkdownArtifacts(user.aiNutritionSummary) || hasMarkdownArtifacts(user.aiWorkoutSummary);
+      || hasMarkdownArtifacts(user.aiNutritionSummary) || hasMarkdownArtifacts(user.aiWorkoutSummary)
+      || hasNameRepetition(user.aiNutritionSummary) || hasNameRepetition(user.aiWorkoutSummary);
 
     if (user.onboardingAnalysisReady && !isStale) {
       return res.json({ success: true, data: { cached: true } });
@@ -324,7 +334,7 @@ Write 2-3 paragraphs (max 220 words) that:
 2. Describe what their weekly plan will look like (days, intensity, style)
 3. End with one specific, motivating insight about their chosen goal
 
-Be specific, not generic. Don't say "great choice" or "you've got this". Plain prose only — no markdown, no **asterisks**, no headings, no lists.`,
+Be specific, not generic. Don't say "great choice" or "you've got this". Plain prose only — no markdown, no **asterisks**, no headings, no lists. Do NOT open with a title or label (e.g. "Your Plan for X") before the greeting — the very first three words of your reply must be "Hi ${name}," with nothing before them. Mention "${name}" exactly once in the entire response — in that opening greeting — and never repeat their name again.`,
             }],
           }),
           client.messages.create({
@@ -347,7 +357,7 @@ Write 2 paragraphs (max 160 words):
 1. Start with the exact greeting "Hi ${name}," then explain their personalised nutrition approach for ${goalLabel}
 2. Give 2-3 specific, actionable food tips for their goal and restrictions
 
-Be practical. Use real foods, not abstractions. Plain prose only — no markdown, no **asterisks**, no headings, no lists.`,
+Be practical. Use real foods, not abstractions. Plain prose only — no markdown, no **asterisks**, no headings, no lists. Do NOT open with a title or label (e.g. "Your Nutrition Plan for X") before the greeting — the very first three words of your reply must be "Hi ${name}," with nothing before them. Mention "${name}" exactly once in the entire response — in that opening greeting — and never repeat their name again.`,
             }],
           }),
         ]);
