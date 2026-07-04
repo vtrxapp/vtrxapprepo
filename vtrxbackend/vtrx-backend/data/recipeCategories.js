@@ -23,7 +23,7 @@ const MEAL_TYPES = {
   DINNER:    'Dinner',
 };
 
-const CATEGORY_LIMIT = 10;
+const CATEGORY_LIMIT = 15;
 
 const RECIPE_CATEGORIES = [
   { key: 'high_protein',   label: 'High Protein',   type: 'tag',      value: TAGS.HIGH_PROTEIN },
