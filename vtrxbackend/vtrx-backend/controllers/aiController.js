@@ -234,7 +234,7 @@ const generateOnboardingAnalysis = async (req, res) => {
 
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-    if (user.onboardingAnalysisReady) {
+    if (user.onboardingAnalysisReady && user.aiNutritionSummary && user.aiWorkoutSummary) {
       return res.json({ success: true, data: { cached: true } });
     }
 

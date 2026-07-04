@@ -8241,7 +8241,7 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
     if (!getAuthToken()) return;
     let cancelled = false;
     let attempt = 0;
-    const RETRY_DELAYS_MS = [8000, 15000, 30000];
+    const RETRY_DELAYS_MS = [5000, 10000, 20000, 35000, 50000];
 
     const fetchAnalysis = () => {
       setOnboardingNutritionLoading(true);
@@ -8265,6 +8265,8 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
         .finally(() => { if (!cancelled) setOnboardingNutritionLoading(false); });
     };
 
+    // Trigger generation (idempotent — backend no-ops if summaries already exist)
+    apiCall('/ai/onboarding-analysis', { method: 'POST' }).catch(() => {});
     fetchAnalysis();
     return () => { cancelled = true; };
   }, []);
