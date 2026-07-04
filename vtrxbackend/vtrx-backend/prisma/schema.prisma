@@ -64,6 +64,8 @@ model User {
   isPremium       Boolean   @default(false)
   streakDays      Int       @default(0)
   lastActiveAt    DateTime?
+  streakFreezesAvailable Int       @default(1) // Free tier's monthly grant; refilled lazily to the tier's cap
+  lastFreezeRefillAt     DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -80,6 +82,7 @@ model User {
   deviceTokens    DeviceToken[]
   personalRecords PersonalRecord[]
   waterLogs       WaterLog[]
+  streakFreezes   StreakFreeze[]
   videoProgress         VideoProgress[]
   schedules             WorkoutSchedule[]
   notificationPrefs     NotificationPreference?
@@ -412,6 +415,22 @@ model PersonalRecord {
 
   @@index([userId, exerciseName])
   @@map("personal_records")
+}
+
+// ── STREAK_FREEZES ────────────────────────────────────────────────────────────
+// One row per calendar day a user has spent a freeze protecting their streak.
+// Read by updateStreak() to decide whether a gap in activity should still break
+// the streak, and by Calendar/Weekly Stats to mark which past days were frozen.
+model StreakFreeze {
+  id        String   @id @default(uuid())
+  userId    String
+  date      DateTime @db.Date
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@map("streak_freezes")
 }
 
 // ── WORKOUT_SCHEDULE ──────────────────────────────────────────────────────────

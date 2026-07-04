@@ -549,7 +549,7 @@ const WEEKLY_DATA = [
   { day: "Sun", cal: 450, type: "cardio"   },
 ];
 
-const TYPE_COLOR = { strength:"#00A3FF", cardio:"#F59E0B", hiit:"#6366F1", rest:"#374151" };
+const TYPE_COLOR = { strength:"#00A3FF", cardio:"#F59E0B", hiit:"#6366F1", rest:"#374151", frozen:"#38BDF8" };
 
 const WORKOUTS = {
   empty: { name: "Recovery Flow",   type: "MOBILITY",  target: "Full Body, Hip Flexors, Hamstrings", mins: 15, cal: 80,  exercises: 5  },
@@ -816,19 +816,25 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
           const todayIdx = new Date().getDay()===0 ? 6 : new Date().getDay()-1;
           return (
             <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"18px 16px",marginBottom:14 }}>
-              <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18 }}>
+              <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4 }}>
                 <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#fff" }}>Weekly Progress</div>
                 <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:PRIMARY }}>{calDays.length}/7 days</div>
               </div>
-              <div style={{ display:"flex",gap:4,alignItems:"flex-end",height:MAX_BAR+34+"px" }}>
+              {week===0 && apiStats?.streakFreeze && (
+                <div style={{ fontFamily:FONT,fontSize:11,color:"#888888",marginBottom:14 }}>
+                  ❄ {apiStats.streakFreeze.available}/{apiStats.streakFreeze.cap} Streak Freezes left this month
+                </div>
+              )}
+              <div style={{ display:"flex",gap:4,alignItems:"flex-end",height:MAX_BAR+34+"px",marginTop:week===0&&apiStats?.streakFreeze?0:14 }}>
                 {w.days.map((d,i)=>{
+                  const isFrozen = d.type === 'frozen';
                   const hpx   = d.cal>0 ? Math.max(14, Math.round((d.cal/maxCal)*MAX_BAR)) : 0;
                   const color = d.cal>0 ? (TYPE_COLOR[d.type]||PRIMARY) : null;
                   const isToday = week===0 && i===todayIdx;
                   return (
                     <div key={i} style={{ flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-end",height:"100%",gap:4 }}>
                       <div style={{ fontFamily:FONT,fontSize:9,fontWeight:700,color:color||"transparent",minHeight:14,textAlign:"center",lineHeight:1 }}>
-                        {d.cal>0 ? d.cal : ""}
+                        {d.cal>0 ? d.cal : (isFrozen ? "❄" : "")}
                       </div>
                       {d.cal>0 ? (
                         <div style={{
@@ -839,6 +845,8 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
                           boxShadow:`0 0 8px ${color}55`,
                           transition:"height 0.5s ease",
                         }}/>
+                      ) : isFrozen ? (
+                        <div style={{ width:"100%",height:4,background:TYPE_COLOR.frozen,borderRadius:2,boxShadow:`0 0 6px ${TYPE_COLOR.frozen}55` }}/>
                       ) : (
                         <div style={{ width:"100%",height:4,background:"#1e1e1e",borderRadius:2 }}/>
                       )}
@@ -850,7 +858,7 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
                 })}
               </div>
               <div style={{ display:"flex",gap:14,marginTop:14,flexWrap:"wrap" }}>
-                {[["#00A3FF","Strength"],["#F59E0B","Cardio"],["#6366F1","HIIT"],["#22C55E","Mobility"]].map(([c,l])=>(
+                {[["#00A3FF","Strength"],["#F59E0B","Cardio"],["#6366F1","HIIT"],["#22C55E","Mobility"],[TYPE_COLOR.frozen,"Freeze"]].map(([c,l])=>(
                   <div key={l} style={{ display:"flex",alignItems:"center",gap:5 }}>
                     <div style={{ width:8,height:8,borderRadius:"50%",background:c }}/>
                     <span style={{ fontFamily:FONT,fontSize:10,color:"#666" }}>{l}</span>
@@ -4793,12 +4801,16 @@ function CalendarPage({ onBack }) {
   const [animKey, setAnimKey]         = useState(0);
   const [slideDir, setSlideDir]       = useState(0);
   const [calHistory, setCalHistory]   = useState([]);
+  const [frozenDates, setFrozenDates] = useState([]); // "YYYY-MM-DD" strings — days protected by a Streak Freeze
   const touchStartX = useRef(null);
   const MAX_PAST = 3; // can go back 3 months, not forward past current
 
   useEffect(()=>{
     apiCall('/workouts/history?limit=90')
-      .then(d=>{ if(d?.data?.logs) setCalHistory(d.data.logs); })
+      .then(d=>{
+        if(d?.data?.logs) setCalHistory(d.data.logs);
+        if(d?.data?.frozenDates) setFrozenDates(d.data.frozenDates);
+      })
       .catch(()=>{});
   }, []);
 
@@ -4840,6 +4852,17 @@ function CalendarPage({ onBack }) {
     if (!liveCalData[day]) liveCalData[day] = [];
     liveCalData[day].push({ name:h.name||"Workout", type:(h.type||"strength").toLowerCase(), duration:h.duration||0, cal:h.caloriesBurned||0 });
   });
+  // Days protected by a Streak Freeze this displayed month — "YYYY-MM-DD" strings
+  // compared by their own date parts (not re-parsed into a local Date) so there's
+  // no local/UTC day-shift risk.
+  const frozenDaySet = new Set(
+    frozenDates
+      .filter(ds => {
+        const [y, m] = ds.split('-').map(Number);
+        return y === displayDate.getFullYear() && (m - 1) === displayDate.getMonth();
+      })
+      .map(ds => Number(ds.split('-')[2]))
+  );
 
   const monthCal        = calHistory.filter(inMonth);
   const monthlyWorkouts = Object.keys(liveCalData).length;
@@ -4900,8 +4923,9 @@ function CalendarPage({ onBack }) {
             {cells.map((day,i)=>{
               if(!day) return <div key={i}/>;
               const dayWorkouts = liveCalData[day] || [];
+              const isFrozen = !dayWorkouts.length && frozenDaySet.has(day);
               const type  = dayWorkouts[0]?.type;
-              const color = type ? TYPE_COLOR[type] : null;
+              const color = type ? TYPE_COLOR[type] : (isFrozen ? TYPE_COLOR.frozen : null);
               const isSelected = selectedDay === day;
               return (
                 <div key={i} onClick={()=>setSelectedDay(day===selectedDay?null:day)}
@@ -4918,7 +4942,7 @@ function CalendarPage({ onBack }) {
         </div>{/* end swipe zone */}
         {/* Legend */}
         <div style={{ display:"flex",gap:16,marginBottom:18,flexWrap:"wrap" }}>
-          {[["#00A3FF","Strength"],["#F59E0B","Cardio"],["#6366F1","HIIT"],["#9CA3AF","Rest Day"]].map(([c,l])=>(
+          {[["#00A3FF","Strength"],["#F59E0B","Cardio"],["#6366F1","HIIT"],[TYPE_COLOR.frozen,"Streak Freeze"],["#9CA3AF","Rest Day"]].map(([c,l])=>(
             <div key={l} style={{ display:"flex",alignItems:"center",gap:6 }}>
               <div style={{ width:10,height:10,borderRadius:"50%",background:c }}/>
               <span style={{ fontFamily:FONT,fontSize:12,color:"#aaa" }}>{l}</span>
@@ -4954,6 +4978,11 @@ function CalendarPage({ onBack }) {
                   </div>
                 </div>
               ))
+            ) : frozenDaySet.has(selectedDay) ? (
+              <div style={{ background:CARD,borderRadius:20,border:`1px solid ${TYPE_COLOR.frozen}44`,padding:"32px 18px",textAlign:"center",marginBottom:12 }}>
+                <div style={{ fontFamily:FONT,fontSize:16,color:TYPE_COLOR.frozen,marginBottom:6 }}>❄ Streak Freeze Active</div>
+                <div style={{ fontFamily:FONT,fontSize:13,color:"#888" }}>No workout needed — this day is protected</div>
+              </div>
             ) : (
               <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"32px 18px",textAlign:"center",marginBottom:12 }}>
                 <div style={{ fontFamily:FONT,fontSize:16,color:"#555",marginBottom:6 }}>Rest Day</div>
@@ -7054,7 +7083,7 @@ function UpgradePlanPage({ onBack }) {
   // don't exist (challenges is marked "coming soon" elsewhere in the app,
   // there's no differentiated support queue, and the workout-builder "Save"
   // button never persisted anything).
-  const features = ["Unlimited workout videos & AI coaching","Full analytics, history & weekly AI report","Complete meal plans & grocery list","Monthly Streak Freeze","Regenerate your AI plan anytime"];
+  const features = ["Unlimited workout videos & AI coaching","Full analytics, history & weekly AI report","Complete meal plans & grocery list","3 Streak Freezes a month (vs. 1 free)","Regenerate your AI plan anytime"];
 
   const handleUpgrade = () => {
     // Plan already chosen on this page — skip PaymentSheet's own duplicate
@@ -7917,7 +7946,7 @@ function SupportPage({ onBack }) {
             {q:"How do I reset my password?", a:"Go to the Login screen and tap Forgot Password. Enter your email and we will send you a reset link."},
             {q:"How does the meal swap work?", a:"On the home page, tap Not feeling this? to swap your Meal of the Day. You can swap up to 2 times per day."},
             {q:"How do I log a workout?", a:"Tap the Workouts tab, select your session, and tap Start Workout. Complete your sets and tap the checkmark to finish."},
-            {q:"What is Streak Freeze?", a:"Streak Freeze protects your streak if you miss a day. Premium users get 1 freeze per month. Tap the snowflake icon in the top right of your home screen."},
+            {q:"What is Streak Freeze?", a:"Streak Freeze protects your streak if you miss a day. Free users get 1 freeze per month, Premium users get 3. Tap the snowflake icon in the top right of your home screen."},
             {q:"How do I upgrade to Premium?", a:"Go to Profile > Account Settings > Upgrade Plan to view plans and start your 1-month free trial."},
             {q:"Can I change my workout preferences?", a:"Yes — go to Profile > Fitness Preferences to update your goals, experience level, equipment and days per week."},
             {q:"How do I cancel my subscription?", a:"Go to Profile > Account Settings > Cancel Subscription. You will keep access until the end of your billing period."},
@@ -10127,14 +10156,17 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
   const [showProfile, setShowProfile] = useState(false);
   const hasUnread = notifCount > 0;
   const [workoutDone,      setWorkoutDone]      = useState(false);
-  const [freezeUsed,  setFreezeUsed]  = useState(()=>{
-    try {
-      const saved = JSON.parse(localStorage.getItem("vtrx_freeze")||"{}");
-      return saved.date === new Date().toLocaleDateString('en-CA') ? saved.used : false;
-    } catch(_e){ return false; }
-  });
+  const [freezeStatus, setFreezeStatus] = useState(null); // { available, cap, refillsOn, frozenToday, frozenDates }
   const [showFreezeSheet, setShowFreezeSheet] = useState(false);
+  const [freezeActivating, setFreezeActivating] = useState(false);
+  const [freezeError, setFreezeError] = useState(null);
   const [exPreviewThumbs, setExPreviewThumbs] = useState({}); // name → thumbnailUrl, resolved live for exercises with none cached yet
+
+  useEffect(()=>{
+    apiCall('/workouts/streak-freeze')
+      .then(d=>{ if (d?.data?.streakFreeze) setFreezeStatus(d.data.streakFreeze); })
+      .catch(()=>{});
+  }, []);
 
   // Check for newly earned achievements (notification badging handled by notifCount from API)
   useEffect(()=>{
@@ -10150,12 +10182,19 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
       // Could surface achievement unlocks here in future
     } catch(_e){}
   }, [streakDay]);
-  const freezesAvailable = isPremium ? (freezeUsed ? 0 : 1) : 0;
 
-  const activateFreeze = () => {
-    setFreezeUsed(true);
-    try { localStorage.setItem("vtrx_freeze", JSON.stringify({ used:true, date:new Date().toLocaleDateString('en-CA') })); } catch(_e){}
-    setShowFreezeSheet(false);
+  const activateFreeze = async () => {
+    setFreezeActivating(true);
+    setFreezeError(null);
+    try {
+      const res = await apiCall('/workouts/streak-freeze/activate', { method:'POST' });
+      if (res?.data?.streakFreeze) setFreezeStatus(res.data.streakFreeze);
+      setShowFreezeSheet(false);
+    } catch (e) {
+      setFreezeError(e?.message || "Couldn't activate Streak Freeze. Try again.");
+    } finally {
+      setFreezeActivating(false);
+    }
   };
 
   const daysPerWeek = (userProfile && userProfile.daysPerWeek) || 5;
@@ -10236,8 +10275,8 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
             </svg>
             {hasUnread&&<div style={{ position:"absolute",top:4,right:4,width:8,height:8,borderRadius:"50%",background:"#fff",border:`1.5px solid ${PRIMARY}` }}/>}
           </button>
-          <button onClick={()=>setShowFreezeSheet(p=>!p)} style={{ width:38,height:38,borderRadius:"50%",background:freezeUsed?"#0a1f0a":showFreezeSheet?PRIMARY+"22":CARD,border:"1px solid "+(freezeUsed?"#22C55E55":showFreezeSheet?PRIMARY:BORDER),display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.25s" }}>
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={freezeUsed?"#22C55E":showFreezeSheet?PRIMARY:"#888"} strokeWidth="1.8">
+          <button onClick={()=>setShowFreezeSheet(p=>!p)} style={{ width:38,height:38,borderRadius:"50%",background:freezeStatus?.frozenToday?"#0a1f0a":showFreezeSheet?PRIMARY+"22":CARD,border:"1px solid "+(freezeStatus?.frozenToday?"#22C55E55":showFreezeSheet?PRIMARY:BORDER),display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.25s" }}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={freezeStatus?.frozenToday?"#22C55E":showFreezeSheet?PRIMARY:"#888"} strokeWidth="1.8">
               <line x1="12" y1="2" x2="12" y2="22"/>
               <path d="M17 7l-5-5-5 5"/>
               <path d="M17 17l-5 5-5-5"/>
@@ -10462,14 +10501,40 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
                   <line x1="2" y1="12" x2="22" y2="12"/><path d="M7 7l-5 5 5 5"/><path d="M17 7l5 5-5 5"/>
                 </svg>
               </div>
-              <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff",marginBottom:8 }}>Activate Streak Freeze?</div>
-              <div style={{ fontFamily:FONT,fontSize:13.5,color:"#888",lineHeight:1.65 }}>Your streak will be protected today even if you miss your workout. You have <span style={{color:PRIMARY,fontWeight:700}}>1 freeze</span> available this week.</div>
+              {freezeStatus?.frozenToday ? (
+                <>
+                  <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff",marginBottom:8 }}>Streak Freeze Active</div>
+                  <div style={{ fontFamily:FONT,fontSize:13.5,color:"#888",lineHeight:1.65 }}>Today is already protected — your streak is safe even if you don't train today.</div>
+                </>
+              ) : (freezeStatus?.available ?? 0) > 0 ? (
+                <>
+                  <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff",marginBottom:8 }}>Activate Streak Freeze?</div>
+                  <div style={{ fontFamily:FONT,fontSize:13.5,color:"#888",lineHeight:1.65 }}>Your streak will be protected today even if you miss your workout. You have <span style={{color:PRIMARY,fontWeight:700}}>{freezeStatus.available} of {freezeStatus.cap}</span> freezes left this month.</div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff",marginBottom:8 }}>No Freezes Left</div>
+                  <div style={{ fontFamily:FONT,fontSize:13.5,color:"#888",lineHeight:1.65 }}>
+                    You've used all {freezeStatus?.cap ?? 1} of your Streak Freezes this month.
+                    {freezeStatus?.refillsOn ? ` More on ${new Date(freezeStatus.refillsOn).toLocaleDateString('en-US',{month:'short',day:'numeric'})}.` : ''}
+                    {!isPremium ? ' Premium gets 3 a month instead of 1.' : ''}
+                  </div>
+                </>
+              )}
+              {freezeError && <div style={{ fontFamily:FONT,fontSize:12,color:"#EF4444",marginTop:10 }}>{freezeError}</div>}
             </div>
-            <button onClick={activateFreeze} style={{ width:"100%",padding:"16px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1.5,cursor:"pointer",marginBottom:10,boxShadow:`0 4px 24px ${PRIMARY}55` }}>
-              ACTIVATE FREEZE
-            </button>
+            {!freezeStatus?.frozenToday && (freezeStatus?.available ?? 0) > 0 && (
+              <button onClick={activateFreeze} disabled={freezeActivating} style={{ width:"100%",padding:"16px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1.5,cursor:freezeActivating?"default":"pointer",marginBottom:10,boxShadow:`0 4px 24px ${PRIMARY}55`,opacity:freezeActivating?0.7:1 }}>
+                {freezeActivating ? "ACTIVATING…" : "ACTIVATE FREEZE"}
+              </button>
+            )}
+            {!freezeStatus?.frozenToday && (freezeStatus?.available ?? 0) <= 0 && !isPremium && (
+              <button onClick={()=>{ setShowFreezeSheet(false); onNavigate("upgrade"); }} style={{ width:"100%",padding:"16px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1.5,cursor:"pointer",marginBottom:10,boxShadow:`0 4px 24px ${PRIMARY}55` }}>
+                UPGRADE FOR MORE FREEZES
+              </button>
+            )}
             <button onClick={()=>setShowFreezeSheet(false)} style={{ width:"100%",padding:"13px 0",borderRadius:50,background:"transparent",border:`1px solid ${BORDER}`,fontFamily:FONT,fontWeight:600,fontSize:13,color:"#888",cursor:"pointer" }}>
-              Cancel
+              {freezeStatus?.frozenToday || (freezeStatus?.available ?? 0) <= 0 ? "Close" : "Cancel"}
             </button>
           </div>
         </>

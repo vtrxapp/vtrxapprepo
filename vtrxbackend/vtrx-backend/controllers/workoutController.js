@@ -8,6 +8,7 @@ const ymove     = require('../services/ymoveService');
 const logger    = require('../utils/logger');
 const notif     = require('../services/notificationService');
 const pine      = require('../services/pineconeService');
+const streakFreeze = require('../services/streakFreezeService');
 const { generateSession, SCHEDULES, SESSIONS } = require('../data/planGenerator');
 
 // ── GET /api/workouts — Get available workout programmes ──────────────────────
@@ -269,7 +270,11 @@ const getWorkoutHistory = async (req, res) => {
   const { offset = 0, type } = req.query;
 
   try {
-    const [logs, total] = await Promise.all([
+    const now = new Date();
+    // Covers the Calendar page's full browsable range (current month + 3 back)
+    const freezeLookback = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 3, 1));
+
+    const [logs, total, freezes] = await Promise.all([
       prisma.workoutLog.findMany({
         where: {
           userId: req.user.id,
@@ -284,11 +289,16 @@ const getWorkoutHistory = async (req, res) => {
         skip:    parseInt(offset),
       }),
       prisma.workoutLog.count({ where: { userId: req.user.id } }),
+      prisma.streakFreeze.findMany({
+        where:  { userId: req.user.id, date: { gte: freezeLookback } },
+        select: { date: true },
+      }),
     ]);
+    const frozenDates = freezes.map(f => f.date.toISOString().slice(0, 10));
 
     res.json({
       success: true,
-      data:    { logs, total, hasMore: parseInt(offset) + limit < total },
+      data:    { logs, total, hasMore: parseInt(offset) + limit < total, frozenDates },
     });
   } catch (error) {
     logger.error('getWorkoutHistory error:', error);
@@ -337,9 +347,10 @@ const updateStreak = async (userId) => {
     select: { lastActiveAt: true, streakDays: true },
   });
 
-  const now       = new Date();
+  const now        = new Date();
   const lastActive = user.lastActiveAt;
-  let newStreak   = user.streakDays || 0;
+  let newStreak    = user.streakDays || 0;
+  let isBroken     = false;
 
   if (lastActive) {
     const hoursSinceLastActive = (now - lastActive) / (1000 * 60 * 60);
@@ -348,16 +359,20 @@ const updateStreak = async (userId) => {
       // Within 48 hours — extend streak
       const daysSinceLastActive = Math.floor(hoursSinceLastActive / 24);
       if (daysSinceLastActive >= 1) newStreak += 1;
+    } else if (await streakFreeze.wasGapFrozen(userId, lastActive, now)) {
+      // Every day actually missed was covered by an activated Streak Freeze —
+      // bridge the gap instead of resetting, same as a normal extension.
+      newStreak += 1;
     } else {
-      // More than 48 hours — streak broken
+      // More than 48 hours, gap not (fully) frozen — streak broken
       newStreak = 1;
+      isBroken  = true;
     }
   } else {
     newStreak = 1;
   }
 
   const wasStreak = user.streakDays > 0;
-  const isBroken  = lastActive && (now - lastActive) / (1000 * 60 * 60) >= 48;
 
   await prisma.user.update({
     where: { id: userId },
@@ -461,7 +476,7 @@ const getWeeklyStats = async (req, res) => {
   const weekStart  = new Date(now); weekStart.setDate(now.getDate() - dayOfWeek); weekStart.setHours(0,0,0,0);
 
   try {
-    const [weekLogs, monthLogs, totalCount, userRow] = await Promise.all([
+    const [weekLogs, monthLogs, totalCount, userRow, weekFreezes, freezeStatus] = await Promise.all([
       prisma.workoutLog.findMany({
         where: { userId: req.user.id, completedAt: { gte: weekStart } },
         select: { duration: true, caloriesBurned: true, type: true, completedAt: true, name: true },
@@ -473,12 +488,23 @@ const getWeeklyStats = async (req, res) => {
       }),
       prisma.workoutLog.count({ where: { userId: req.user.id } }),
       prisma.user.findUnique({ where: { id: req.user.id }, select: { streakDays: true, daysPerWeek: true } }),
+      prisma.streakFreeze.findMany({
+        where:  { userId: req.user.id, date: { gte: streakFreeze.toDateOnly(weekStart) } },
+        select: { date: true },
+      }),
+      streakFreeze.getFreezeStatus(req.user.id),
     ]);
 
     const DAY_NAMES = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    const frozenTimes = new Set(weekFreezes.map(f => f.date.getTime()));
 
-    // Build daily breakdown for current week (Mon–Sun)
-    const dailyBreakdown = DAY_NAMES.map(day => ({ day, cal: 0, type: 'rest' }));
+    // Build daily breakdown for current week (Mon–Sun) — a day with no workout
+    // but an activated Streak Freeze is marked 'frozen' rather than plain 'rest'
+    const dailyBreakdown = DAY_NAMES.map((day, idx) => {
+      const d = new Date(weekStart); d.setDate(weekStart.getDate() + idx);
+      const isFrozen = frozenTimes.has(streakFreeze.toDateOnly(d).getTime());
+      return { day, cal: 0, type: isFrozen ? 'frozen' : 'rest' };
+    });
     for (const log of weekLogs) {
       const d   = new Date(log.completedAt);
       const idx = d.getDay() === 0 ? 6 : d.getDay() - 1; // Mon=0
@@ -514,12 +540,38 @@ const getWeeklyStats = async (req, res) => {
       currentStreak:   userRow?.streakDays    || 0,
       daysPerWeek:     userRow?.daysPerWeek   || 3,
       totalWorkouts:   totalCount,
+      streakFreeze:    freezeStatus,
     };
 
     res.json({ success: true, data: { stats } });
   } catch (error) {
     logger.error('getWeeklyStats error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch stats' });
+  }
+};
+
+// ── GET /api/workouts/streak-freeze — Current balance + this month's frozen dates
+const getStreakFreezeStatus = async (req, res) => {
+  try {
+    const status = await streakFreeze.getFreezeStatus(req.user.id);
+    res.json({ success: true, data: { streakFreeze: status } });
+  } catch (error) {
+    logger.error('getStreakFreezeStatus error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch Streak Freeze status' });
+  }
+};
+
+// ── POST /api/workouts/streak-freeze/activate — Spend one freeze on today ────
+const activateStreakFreeze = async (req, res) => {
+  try {
+    const status = await streakFreeze.activateFreeze(req.user.id);
+    res.json({ success: true, data: { streakFreeze: status } });
+  } catch (error) {
+    if (error.code === 'ALREADY_ACTIVE' || error.code === 'NONE_AVAILABLE') {
+      return res.status(400).json({ success: false, message: error.message, code: error.code });
+    }
+    logger.error('activateStreakFreeze error:', error);
+    res.status(500).json({ success: false, message: 'Failed to activate Streak Freeze' });
   }
 };
 
@@ -2088,6 +2140,8 @@ module.exports = {
   getWorkoutHistory,
   getAISummary,
   getWeeklyStats,
+  getStreakFreezeStatus,
+  activateStreakFreeze,
   getRecommendation,
   saveVideoProgress,
   getVideoProgress,

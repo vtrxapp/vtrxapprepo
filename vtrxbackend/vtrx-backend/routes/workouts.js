@@ -31,6 +31,8 @@ router.get('/ymove/debug/:id',         workout.debugYmoveExercise);     // GET /
 router.post('/ymove/sync-exercises',   workout.syncYmoveExercises);     // POST /workouts/ymove/sync-exercises
 router.get('/history',                 workout.getWorkoutHistory);
 router.get('/stats',                   workout.getWeeklyStats);
+router.get('/streak-freeze',           workout.getStreakFreezeStatus);
+router.post('/streak-freeze/activate', workout.activateStreakFreeze);
 router.get('/video-progress',          workout.getVideoProgress);
 router.get('/ai-summary/:logId',       workout.getAISummary);
 router.get('/exercise-video',          workout.getExerciseVideoUrl);    // GET /workouts/exercise-video?name=Squats (name-based fallback)
