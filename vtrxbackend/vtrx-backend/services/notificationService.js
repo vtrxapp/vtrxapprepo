@@ -57,17 +57,36 @@ const initFirebase = () => {
 initFirebase();
 
 // ── Register Device Token ─────────────────────────────────────────────────────
-// Called when a user opens the app and grants notification permission
+// Called when a user opens the app and grants notification permission — the
+// frontend calls this on every dashboard mount when permission is already
+// granted, not just once, so concurrent calls for the same user+platform are
+// routine, not a rare edge case.
+//
+// "Deactivate other tokens, then upsert this one" used to be two separate,
+// non-transactional writes: two concurrent calls carrying two different
+// (both legitimate) token values could each find no conflicting row yet and
+// both end up active, leaving the user with 2 live tokens for the same
+// platform — sendToUser fans out to every active token, so every push after
+// that was silently delivered twice. An advisory lock (rather than a DB
+// unique constraint on [userId, platform]) closes this without a schema
+// migration, which would fail deploy on any account already carrying
+// duplicate rows from this bug.
 const registerToken = async ({ userId, token, platform }) => {
-  // Deactivate any stale tokens for this user+platform so they only receive one notification per push
-  await prisma.deviceToken.updateMany({
-    where: { userId, platform, active: true, NOT: { token } },
-    data:  { active: false },
-  }).catch(() => {});
-  await prisma.deviceToken.upsert({
-    where:  { token },
-    create: { userId, token, platform, active: true },
-    update: { userId, active: true, updatedAt: new Date() },
+  await prisma.$transaction(async (tx) => {
+    // Serialises concurrent registrations for the same user+platform so they
+    // can never interleave — held for the transaction's lifetime, released
+    // automatically on commit/rollback.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${userId} || ':' || ${platform})::bigint)`;
+
+    await tx.deviceToken.updateMany({
+      where: { userId, platform, active: true, NOT: { token } },
+      data:  { active: false },
+    });
+    await tx.deviceToken.upsert({
+      where:  { token },
+      create: { userId, token, platform, active: true },
+      update: { userId, active: true, updatedAt: new Date() },
+    });
   });
   logger.info(`Device token registered for user ${userId} (${platform})`);
 };
