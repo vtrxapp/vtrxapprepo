@@ -256,6 +256,17 @@ const getOnboardingAnalysis = async (req, res) => {
   }
 };
 
+// Policy: exactly ONE free AI analysis generation per new user (workout +
+// nutrition summary together count as one generation event) — generate once,
+// cache forever, never re-bill Claude on repeat app opens. isStale below only
+// re-triggers for a genuine quality defect (missing data, stray markdown, a
+// repeated name), never just because the user reopened a screen.
+// This in-process lock stops a second concurrent request (e.g. the user opens
+// both the Nutrition tab and VTRX Analysis within the same few seconds, before
+// the first generation finishes and onboardingAnalysisReady flips true) from
+// kicking off a duplicate Claude generation for the same user.
+const onboardingGenerationInFlight = new Set();
+
 // ── POST /api/ai/onboarding-analysis ─────────────────────────────────────────
 const generateOnboardingAnalysis = async (req, res) => {
   try {
@@ -293,6 +304,11 @@ const generateOnboardingAnalysis = async (req, res) => {
     if (user.onboardingAnalysisReady && !isStale) {
       return res.json({ success: true, data: { cached: true } });
     }
+
+    if (onboardingGenerationInFlight.has(req.user.id)) {
+      return res.json({ success: true, data: { generating: true } });
+    }
+    onboardingGenerationInFlight.add(req.user.id);
 
     // Schedule the notification for 5 min from now (persisted before generation)
     await prisma.user.update({
@@ -392,10 +408,17 @@ Be practical. Use real foods, not abstractions. Plain prose only — no markdown
         logger.info(`Onboarding analysis generated for user ${req.user.id}`);
       } catch (genErr) {
         logger.error('Onboarding analysis generation error:', genErr.message);
+      } finally {
+        onboardingGenerationInFlight.delete(req.user.id);
       }
     });
 
   } catch (err) {
+    // Defensive: release the lock if it was taken but we threw before
+    // setImmediate's own finally could ever run (e.g. the onboardingNotifyAt
+    // update below it failed) — otherwise this user could never generate
+    // their free summary again.
+    if (req.user?.id) onboardingGenerationInFlight.delete(req.user.id);
     logger.error('generateOnboardingAnalysis error:', err);
     if (!res.headersSent) res.status(500).json({ success: false, message: 'Failed' });
   }
