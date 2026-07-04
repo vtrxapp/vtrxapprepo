@@ -684,12 +684,14 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
   const [dir, setDir]       = useState(0); // -1 left, 1 right for animation
   const [animKey, setAnimKey] = useState(0);
   const [apiStats, setApiStats] = useState(null);
+  const [statsLoading, setStatsLoading] = useState(true);
   const touchStartX = useRef(null);
 
   useEffect(()=>{
     apiCall('/workouts/stats')
       .then(d=>{ if(d?.data?.stats) setApiStats(d.data.stats); })
-      .catch(()=>{});
+      .catch(()=>{})
+      .finally(()=>setStatsLoading(false));
   }, []);
 
   // Build weeks array: current week from API, older weeks from static data
@@ -719,9 +721,11 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
     });
     return merged;
   };
-  const liveWeek = (apiStats?.dailyBreakdown || loggedWorkouts.length > 0)
-    ? { label: getWeekLabel(), days: buildLiveDays(), bestDays: [], improvement: "Live" }
-    : WEEKS_DATA[0];
+  // Always built from real data (backend dailyBreakdown, falling back to an honest
+  // all-zero week) — never the static WEEKS_DATA[0] placeholder, which showed fake
+  // non-zero calories that got replaced by the real (usually much lower) numbers as
+  // soon as /workouts/stats resolved, reading as bars appearing then disappearing.
+  const liveWeek  = { label: getWeekLabel(), days: buildLiveDays(), bestDays: [], improvement: "Live" };
   const allWeeks  = [liveWeek, ...WEEKS_DATA.slice(1)];
   const MAX_WEEK  = allWeeks.length - 1;
 
@@ -801,6 +805,11 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
       <div key={animKey} ref={statsScrollRef} style={{ flex:1,overflowY:"auto",padding:"0 16px 40px",...slideAnim }}
         onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
 
+        {week===0 && statsLoading ? (
+          <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"48px 16px",textAlign:"center" }}>
+            <div style={{ fontFamily:FONT,fontSize:13,color:"#888888" }}>Loading your week…</div>
+          </div>
+        ) : (<>
         {/* Bar chart */}
         {(()=>{
           const MAX_BAR = 110;
@@ -881,6 +890,7 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
             </div>
           ))}
         </div>
+        </>)}
       </div>
     </div>
   );
