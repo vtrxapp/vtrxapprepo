@@ -4763,7 +4763,7 @@ function VideoThumbSmall({ img }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // PAGE 1: CALENDAR VIEW
 // ─────────────────────────────────────────────────────────────────────────────
-function CalendarPage({ onBack, loggedWorkouts=[] }) {
+function CalendarPage({ onBack }) {
   const { dark } = useTheme();
   const calScrollRef = useScrollPos("calendar");
   const T = dark ? DARK : LIGHT;
@@ -4810,19 +4810,14 @@ function CalendarPage({ onBack, loggedWorkouts=[] }) {
 
   // Build per-day arrays of workouts for the displayed month
   const inMonth = h => { const d=new Date(h.completedAt||h.date); return d.getMonth()===displayDate.getMonth()&&d.getFullYear()===displayDate.getFullYear(); };
+  // Sourced solely from the backend (re-fetched on every mount above) — this already
+  // reflects any workout just logged this session, so it must not also be merged in from
+  // the session-local `loggedWorkouts` cache or every workout would render twice.
   const liveCalData = {};
   calHistory.filter(inMonth).forEach(h => {
     const day = new Date(h.completedAt || h.date).getDate();
     if (!liveCalData[day]) liveCalData[day] = [];
     liveCalData[day].push({ name:h.name||"Workout", type:(h.type||"strength").toLowerCase(), duration:h.duration||0, cal:h.caloriesBurned||0 });
-  });
-  loggedWorkouts.forEach(lw => {
-    const d = new Date(lw.date);
-    if (d.getMonth()===displayDate.getMonth()&&d.getFullYear()===displayDate.getFullYear()) {
-      const day = d.getDate();
-      if (!liveCalData[day]) liveCalData[day] = [];
-      liveCalData[day].push({ name:lw.name||"Workout", type:lw.type||"strength", duration:lw.duration||0, cal:lw.cal||0 });
-    }
   });
 
   const monthCal        = calHistory.filter(inMonth);
@@ -5474,7 +5469,7 @@ function CustomizePage({ onBack }) {
 }
 
 
-function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[], weekPlanSessions=[], onSwapSessionOrder=null }){
+function WeightsHub({ onLogout=null, onNavigate=null, weekPlanSessions=[], onSwapSessionOrder=null }){
   const { dark } = useTheme();
   const T = dark ? DARK : LIGHT;
   const { user: wUser } = useUser();
@@ -6036,7 +6031,7 @@ function WeightsHub({ onLogout=null, onNavigate=null, loggedWorkouts=[], weekPla
 
       </div>
       {/* Sub-page overlays — WeightsHub stays mounted preserving scroll + state */}
-      {subPage === "calendar"  && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><CalendarPage        onBack={goBack} loggedWorkouts={loggedWorkouts}/></div>}
+      {subPage === "calendar"  && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><CalendarPage        onBack={goBack}/></div>}
       {subPage === "history"   && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><WorkoutHistoryPage  onBack={goBack} onUpgrade={()=>setSubPage('upgrade_from_history')}/></div>}
       {subPage === "records"   && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><PersonalRecordsPage onBack={goBack}/></div>}
       {subPage === "customize" && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><CustomizePage       onBack={goBack}/></div>}
@@ -11207,10 +11202,24 @@ function VTRXAppInner({ setPaymentPlan }) {
                 exercises:            exPayload,
               }),
             });
-            if (logRes?.data?.workoutLog?.id) setLastWorkoutLogId(logRes.data.workoutLog.id);
-            const today     = new Date();
-            const calBurned = Math.round((activeW.calories||activeW.cal||300)*(pct/100));
-            setLoggedWorkouts(prev => [...prev, { date:today, type:wType, cal:calBurned, duration:mins, name:activeW.name }]);
+            if (logRes?.data?.workoutLog?.id) {
+              setLastWorkoutLogId(logRes.data.workoutLog.id);
+              const today     = new Date();
+              const calBurned = Math.round((activeW.calories||activeW.cal||300)*(pct/100));
+              setLoggedWorkouts(prev => [...prev, { date:today, type:wType, cal:calBurned, duration:mins, name:activeW.name }]);
+              // Re-sync streak/weekly stats from the backend so an early-stopped-but-logged
+              // workout doesn't leave the Dashboard showing stale numbers until next reload.
+              const me = await apiCall("/users/profile");
+              if (me?.data?.user?.streakDays) setStreakDay(me.data.user.streakDays);
+              if (me?.data?.user?._count?.workoutLogs) setWorkoutsTotal(me.data.user._count.workoutLogs);
+              const sr = await apiCall("/workouts/stats");
+              if (sr?.data?.stats) {
+                const s = sr.data.stats;
+                if (s.workoutsCompleted !== undefined) setWeeklyWorkoutDays(s.workoutsCompleted);
+                if (s.avgCalories) setWeeklyAvgCal(s.avgCalories);
+                if (s.avgMinutes)  setWeeklyAvgMin(s.avgMinutes);
+              }
+            }
           } catch(_e){}
         }
         setInnerPage(null);
@@ -11230,50 +11239,28 @@ function VTRXAppInner({ setPaymentPlan }) {
 
         if (shouldLog) {
           track("workout_completed", { name: activeW?.name, type: wType, durationMins: mins, caloriesBurned: actCal, exercisesLogged: snapExNames.length, energyLevel: energyKey });
-          setWorkoutDone(true);
-          if (activeW?.fromPlan && activePlan) {
-            const _week = activePlan.plan.weeks?.[activePlan.weekNumber - 1];
-            const _trainingSessions = (_week?.sessions||[]).filter(s=>!s.isRestDay);
-            const _nextIdx = (activeW.planSessionIdx ?? planSessionIdx) + 1;
-            if (_nextIdx >= _trainingSessions.length) {
-              const _newWeek = Math.min(activePlan.weekNumber + 1, 4);
-              apiCall('/workouts/active-plan/advance-week', { method:'PATCH' }).catch(()=>{});
-              setActivePlan(prev => prev ? {...prev, weekNumber: _newWeek} : prev);
-              setPlanSessionIdx(0);
-              if (activePlan.planId) localStorage.setItem(`vtrx_plan_sess_${activePlan.planId}`, '0');
-            } else {
-              setPlanSessionIdx(_nextIdx);
-              if (activePlan.planId) localStorage.setItem(`vtrx_plan_sess_${activePlan.planId}`, String(_nextIdx));
-            }
-          }
-          setStreakDay(s=>s+1);
-          setWorkoutsTotal(t=>t+1);
-          setWeeklyWorkoutDays(d=>d+1);
-          setWeeklyAvgCal(prev=>{
-            const prevTotal = prev !== null ? prev * weeklyWorkoutDays : 0;
-            return Math.round((prevTotal + actCal) / (weeklyWorkoutDays + 1));
-          });
-          setWeeklyAvgMin(prev=>{
-            const prevTotal = prev !== null ? prev * weeklyWorkoutDays : 0;
-            return Math.round((prevTotal + mins) / (weeklyWorkoutDays + 1));
-          });
-          try {
-            let exPayload = Object.entries(snapExSets).map(([name, doneSets]) => ({
-              name,
-              sets: doneSets.map((s, idx) => ({
-                setNumber: idx + 1,
-                reps:   s.reps   ? parseInt(s.reps)    : undefined,
-                weight: s.weight ? parseFloat(s.weight) : undefined,
-              })),
+
+          let exPayload = Object.entries(snapExSets).map(([name, doneSets]) => ({
+            name,
+            sets: doneSets.map((s, idx) => ({
+              setNumber: idx + 1,
+              reps:   s.reps   ? parseInt(s.reps)    : undefined,
+              weight: s.weight ? parseFloat(s.weight) : undefined,
+            })),
+          }));
+          if (!exPayload.length) {
+            exPayload = (activeW.exercises || []).map(e => ({
+              exerciseId: e.id || undefined,
+              name:       e.name,
+              sets:       [{ setNumber:1, reps: e.reps || e.detail || '8' }],
             }));
-            if (!exPayload.length) {
-              exPayload = (activeW.exercises || []).map(e => ({
-                exerciseId: e.id || undefined,
-                name:       e.name,
-                sets:       [{ setNumber:1, reps: e.reps || e.detail || '8' }],
-              }));
-            }
-            const completeRes = await apiCall("/workouts/log", {
+          }
+
+          // Save FIRST — streak, plan advancement, and the "Workout Complete!" screen
+          // must only ever reflect a workout that's actually persisted, never optimistically.
+          let completeRes = null;
+          try {
+            completeRes = await apiCall("/workouts/log", {
               method: "POST",
               body: JSON.stringify({
                 workoutId:            activeW.workoutId || undefined,
@@ -11286,31 +11273,65 @@ function VTRXAppInner({ setPaymentPlan }) {
                 exercises:            exPayload,
               }),
             });
-            if (completeRes?.data?.workoutLog?.id) setLastWorkoutLogId(completeRes.data.workoutLog.id);
-            const me = await apiCall("/users/profile");
-            if (me?.data?.user?.streakDays) setStreakDay(me.data.user.streakDays);
-            if (me?.data?.user?._count?.workoutLogs) setWorkoutsTotal(me.data.user._count.workoutLogs);
-            const sr = await apiCall("/workouts/stats");
-            if (sr?.data?.stats) {
-              const s = sr.data.stats;
-              if (s.workoutsCompleted !== undefined) setWeeklyWorkoutDays(s.workoutsCompleted);
-              if (s.avgCalories) setWeeklyAvgCal(s.avgCalories);
-              if (s.avgMinutes)  setWeeklyAvgMin(s.avgMinutes);
+          } catch (_e) { completeRes = null; }
+
+          if (completeRes?.data?.workoutLog?.id) {
+            setLastWorkoutLogId(completeRes.data.workoutLog.id);
+            setWorkoutDone(true);
+            if (activeW?.fromPlan && activePlan) {
+              const _week = activePlan.plan.weeks?.[activePlan.weekNumber - 1];
+              const _trainingSessions = (_week?.sessions||[]).filter(s=>!s.isRestDay);
+              const _nextIdx = (activeW.planSessionIdx ?? planSessionIdx) + 1;
+              if (_nextIdx >= _trainingSessions.length) {
+                const _newWeek = Math.min(activePlan.weekNumber + 1, 4);
+                apiCall('/workouts/active-plan/advance-week', { method:'PATCH' }).catch(()=>{});
+                setActivePlan(prev => prev ? {...prev, weekNumber: _newWeek} : prev);
+                setPlanSessionIdx(0);
+                if (activePlan.planId) localStorage.setItem(`vtrx_plan_sess_${activePlan.planId}`, '0');
+              } else {
+                setPlanSessionIdx(_nextIdx);
+                if (activePlan.planId) localStorage.setItem(`vtrx_plan_sess_${activePlan.planId}`, String(_nextIdx));
+              }
             }
-          } catch(_e){}
-          const today   = new Date();
-          const dateStr = today.toLocaleDateString("en-GB", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
-          const timeStr = today.toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit" });
-          setLoggedWorkouts(prev => [...prev, { date:today, type:wType, cal:actCal, duration:mins, name:activeW.name }]);
-          setLastWorkoutStats({
-            calories:  actCal,
-            duration:  mins,
-            exercises: Array.isArray(activeW.exercises) ? activeW.exercises.length : (activeW.exercises || 3),
-            name:      activeW.name || "Workout",
-            date:      dateStr,
-            time:      timeStr,
-          });
-          setShowComplete(true);
+            setStreakDay(s=>s+1);
+            setWorkoutsTotal(t=>t+1);
+            setWeeklyWorkoutDays(d=>d+1);
+            setWeeklyAvgCal(prev=>{
+              const prevTotal = prev !== null ? prev * weeklyWorkoutDays : 0;
+              return Math.round((prevTotal + actCal) / (weeklyWorkoutDays + 1));
+            });
+            setWeeklyAvgMin(prev=>{
+              const prevTotal = prev !== null ? prev * weeklyWorkoutDays : 0;
+              return Math.round((prevTotal + mins) / (weeklyWorkoutDays + 1));
+            });
+            try {
+              const me = await apiCall("/users/profile");
+              if (me?.data?.user?.streakDays) setStreakDay(me.data.user.streakDays);
+              if (me?.data?.user?._count?.workoutLogs) setWorkoutsTotal(me.data.user._count.workoutLogs);
+              const sr = await apiCall("/workouts/stats");
+              if (sr?.data?.stats) {
+                const s = sr.data.stats;
+                if (s.workoutsCompleted !== undefined) setWeeklyWorkoutDays(s.workoutsCompleted);
+                if (s.avgCalories) setWeeklyAvgCal(s.avgCalories);
+                if (s.avgMinutes)  setWeeklyAvgMin(s.avgMinutes);
+              }
+            } catch(_e){}
+            const today   = new Date();
+            const dateStr = today.toLocaleDateString("en-GB", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
+            const timeStr = today.toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit" });
+            setLoggedWorkouts(prev => [...prev, { date:today, type:wType, cal:actCal, duration:mins, name:activeW.name }]);
+            setLastWorkoutStats({
+              calories:  actCal,
+              duration:  mins,
+              exercises: Array.isArray(activeW.exercises) ? activeW.exercises.length : (activeW.exercises || 3),
+              name:      activeW.name || "Workout",
+              date:      dateStr,
+              time:      timeStr,
+            });
+            setShowComplete(true);
+          } else {
+            alert("Couldn't save your workout — check your connection and try again.");
+          }
         }
 
         setWorkoutStarted(false);
@@ -11383,7 +11404,7 @@ function VTRXAppInner({ setPaymentPlan }) {
           <NutritionHub onBack={()=>setActiveTab(0)} energyKey={energyKey} onLogout={handleLogout}/>
         )}
         {activeTab===2&&!innerPage&&(
-          <WeightsHub onLogout={handleLogout} onNavigate={navigate} loggedWorkouts={loggedWorkouts}
+          <WeightsHub onLogout={handleLogout} onNavigate={navigate}
             weekPlanSessions={weekPlanSessions} onSwapSessionOrder={swapSessionOrder}/>
         )}
       </div>
