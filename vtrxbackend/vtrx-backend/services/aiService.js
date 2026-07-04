@@ -1,4 +1,4 @@
-const OpenAI  = require('openai');
+const { getAnthropicClient } = require('./anthropicClient');
 const logger  = require('../utils/logger');
 
 const parseJSON = (raw, context) => {
@@ -10,44 +10,29 @@ const parseJSON = (raw, context) => {
   }
 };
 
-let openai = null;
-const getClient = () => {
-  if (!openai) {
-    if (!process.env.OPENAI_API_KEY) {
-      logger.warn('OPENAI_API_KEY not set — AI features disabled');
-      return null;
-    }
-    openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  }
-  return openai;
-};
-
 const SYSTEM_PROMPT = `You are VTRX Coach, an elite AI fitness and nutrition coach built into the VTRX app.
 You are direct, data-driven, motivating, and highly specific.
 Never give generic advice. Always reference the user's actual data.
 Use an encouraging but honest tone. Never be sycophantic.`;
 
-const callGPT = async (userPrompt, maxTokens = 300, temp = 0.7) => {
-  const client = getClient();
+const callGPT = async (userPrompt, maxTokens = 300) => {
+  const client = getAnthropicClient();
   if (!client) return { text: 'AI coaching not available.', tokensUsed: 0, model: 'none' };
 
   try {
-    const res = await client.chat.completions.create({
-      model:       'gpt-4o',
-      max_tokens:  maxTokens,
-      temperature: temp,
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user',   content: userPrompt },
-      ],
+    const res = await client.messages.create({
+      model:      'claude-haiku-4-5-20251001',
+      max_tokens: maxTokens,
+      system:     SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userPrompt }],
     });
     return {
-      text:       res.choices[0].message.content,
-      tokensUsed: res.usage?.total_tokens || 0,
-      model:      'gpt-4o',
+      text:       res.content[0].text,
+      tokensUsed: (res.usage?.input_tokens || 0) + (res.usage?.output_tokens || 0),
+      model:      'claude-haiku-4-5-20251001',
     };
   } catch (err) {
-    logger.error('GPT call failed:', err.message);
+    logger.error('Claude call failed:', err.message);
     throw err;
   }
 };

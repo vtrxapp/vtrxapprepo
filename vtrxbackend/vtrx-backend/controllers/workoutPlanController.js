@@ -41,7 +41,7 @@ const generatePlan = async (req, res, next) => {
 
     res.json({ success: true, data: { plan, planId: saved.id, weekNumber: 1, totalExercises } });
   } catch (err) {
-    if (err.message === 'OPENAI_API_KEY not configured') {
+    if (err.message === 'ANTHROPIC_API_KEY not configured') {
       return res.status(503).json({ success: false, message: 'AI plan generation is temporarily unavailable.', code: 'AI_UNAVAILABLE' });
     }
     next(err);
@@ -82,7 +82,7 @@ const regeneratePlan = async (req, res, next) => {
 
     res.json({ success: true, data: { plan, planId: saved.id, weekNumber: 1, totalExercises } });
   } catch (err) {
-    if (err.message === 'OPENAI_API_KEY not configured') {
+    if (err.message === 'ANTHROPIC_API_KEY not configured') {
       return res.status(503).json({ success: false, message: 'AI plan generation is temporarily unavailable.', code: 'AI_UNAVAILABLE' });
     }
     next(err);
