@@ -160,7 +160,7 @@ const server = app.listen(PORT, () => {
   logger.info(`🚀 VTRX API v2.0 on port ${PORT} [${process.env.NODE_ENV}]`);
   logger.info(`📡 Health: http://localhost:${PORT}/health`);
   // Background startup tasks — server is already accepting connections
-  require('./scripts/seedRecipes').run().catch(e => logger.error('Recipe seed error:', e));
+  require('./scripts/syncRecipesFromYmove').run().catch(e => logger.error('Recipe sync error:', e));
   require('./scripts/seedPinecone').run().catch(e => logger.error('Pinecone seed error:', e));
   require('./scripts/cleanupDeviceTokens').run().catch(e => logger.error('Device token cleanup error:', e));
   require('./services/notificationScheduler').start();

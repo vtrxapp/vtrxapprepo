@@ -2,8 +2,9 @@
 // data/recipeCategories.js — Recipe category taxonomy (single source of truth)
 //
 // 11 categories: 8 driven by Recipe.tags (multi-select), 3 by Recipe.mealType
-// (single-select). seedRecipes.js and nutritionController.js both import this
-// so category strings can never drift out of sync between seeding and querying.
+// (single-select). scripts/syncRecipesFromYmove.js and nutritionController.js
+// both import this so category strings can never drift out of sync between
+// syncing and querying.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TAGS = {

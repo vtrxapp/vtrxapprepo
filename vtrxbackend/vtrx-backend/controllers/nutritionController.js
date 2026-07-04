@@ -387,7 +387,9 @@ const getMealPlan = async (req, res) => {
 };
 
 // ── POST /api/nutrition/ymove/sync-recipes ───────────────────────────────────
-// Admin-only: fetches all ymove recipes and upserts into the Recipe table.
+// Admin-only: forces the same category-aware ymove sync that runs
+// automatically on server startup (scripts/syncRecipesFromYmove.js), useful
+// for triggering an on-demand refresh without a redeploy.
 const syncYmoveRecipes = async (req, res) => {
   if (!ymove.isConfigured()) {
     return res.status(503).json({ success: false, message: 'YMOVE_API_KEY not configured' });
@@ -403,79 +405,9 @@ const syncYmoveRecipes = async (req, res) => {
   }
 
   try {
-    let page = 1;
-    const pageSize = 100;
-    let fetchedTotal = null;
-    let upserted = 0;
-    let skipped  = 0;
-
-    while (true) {
-      const { recipes, total: t } = await ymove.getRecipes({ limit: pageSize, page });
-      if (!recipes.length) break;
-
-      if (fetchedTotal === null) fetchedTotal = t > 0 ? t : null;
-
-      for (const r of recipes) {
-        // Prefer slug (human-readable, matches GET /recipes/:slug) over numeric id
-        const rawId   = r.slug || (r.id != null ? r.id : r.ymoveId);
-        const ymoveId = rawId != null ? String(rawId) : '';
-        if (!ymoveId) { skipped++; continue; }
-
-        const name         = r.title || r.name || 'Recipe';
-        const calories     = parseInt(r.calories) || 0;
-        const protein      = parseFloat(r.protein) || 0;
-        const carbs        = parseFloat(r.carbs)   || 0;
-        const fat          = parseFloat(r.fat) || parseFloat(r.fats) || 0;
-        // ymove uses prepTimeMinutes (docs confirmed); fall back to legacy field names
-        const prepTime     = parseInt(r.prepTimeMinutes || r.prepTime || r.prep_time || r.mins) || null;
-        const servings     = parseInt(r.servings) || 1;
-        const imageUrl     = r.imageUrl || r.image_url || r.img || null;
-        // ymove uses 'diet' (array) for dietary tags; fall back to 'tags'
-        const tags         = Array.isArray(r.diet) ? r.diet : (Array.isArray(r.tags) ? r.tags : (r.tags ? [r.tags] : []));
-        const rawDesc      = r.description || r.desc || null;
-        const description  = rawDesc
-          ? rawDesc
-              .replace(/\[Adapted from Wikibooks[^\]]*\]/gi, '')
-              .replace(/Adapted from Wikibooks[^.]*\./gi, '')
-              .replace(/\(CC BY[^)]*\)/gi, '')
-              .replace(/https?:\/\/[^\s]*wikibooks[^\s]*/gi, '')
-              .replace(/\s{2,}/g, ' ')
-              .trim() || null
-          : null;
-        // ingredients may be objects (ymove uses quantity/unit/name) or plain strings
-        const ingredients  = Array.isArray(r.ingredients)
-          ? r.ingredients.map(i => {
-              if (typeof i === 'string') return i;
-              const qty  = i.amount ?? i.quantity ?? i.qty ?? '';
-              const unit = i.unit ?? i.measure ?? '';
-              const name = i.name ?? i.ingredient ?? i.item ?? '';
-              const qStr = qty !== '' && qty !== 0 ? String(qty) : '';
-              return [qStr, unit, name].filter(Boolean).join(' ');
-            }).filter(Boolean)
-          : [];
-        const instructions = Array.isArray(r.instructions) ? r.instructions
-          : (typeof r.instructions === 'string' ? [r.instructions] : []);
-
-        try {
-          await prisma.recipe.upsert({
-            where:  { ymoveId },
-            update: { name, calories, protein, carbs, fat, prepTime, servings, imageUrl, tags, description, ingredients, instructions },
-            create: { name, calories, protein, carbs, fat, prepTime, servings, imageUrl, tags, description, ingredients, instructions, ymoveId, isPublic: true },
-          });
-          upserted++;
-        } catch (err) {
-          logger.warn(`ymove recipe sync: skipping ${ymoveId} — ${err.message}`);
-          skipped++;
-        }
-      }
-
-      const fetched = page * pageSize;
-      if (recipes.length < pageSize || (fetchedTotal !== null && fetched >= fetchedTotal)) break;
-      page++;
-    }
-
-    logger.info(`ymove recipe sync complete: ${upserted} upserted, ${skipped} skipped`);
-    res.json({ success: true, data: { synced: upserted, skipped } });
+    const { main: syncRecipesFromYmove } = require('../scripts/syncRecipesFromYmove');
+    const result = await syncRecipesFromYmove();
+    res.json({ success: true, data: result });
   } catch (error) {
     logger.error('syncYmoveRecipes error:', error);
     res.status(500).json({ success: false, message: 'Recipe sync failed' });

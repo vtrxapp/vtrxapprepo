@@ -11,7 +11,7 @@
     "db:generate": "npx prisma generate",
     "db:push": "npx prisma db push",
     "db:studio": "npx prisma studio",
-    "seed:recipes": "node scripts/seedRecipes.js",
+    "sync:recipes": "node scripts/syncRecipesFromYmove.js",
     "seed:exercises": "node scripts/seedExerciseLibrary.js",
     "test:ai-plan": "node scripts/testAIPlanGenerator.js"
   },
