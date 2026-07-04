@@ -923,8 +923,25 @@ const getExerciseVideoUrl = async (req, res) => {
 
     // Name-based fallback: exercise has no ymoveId — search ymove to find it
     if (!videoUrl && !hlsUrl && name) {
-      // Normalise common gym abbreviations before searching
+      // Normalise common gym abbreviations and known name mismatches before searching.
+      // Full-name mappings come first (highest priority); abbreviations come after.
       const NAME_MAP = {
+        // Known mismatches between our exercise library names and ymove's naming
+        'dumbbell chest press':      'dumbbell bench press',
+        'chest press':               'bench press',
+        'dumbbell rdl':              'dumbbell romanian deadlift',
+        'single-leg rdl':            'single leg romanian deadlift',
+        'single leg rdl':            'single leg romanian deadlift',
+        'barbell romanian deadlift': 'romanian deadlift',
+        'ez bar curl':               'ez bar bicep curl',
+        'isometric curl':            'standing bicep curl',
+        'prone y-raise':             'rear delt fly',
+        'superman hold':             'superman',
+        'cable tricep pushdown':     'triceps pushdown',
+        'cable face pull':           'face pull',
+        'cable lateral raise':       'lateral raise',
+        'seated cable row':          'cable row',
+        // Abbreviations
         'rdl':          'romanian deadlift',
         'romanian dl':  'romanian deadlift',
         'db ':          'dumbbell ',
@@ -936,7 +953,14 @@ const getExerciseVideoUrl = async (req, res) => {
       };
       let searchName = name.toLowerCase();
       for (const [abbr, full] of Object.entries(NAME_MAP)) {
-        if (searchName === abbr || searchName.startsWith(abbr)) {
+        // Match: exact, starts-with, ends-with, or word-boundary occurrence
+        if (
+          searchName === abbr ||
+          searchName.startsWith(abbr) ||
+          searchName.endsWith(abbr) ||
+          searchName.includes(' ' + abbr) ||
+          searchName.includes('-' + abbr)
+        ) {
           searchName = searchName.replace(abbr, full);
           break;
         }
@@ -985,12 +1009,17 @@ const getExerciseVideoUrl = async (req, res) => {
         foundId = match.id != null ? String(match.id) : null;
         if (foundId) {
           ({ videoUrl, hlsUrl } = await ymove.getExerciseVideoUrl(foundId));
-          // Back-fill ymoveId on the DB record so future requests skip this search
+          // Cache videoUrl on the exercise library so future page loads show the video
+          // immediately without waiting for a ymove search (videoUrl is returned by the
+          // plan generator, so it reaches the frontend on the next plan load).
           if (videoUrl || hlsUrl) {
             const thumbUrl = match.thumbnailUrl || match.thumbnail_url || match.gifUrl || null;
-            prisma.exercise.updateMany({
-              where: { name: { equals: name, mode: 'insensitive' }, ymoveId: null },
-              data:  { ymoveId: foundId, ...(thumbUrl && { thumbnailUrl: thumbUrl }) },
+            prisma.exerciseLibrary.updateMany({
+              where: { name: { equals: name, mode: 'insensitive' } },
+              data: {
+                ...(videoUrl  && { videoUrl }),
+                ...(thumbUrl  && { thumbnailUrl: thumbUrl }),
+              },
             }).catch(() => {});
           }
         }
