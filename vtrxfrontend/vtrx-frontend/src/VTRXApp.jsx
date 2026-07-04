@@ -8256,7 +8256,14 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
   const [onboardingNutritionPending, setOnboardingNutritionPending] = useState(false);
   const [onboardingNutritionTwText, setOnboardingNutritionTwText] = useState("");
   const [onboardingNutritionTwDone, setOnboardingNutritionTwDone] = useState(false);
-  const [nutritionSummaryExpanded, setNutritionSummaryExpanded] = useState(true);
+  // Expanded by default the first time the user ever sees this card; collapsed
+  // by default on every visit after that so it stops eating screen space once
+  // they already know what it says. "Seen" is persisted in localStorage below.
+  const [nutritionSummaryExpanded, setNutritionSummaryExpanded] = useState(() => {
+    try {
+      return localStorage.getItem(`vtrx_nutrition_summary_seen_${currentUser?.id || 'anon'}`) !== '1';
+    } catch (_e) { return true; }
+  });
 
   // Register browser back-button handler when a detail overlay is open
   useEffect(() => {
@@ -8320,6 +8327,13 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
     }, 14);
     return () => clearInterval(iv);
   }, [onboardingNutrition, onboardingNutritionLoading]);
+
+  // Mark the summary as seen once it's actually loaded and on screen — the
+  // next time this page mounts, it defaults to collapsed instead of expanded.
+  useEffect(() => {
+    if (!onboardingNutrition) return;
+    try { localStorage.setItem(`vtrx_nutrition_summary_seen_${currentUser?.id || 'anon'}`, '1'); } catch (_e) {}
+  }, [onboardingNutrition, currentUser?.id]);
 
   const AI_PLAN_DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
   const AI_PLAN_SHORT = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
