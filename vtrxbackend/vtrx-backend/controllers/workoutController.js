@@ -913,12 +913,13 @@ const getExerciseVideoUrl = async (req, res) => {
   const { name }    = req.query;
 
   try {
-    let videoUrl = null;
-    let hlsUrl   = null;
-    let foundId  = ymoveId || null;
+    let videoUrl     = null;
+    let hlsUrl       = null;
+    let thumbnailUrl = null;
+    let foundId      = ymoveId || null;
 
     if (ymoveId) {
-      ({ videoUrl, hlsUrl } = await ymove.getExerciseVideoUrl(ymoveId));
+      ({ videoUrl, hlsUrl, thumbnailUrl } = await ymove.getExerciseVideoUrl(ymoveId));
     }
 
     // Name-based fallback: exercise has no ymoveId — search ymove to find it
@@ -1008,17 +1009,17 @@ const getExerciseVideoUrl = async (req, res) => {
       if (match) {
         foundId = match.id != null ? String(match.id) : null;
         if (foundId) {
-          ({ videoUrl, hlsUrl } = await ymove.getExerciseVideoUrl(foundId));
-          // Cache videoUrl on the exercise library so future page loads show the video
-          // immediately without waiting for a ymove search (videoUrl is returned by the
-          // plan generator, so it reaches the frontend on the next plan load).
-          if (videoUrl || hlsUrl) {
-            const thumbUrl = match.thumbnailUrl || match.thumbnail_url || match.gifUrl || null;
+          ({ videoUrl, hlsUrl, thumbnailUrl } = await ymove.getExerciseVideoUrl(foundId));
+          if (!thumbnailUrl) thumbnailUrl = match.thumbnailUrl || match.thumbnail_url || match.gifUrl || null;
+          // Cache videoUrl/thumbnailUrl on the exercise library so future page loads show
+          // them immediately without waiting for a ymove search (both are returned by the
+          // plan generator, so they reach the frontend on the next plan load).
+          if (videoUrl || hlsUrl || thumbnailUrl) {
             prisma.exerciseLibrary.updateMany({
               where: { name: { equals: name, mode: 'insensitive' } },
               data: {
-                ...(videoUrl  && { videoUrl }),
-                ...(thumbUrl  && { thumbnailUrl: thumbUrl }),
+                ...(videoUrl     && { videoUrl }),
+                ...(thumbnailUrl && { thumbnailUrl }),
               },
             }).catch(() => {});
           }
@@ -1029,7 +1030,7 @@ const getExerciseVideoUrl = async (req, res) => {
     if (!videoUrl && !hlsUrl) {
       return res.status(404).json({ success: false, message: 'Video not available' });
     }
-    res.json({ success: true, data: { videoUrl, hlsUrl, ymoveId: foundId, expiresIn: 48 * 3600 } });
+    res.json({ success: true, data: { videoUrl, hlsUrl, thumbnailUrl, ymoveId: foundId, expiresIn: 48 * 3600 } });
   } catch (error) {
     logger.error('getExerciseVideoUrl error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch video URL' });

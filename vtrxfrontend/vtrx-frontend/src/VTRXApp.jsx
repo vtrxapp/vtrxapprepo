@@ -153,9 +153,34 @@ const _weightsCache   = { data: null, fetchedAt: 0 };
 const _nutritionCache = {};          // keyed by "filter_userId"
 const _savedCache     = { data: null, fetchedAt: 0 };
 const _categorizedCache = { data: null, fetchedAt: 0 };
-const _videoUrlCache  = new Map();   // key: ymoveId|name → { videoUrl, hlsUrl, cachedAt }
+const _videoUrlCache  = new Map();   // key: ymoveId|name → { videoUrl, hlsUrl, thumbnailUrl, cachedAt }
 const CACHE_TTL_MS    = 30 * 60 * 1000;   // 30 min
 const VIDEO_TTL_MS    = 12 * 60 * 60 * 1000; // 12 h
+
+// Resolves a real per-exercise thumbnail (and video/hls URL) via the same
+// /workouts/exercise-video endpoint ExercisePage already uses, sharing its
+// cache — so exercise preview tiles (Dashboard's "Today's Workout" strip,
+// WorkoutDetailPage's exercise list) show the actual exercise instead of one
+// generic stock photo repeated for everything without a cached thumbnail yet.
+const resolveExerciseMedia = async (ex) => {
+  const cacheKey = ex?.ymoveId || ex?.name;
+  if (!cacheKey) return null;
+  const cached = _videoUrlCache.get(cacheKey);
+  if (cached && (Date.now() - cached.cachedAt) < VIDEO_TTL_MS) return cached;
+  if (!getAuthToken()) return null;
+  const endpoint = ex.ymoveId
+    ? `/workouts/exercise-video/${ex.ymoveId}`
+    : `/workouts/exercise-video?name=${encodeURIComponent(ex.name)}`;
+  try {
+    const d = await apiCall(endpoint);
+    const { videoUrl, hlsUrl, thumbnailUrl } = d?.data || {};
+    const entry = { videoUrl: videoUrl||null, hlsUrl: hlsUrl||null, thumbnailUrl: thumbnailUrl||null, cachedAt: Date.now() };
+    if (videoUrl || hlsUrl || thumbnailUrl) _videoUrlCache.set(cacheKey, entry);
+    return entry;
+  } catch {
+    return null;
+  }
+};
 
 // ── In-app payment sheet bridge ───────────────────────────────────────────────
 // Module-level ref so any component can open the sheet without prop-drilling.
@@ -1249,12 +1274,27 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onStop, onExercise, co
   const wdpScrollRef = useScrollPos("workout-detail");
   const [completedEx, setCompletedEx] = useState([]);
   const [showStopModal, setShowStopModal] = useState(false);
+  const [exVideoThumbs, setExVideoThumbs] = useState({}); // name → thumbnailUrl, resolved live for exercises with none cached yet
 
   const exercises = (Array.isArray(workout?.exercises) && workout.exercises.length > 0)
     ? workout.exercises.map(normaliseExercise)
     : typeof workout?.exercises === 'number' && workout.exercises > 0
       ? EXERCISES.slice(0, workout.exercises).map(normaliseExercise)
       : EXERCISES.map(normaliseExercise);
+  const exercisesKey = exercises.map(e => e?.name || '').join('|');
+
+  // Real thumbnails only exist once an exercise's video has been looked up at
+  // least once — resolve any exercise here that doesn't have one cached yet,
+  // instead of every row falling back to the same generic stock photo.
+  useEffect(() => {
+    exercises.forEach(ex => {
+      if (!ex?.name || ex?.thumbnailUrl || ex?.img) return;
+      resolveExerciseMedia(ex).then(media => {
+        if (media?.thumbnailUrl) setExVideoThumbs(prev => ({ ...prev, [ex.name]: media.thumbnailUrl }));
+      });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exercisesKey]);
 
   const fmt     = (s) => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
   const toggleEx = (i) => setCompletedEx(p => p.includes(i) ? p.filter(x=>x!==i) : [...p,i]);
@@ -1379,7 +1419,7 @@ function WorkoutDetailPage({ workout, onBack, onComplete, onStop, onExercise, co
               <div key={i} style={{ background:"#fff",borderRadius:18,marginBottom:12,overflow:"hidden",border:done?`2px solid #22C55E`:skipped?`2px solid #F9731633`:`2px solid transparent`,transition:"border-color 0.2s" }}>
                 <div style={{ display:"flex",alignItems:"center" }}>
                   <div onClick={()=>onExercise&&onExercise(ex)} style={{ position:"relative",width:90,height:90,flexShrink:0,cursor:"pointer" }}>
-                    <img src={ex.thumbnailUrl || ex.img || "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=200&q=70"} alt="" width={90} height={90} loading="lazy" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+                    <img src={exVideoThumbs[ex.name] || ex.thumbnailUrl || ex.img || "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=200&q=70"} alt="" width={90} height={90} loading="lazy" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
                     <div style={{ position:"absolute",inset:0,background:"rgba(0,0,0,0.2)",display:"flex",alignItems:"center",justifyContent:"center" }}>
                       <div style={{ width:36,height:36,borderRadius:"50%",background:PRIMARY,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 0 12px ${PRIMARY}99` }}>
                         <svg width="11" height="13" viewBox="0 0 11 13" fill="white"><polygon points="0,0 11,6.5 0,13"/></svg>
@@ -2104,11 +2144,13 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
 
   const [resolvedVideoUrl, setResolvedVideoUrl] = useState(ex.videoUrl || null);
   const [resolvedHlsUrl,   setResolvedHlsUrl]   = useState(ex.hlsUrl || null);
+  const [resolvedThumbnailUrl, setResolvedThumbnailUrl] = useState(ex.thumbnailUrl || ex.img || null);
   const [videoLoading, setVideoLoading] = useState(!!(ex.ymoveId || ex.name));
   const [resumePos, setResumePos] = useState(0);
   useEffect(()=>{
     setResolvedVideoUrl(ex.videoUrl || null); // show stored URL immediately while fresh one loads
     setResolvedHlsUrl(ex.hlsUrl || null);
+    setResolvedThumbnailUrl(ex.thumbnailUrl || ex.img || null);
     // Need either a ymoveId (fast path) or a name (name-search fallback) to fetch a video
     if (!ex.ymoveId && !ex.name) { setVideoLoading(false); return; }
     const token = getAuthToken();
@@ -2117,8 +2159,9 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
     const cacheKey = ex.ymoveId || ex.name;
     const cached = _videoUrlCache.get(cacheKey);
     if (cached && (Date.now() - cached.cachedAt) < VIDEO_TTL_MS) {
-      if (cached.videoUrl) setResolvedVideoUrl(cached.videoUrl);
-      if (cached.hlsUrl)   setResolvedHlsUrl(cached.hlsUrl);
+      if (cached.videoUrl)     setResolvedVideoUrl(cached.videoUrl);
+      if (cached.hlsUrl)       setResolvedHlsUrl(cached.hlsUrl);
+      if (cached.thumbnailUrl) setResolvedThumbnailUrl(cached.thumbnailUrl);
       setVideoLoading(false);
       return;
     }
@@ -2136,11 +2179,12 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
       : `/workouts/exercise-video?name=${encodeURIComponent(ex.name)}`;
     apiCall(endpoint)
       .then(d => {
-        const { videoUrl: vUrl, hlsUrl: hUrl } = d?.data || {};
+        const { videoUrl: vUrl, hlsUrl: hUrl, thumbnailUrl: tUrl } = d?.data || {};
         console.log(`[video] ymoveId=${ex.ymoveId||'null'} name="${ex.name}" videoUrl=${vUrl||'null'} hlsUrl=${hUrl||'null'}`);
         if (vUrl) setResolvedVideoUrl(vUrl);
         if (hUrl) setResolvedHlsUrl(hUrl);
-        if (vUrl || hUrl) _videoUrlCache.set(cacheKey, { videoUrl: vUrl||null, hlsUrl: hUrl||null, cachedAt: Date.now() });
+        if (tUrl) setResolvedThumbnailUrl(tUrl);
+        if (vUrl || hUrl || tUrl) _videoUrlCache.set(cacheKey, { videoUrl: vUrl||null, hlsUrl: hUrl||null, thumbnailUrl: tUrl||null, cachedAt: Date.now() });
         if (!vUrl && !hUrl) console.warn(`[video] No URL for "${ex.name}" — check YMOVE_API_KEY in Railway`);
       })
       .catch(err => { console.error(`[video] fetch failed for "${ex.name}":`, err); setResolvedHlsUrl(null); })
@@ -2278,7 +2322,7 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
     videoUrl: resolvedVideoUrl,
     hlsUrl: resolvedHlsUrl,
     videoUrlLoading: videoLoading,
-    thumbnailUrl: ex.thumbnailUrl || ex.img || "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=400&q=70",
+    thumbnailUrl: resolvedThumbnailUrl || "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=400&q=70",
     exerciseName: ex.name,
     initialPositionSecs: resumePos,
     onPortraitDetected: (portrait) => { setIsPortrait(portrait); setPortraitPlaying(false); }, // reset on layout switch
@@ -9883,6 +9927,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
     } catch(_e){ return false; }
   });
   const [showFreezeSheet, setShowFreezeSheet] = useState(false);
+  const [exPreviewThumbs, setExPreviewThumbs] = useState({}); // name → thumbnailUrl, resolved live for exercises with none cached yet
 
   // Check for newly earned achievements (notification badging handled by notifCount from API)
   useEffect(()=>{
@@ -9936,6 +9981,21 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
     ? apiWorkout.exercises
     : (WEEKLY_WORKOUTS[TODAY_IDX % WEEKLY_WORKOUTS.length]?.exercises || []);
   const exPreview = exList.slice(0, 4);
+  const exPreviewKey = exPreview.map(e => e?.name || '').join('|');
+
+  // Real thumbnails only exist once an exercise's video has been looked up at
+  // least once (either here or via ExercisePage) — resolve any of these 4
+  // that don't have one cached yet, instead of always showing the same
+  // generic fallback photo for every exercise.
+  useEffect(() => {
+    exPreview.forEach(ex => {
+      if (!ex?.name || ex?.thumbnailUrl || ex?.img) return;
+      resolveExerciseMedia(ex).then(media => {
+        if (media?.thumbnailUrl) setExPreviewThumbs(prev => ({ ...prev, [ex.name]: media.thumbnailUrl }));
+      });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exPreviewKey]);
 
   return (
     <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column" }}>
@@ -10152,13 +10212,11 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
           </div>
           <div style={{ display:"flex",gap:9,marginBottom:16,overflowX:"auto" }}>
             {exPreview.map((ex, i) => {
-              // Same fallback stock photo as WorkoutDetailPage's exercise list — AI
-              // plan exercises don't always have a cached thumbnail yet (only
-              // populated after someone's viewed that exercise's video at least
-              // once), so falling back to text initials here (while the detail
-              // page falls back to an image) made this preview look broken by
-              // comparison even though both were "working as coded."
-              const imgSrc = ex?.thumbnailUrl || ex?.img || "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=200&q=70";
+              // Prefer a live-resolved thumbnail (fetched above for whichever of
+              // these 4 don't have one cached), then whatever the plan/API already
+              // carried, then the same generic fallback WorkoutDetailPage uses for
+              // exercises with no thumbnail available anywhere yet.
+              const imgSrc = exPreviewThumbs[ex?.name] || ex?.thumbnailUrl || ex?.img || "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=200&q=70";
               return (
                 <div key={i} onClick={()=>onNavigate("workoutDetail", workout)} style={{ minWidth:76,width:76,height:76,borderRadius:12,overflow:"hidden",flexShrink:0,cursor:"pointer" }}>
                   <img src={imgSrc} alt={ex?.name||''} loading="lazy" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
