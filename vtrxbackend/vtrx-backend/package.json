@@ -39,7 +39,7 @@
     "openai": "^4.52.0",
     "resend": "^6.12.4",
     "stripe": "^16.2.0",
-    "uuid": "^10.0.0",
+    "uuid": "^14.0.0",
     "winston": "^3.13.0"
   },
   "devDependencies": {
