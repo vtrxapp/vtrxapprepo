@@ -63,7 +63,7 @@ PROFILE:
 - Name: ${name || 'not provided'}
 - Age: ${age}
 - Sex: ${gender}
-- Weight: ${weight} lbs
+- Weight: ${weight} kg
 - Height: ${height}
 
 GOALS AND PREFERENCES:

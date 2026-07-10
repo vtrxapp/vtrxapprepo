@@ -336,7 +336,7 @@ const generateMealPlan = async ({
 
 Profile:
 - Goal: ${goal || 'general fitness'}
-- Weight: ${weight ? `${weight}lbs` : 'not set'}
+- Weight: ${weight ? `${weight}kg` : 'not set'}
 - Fitness level: ${fitnessLevel || 'Intermediate'}
 - Today's workout: ${todayWorkout || 'rest day'}
 - Calories burned today: ${caloriesBurned || 0}
