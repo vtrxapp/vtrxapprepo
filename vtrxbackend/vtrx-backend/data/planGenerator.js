@@ -178,10 +178,11 @@ function buildPlanName(goal, level, frequency) {
 }
 
 // ── Simple calorie estimate ───────────────────────────────────────────────────
-function estimateCalories(durationMins, goal, weightLbs) {
-  const met      = goal === 'lose_weight' ? 7.0 : goal === 'build_muscle' ? 5.0 : 4.5;
-  const weightKg = (weightLbs || 165) * 0.453592;
-  return Math.round(met * weightKg * (durationMins / 60));
+// weightKg comes from user.weight, which is already stored in kg (see schema.prisma)
+// — do not treat it as lbs / re-convert here.
+function estimateCalories(durationMins, goal, weightKg) {
+  const met = goal === 'lose_weight' ? 7.0 : goal === 'build_muscle' ? 5.0 : 4.5;
+  return Math.round(met * (weightKg || 75) * (durationMins / 60));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

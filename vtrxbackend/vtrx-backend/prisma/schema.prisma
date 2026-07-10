@@ -30,7 +30,9 @@ model User {
   avatarUrl       String?
   gender          String?
   age             Int?
-  weight          Float?    // in lbs
+  weight          Float?    // in kg — frontend (BodyScreen/PersonalDetailsPage) always
+                                      // converts to kg before saving, regardless of the
+                                      // user's display unit preference. Do NOT treat as lbs.
   height          String?   // e.g. "5'10"
   goal            String?   // "Build Muscle", "Lose Weight" etc
   fitnessLevel    String?   // "Beginner", "Intermediate", "Advanced"

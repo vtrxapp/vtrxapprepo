@@ -1783,8 +1783,8 @@ const generateDailyWorkout = async (req, res) => {
     const goal          = user?.goal           || 'general fitness';
     const nutritionGoal = user?.nutritionGoal   || '';
     const level         = user?.fitnessLevel    || 'Intermediate';
-    const weightLbs     = user?.weight          || 154;   // default ~70 kg
-    const weightKg      = weightLbs / 2.2046;
+    // user.weight is already stored in kg — do not treat it as lbs (see schema.prisma).
+    const weightKg      = user?.weight          || 70;
     const daysPerWeek   = user?.daysPerWeek     || 3;
     const equipment     = user?.equipment       || [];
     const durationMins  = _parseDurationMins(user?.sessionDuration);

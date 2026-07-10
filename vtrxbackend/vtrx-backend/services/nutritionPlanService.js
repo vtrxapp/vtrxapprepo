@@ -79,7 +79,8 @@ You respond ONLY in valid JSON. No markdown, no explanation, just the JSON objec
 // ── Build the user prompt ────────────────────────────────────────────────────
 const buildPrompt = (user, calcs, context = {}) => {
   const { bmr, tdee, calorieTarget, proteinG, carbG, fatG } = calcs;
-  const weightKg  = Math.round((user.weight || 150) * 0.453592 * 10) / 10;
+  // user.weight is already stored in kg — do not re-convert from lbs (see schema.prisma).
+  const weightKg  = Math.round((user.weight || 70) * 10) / 10;
   const heightCm  = parseHeightToCm(user.height);
   const heightFt  = cmToFtDisplay(heightCm);
   const goal      = user.nutritionGoal   || 'maintain';
@@ -135,7 +136,7 @@ If no_peanuts:
 PHYSICAL PROFILE:
 - Age: ${user.age || 30}
 - Sex: ${gender}
-- Weight: ${user.weight || 150} lbs (${weightKg} kg)
+- Weight: ${weightKg} kg
 - Height: ${heightFt}
 ${user.bodyFatPercentage ? `- Body fat: ${user.bodyFatPercentage}%` : ''}
 ${user.goalWeightLbs ? `- Goal weight: ${user.goalWeightLbs} lbs` : ''}
@@ -289,7 +290,8 @@ const enrichWithYmove = async (plan) => {
 
 // ── Calculate all values and return with plan ─────────────────────────────────
 const calculateNutritionTargets = (user) => {
-  const weightKg  = (user.weight || 150) * 0.453592;
+  // user.weight is already stored in kg — do not re-convert from lbs (see schema.prisma).
+  const weightKg  = user.weight || 70;
   const heightCm  = parseHeightToCm(user.height);
   const bmr       = calcBMR(weightKg, heightCm, user.age, user.gender);
   const tdee      = calcTDEE(bmr, user.daysPerWeek);

@@ -355,7 +355,7 @@ Profile:
 - Location: ${user.location || 'Home'}
 - Session duration: ${user.sessionDuration || '30-45 min'}
 - Preferred styles: ${styles}
-${user.weight ? `- Current weight: ${user.weight} lbs` : ''}
+${user.weight ? `- Current weight: ${user.weight} kg` : ''}
 ${user.height ? `- Height: ${user.height}` : ''}
 ${user.gender ? `- Gender: ${user.gender}` : ''}
 ${user.age ? `- Age: ${user.age}` : ''}
@@ -380,7 +380,7 @@ Profile:
 - Nutrition goal: ${goalLabel}
 - Dietary restrictions: ${restrictions}
 - Meals per day: ${user.mealsPerDay || '3'}
-${user.weight ? `- Current weight: ${user.weight} lbs` : ''}
+${user.weight ? `- Current weight: ${user.weight} kg` : ''}
 ${user.goalWeightLbs ? `- Goal weight: ${user.goalWeightLbs} lbs` : ''}
 ${user.dailyCalorieTarget ? `- Daily calorie target: ${Math.round(user.dailyCalorieTarget)} kcal` : ''}
 
