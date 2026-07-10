@@ -341,6 +341,13 @@ const getAISummary = async (req, res) => {
 };
 
 // ── HELPER: Update user's streak ─────────────────────────────────────────────
+// Compares UTC *calendar days* (via streakFreeze.toDateOnly), not a rolling
+// hours-since-lastActive window. A rolling-hours window is unsafe here: since
+// lastActiveAt is bumped to `now` on every single log, a user who consistently
+// works out slightly less than 24h apart (e.g. a little earlier each day) would
+// never cross the 24h mark and their streak would silently freeze at 1 forever,
+// despite working out every calendar day. Calendar-day math also keeps this in
+// sync with streakFreezeService, which already reasons in UTC calendar days.
 const updateStreak = async (userId) => {
   const user = await prisma.user.findUnique({
     where:  { id: userId },
@@ -353,18 +360,22 @@ const updateStreak = async (userId) => {
   let isBroken     = false;
 
   if (lastActive) {
-    const hoursSinceLastActive = (now - lastActive) / (1000 * 60 * 60);
+    const MS_PER_DAY   = 24 * 60 * 60 * 1000;
+    const todayKey     = streakFreeze.toDateOnly(now).getTime();
+    const lastActiveKey = streakFreeze.toDateOnly(lastActive).getTime();
+    const dayDiff       = Math.round((todayKey - lastActiveKey) / MS_PER_DAY);
 
-    if (hoursSinceLastActive < 48) {
-      // Within 48 hours — extend streak
-      const daysSinceLastActive = Math.floor(hoursSinceLastActive / 24);
-      if (daysSinceLastActive >= 1) newStreak += 1;
+    if (dayDiff <= 0) {
+      // Already active today (or a clock-skew backdated event) — no change.
+    } else if (dayDiff === 1) {
+      // Consecutive calendar day — extend streak.
+      newStreak += 1;
     } else if (await streakFreeze.wasGapFrozen(userId, lastActive, now)) {
       // Every day actually missed was covered by an activated Streak Freeze —
       // bridge the gap instead of resetting, same as a normal extension.
       newStreak += 1;
     } else {
-      // More than 48 hours, gap not (fully) frozen — streak broken
+      // A full calendar day (or more) was missed and not frozen — streak broken.
       newStreak = 1;
       isBroken  = true;
     }
