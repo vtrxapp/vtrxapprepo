@@ -2343,12 +2343,21 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
     const updated = sets.map((s,idx)=> idx===i ? {...s, done:true} : s);
     setSets(updated);
     setActiveSet(Math.min(i+1, sets.length-1));
-    // start rest timer
-    setRestCount(90);
+    // Start rest timer — anchored to a wall-clock end time rather than counting
+    // down by a fixed 1s per tick. setInterval ticks are throttled/paused by
+    // mobile browsers when the screen locks or the tab is backgrounded, so a
+    // naive decrement would drift (showing far more time left than has actually
+    // elapsed) once the tab comes back to the foreground. Recomputing the
+    // remaining time from Date.now() on every tick self-corrects for any drift.
+    const REST_SECONDS = 90;
+    const restEndAt = Date.now() + REST_SECONDS * 1000;
+    setRestCount(REST_SECONDS);
     setRestTimer(true);
     if(timerRef.current) clearInterval(timerRef.current);
     timerRef.current = setInterval(()=>{
-      setRestCount(c=>{ if(c<=1){ clearInterval(timerRef.current); setRestTimer(false); return 0; } return c-1; });
+      const remaining = Math.max(0, Math.round((restEndAt - Date.now()) / 1000));
+      setRestCount(remaining);
+      if (remaining <= 0) { clearInterval(timerRef.current); setRestTimer(false); }
     },1000);
   };
 
