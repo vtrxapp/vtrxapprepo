@@ -37,7 +37,7 @@ const registerToken = async (req, res) => {
 const removeToken = async (req, res) => {
   const { token } = req.body;
   try {
-    await notifService.removeToken(token);
+    await notifService.removeToken(req.user.id, token);
     res.json({ success: true });
   } catch (err) {
     logger.error('Remove token error:', err);
