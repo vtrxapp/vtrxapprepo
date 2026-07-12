@@ -10689,9 +10689,29 @@ function VTRXAppInner({ setPaymentPlan }) {
   const [pendingEmail,    setPendingEmail]    = useState("");
   const [screen, setScreen]         = useState(0);
   const [dir, setDir]               = useState(1);
-  const goNext = () => { setDir(1);  setScreen(s=>s+1); };
-  const goPrev = () => { setDir(-1); setScreen(s=>Math.max(0,s-1)); };
+  // A fast double-tap on a screen's Continue button fires the handler twice
+  // before React re-renders past it, advancing `screen` by 2 and silently
+  // skipping a whole onboarding step (e.g. TrainingScreen, whose save() is
+  // what persists goal/fitnessLevel — skip it and the next login bounces
+  // the user right back into onboarding). Lock with a ref, not state, since
+  // state updates aren't visible to a second call in the same tick.
+  const screenTransitionRef = useRef(false);
+  const goNext = () => {
+    if (screenTransitionRef.current) return;
+    screenTransitionRef.current = true;
+    setDir(1); setScreen(s=>s+1);
+  };
+  const goPrev = () => {
+    if (screenTransitionRef.current) return;
+    screenTransitionRef.current = true;
+    setDir(-1); setScreen(s=>Math.max(0,s-1));
+  };
+  useEffect(() => { screenTransitionRef.current = false; }, [screen]);
+  const dashboardTransitionRef = useRef(false);
   const goToDashboard = async () => {
+    if (dashboardTransitionRef.current) return;
+    dashboardTransitionRef.current = true;
+    try {
     // Guard: if the user hasn't completed goal/fitness-level setup, route them
     // back to preferences rather than showing a broken empty dashboard
     if (!user?.goal || !user?.fitnessLevel) {
@@ -10740,6 +10760,9 @@ function VTRXAppInner({ setPaymentPlan }) {
       return;
     }
     setPhase("dashboard");
+    } finally {
+      dashboardTransitionRef.current = false;
+    }
   };
 
   // ── Dashboard state ───────────────────────────────────────────────────────
