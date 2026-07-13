@@ -93,9 +93,11 @@ const registerToken = async ({ userId, token, platform }) => {
 
 // ── Remove Device Token ────────────────────────────────────────────────────────
 // Called on logout or when user disables notifications
-const removeToken = async (token) => {
+const removeToken = async (userId, token) => {
+  // Scoped to the requesting user — without this, any authenticated caller
+  // could pass someone else's device token and silently deactivate it.
   await prisma.deviceToken.updateMany({
-    where: { token },
+    where: { userId, token },
     data:  { active: false },
   });
 };
