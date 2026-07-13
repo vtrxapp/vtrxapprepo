@@ -17,10 +17,22 @@ const API_URL = typeof import.meta !== "undefined" && import.meta.env && import.
 // When no real backend URL is set, all API calls silently succeed (demo/preview mode)
 const DEMO_MODE = false;
 
+// Public demo mode — landing-page visitors can explore the real app via ?demo=1
+// in the URL, without an account. Lands straight on a pre-filled sample
+// dashboard instead of onboarding, and — like DEMO_MODE — mocks every API call.
+// That second part also sidesteps a real hazard: several dashboard children
+// fire unauthenticated fetches on mount, and apiCall's session-expired handler
+// forces phase back to "login" on a real 401 — mocking every call means that
+// never fires underneath a visitor who was never signed in to begin with.
+const PUBLIC_DEMO = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("demo") === "1";
+
 // ── API Helper ────────────────────────────────────────────────────────────────
 const apiCall = async (endpoint, options = {}) => {
-  // Demo/preview mode — no backend configured, return mock success
-  if (DEMO_MODE) {
+  // Demo/preview mode — no backend configured, return mock success.
+  // PUBLIC_DEMO also requires !_isSignedIn: a real signed-in user who opens a
+  // stray ?demo=1 link must still hit the real API for their own account, not
+  // get the shared demo profile/plan mocked over their real data.
+  if (DEMO_MODE || (PUBLIC_DEMO && !_isSignedIn)) {
     // Simulate a brief network delay
     await new Promise(r => setTimeout(r, 400));
     // Return plausible mock responses per endpoint
@@ -29,6 +41,29 @@ const apiCall = async (endpoint, options = {}) => {
     if (endpoint === "/auth/login")          return { success:true, data:{ token:"demo_token", user:{ id:"demo", name:"Demo User", email:"demo@vtrx.app" } } };
     if (endpoint === "/auth/me")             return { success:true, data:{ user:{ id:"demo", name:"Demo User", email:"demo@vtrx.app", isPremium:false, streakDays:7, goal:"Build Muscle", fitnessLevel:"Intermediate", daysPerWeek:5, weight:"82", height:"180", gender:"Male" } } };
     if (endpoint === "/users/profile")       return { success:true, data:{ user:{ id:"demo", name:"Demo User", streakDays:7, goal:"Build Muscle", fitnessLevel:"Intermediate", daysPerWeek:5, weight:"82", height:"180", gender:"Male", workoutsTotal:12 } } };
+    if (endpoint === "/workouts/active-plan") return { success:true, data:{ planId:"demo-plan-1", weekNumber:1, plan:{ weeks:[{ sessions:[
+      { sessionName:"Upper Body Strength", durationMins:45, isRestDay:false, exercises:[ {name:"Bench Press",sets:4,reps:"8-10"}, {name:"Bent-Over Row",sets:4,reps:"8-10"}, {name:"Overhead Press",sets:3,reps:"10-12"} ] },
+      { sessionName:"Lower Body Power",    durationMins:50, isRestDay:false, exercises:[ {name:"Back Squat",sets:4,reps:"6-8"}, {name:"Romanian Deadlift",sets:3,reps:"8-10"}, {name:"Walking Lunges",sets:3,reps:"12"} ] },
+      { sessionName:"Rest Day",            durationMins:0,  isRestDay:true,  exercises:[] },
+      { sessionName:"HIIT Cardio",         durationMins:30, isRestDay:false, exercises:[ {name:"Kettlebell Swings",sets:5,reps:"20"}, {name:"Burpees",sets:5,reps:"15"} ] },
+      { sessionName:"Push Day",            durationMins:45, isRestDay:false, exercises:[ {name:"Incline Dumbbell Press",sets:4,reps:"8-10"}, {name:"Lateral Raises",sets:3,reps:"12-15"}, {name:"Triceps Dips",sets:3,reps:"10-12"} ] },
+      { sessionName:"Pull Day",            durationMins:45, isRestDay:false, exercises:[ {name:"Deadlift",sets:4,reps:"6-8"}, {name:"Pull-Ups",sets:4,reps:"6-10"}, {name:"Barbell Curl",sets:3,reps:"10-12"} ] },
+      { sessionName:"Rest Day",            durationMins:0,  isRestDay:true,  exercises:[] },
+    ] }] } } };
+    if (endpoint === "/nutrition/active-plan") { const day=(cal)=>({ day_total_calories:cal, meals:[ {meal_name:"Greek Yogurt & Berry Bowl",recipe_name:"Greek Yogurt & Berry Bowl",calories:420,protein_g:32,carbs_g:45,fat_g:12}, {meal_name:"Grilled Chicken & Quinoa Salad",recipe_name:"Grilled Chicken & Quinoa Salad",calories:580,protein_g:45,carbs_g:55,fat_g:18}, {meal_name:"Salmon, Sweet Potato & Greens",recipe_name:"Salmon, Sweet Potato & Greens",calories:650,protein_g:42,carbs_g:48,fat_g:24} ] }); return { success:true, data:{ plan:{
+      plan_name:"Build Muscle — Balanced Plan",
+      plan_summary:"A protein-forward plan built around your goal, fitness level, and training days.",
+      daily_targets:{ calories:1650, protein_g:119, carbs_g:148, fat_g:54 },
+      week:{ monday:day(1650), tuesday:day(1650), wednesday:day(1650), thursday:day(1650), friday:day(1650), saturday:day(1650), sunday:day(1650) },
+      supplement_suggestions:[
+        {supplement:"Whey Protein", reason:"Helps you hit your daily protein target without extra cooking.", timing:"Post-workout"},
+        {supplement:"Creatine Monohydrate", reason:"Well-studied support for strength and lean mass gains.", timing:"Any time, daily"},
+        {supplement:"Vitamin D3", reason:"Commonly low for indoor trainers; supports recovery.", timing:"With breakfast"},
+      ],
+      nutrition_coach_message:"This is a sample plan for the demo — the real plan adapts to your logged meals and progress over time.",
+      shopping_list:{},
+      meal_prep_tips:["Batch-cook grains on Sunday for the week ahead.","Portion proteins into containers right after cooking."],
+    } } }; }
     if (endpoint.startsWith("/workouts/history")) return { success:true, data:{ logs:[ { id:"1", name:"Chest & Triceps", type:"STRENGTH", duration:45, caloriesBurned:320, completedAt:new Date(Date.now()-86400000).toISOString() }, { id:"2", name:"HIIT Cardio", type:"CARDIO", duration:30, caloriesBurned:280, completedAt:new Date(Date.now()-2*86400000).toISOString() } ] } };
     if (endpoint.startsWith("/workouts/stats"))   return { success:true, data:{ stats:{ totalWorkouts:12, totalCalories:3840, totalMinutes:540, currentStreak:7, thisWeek:4 } } };
     if (endpoint === "/nutrition/meal-plan")       return { success:true, data:{ plan:null } };
@@ -39,7 +74,7 @@ const apiCall = async (endpoint, options = {}) => {
     if (endpoint === "/payments/create-checkout") return { success:true, data:{ url:"#" } };
     if (endpoint === "/notifications")       return { success:true, data:[] };
     if (endpoint === "/users/mood")          return { success:true };
-    if (endpoint === "/workouts/log")        return { success:true };
+    if (endpoint === "/workouts/log")        return { success:true, data:{ workoutLog:{ id:`demo-log-${Date.now()}` } } };
     return { success:true, data:{} };
   }
   const { skipAuthRedirect, ...fetchOptions } = options;
@@ -119,7 +154,11 @@ const clearAuth = () => {
     .forEach(k => localStorage.removeItem(k));
 };
 
-const getAuthToken = () => _isSignedIn ? 'clerk_active' : null;
+// PUBLIC_DEMO yields a truthy sentinel here too, so the loaders that gate on
+// getAuthToken() (Nutrition's AI plan, recipe grids, etc.) actually fire for a
+// signed-out demo visitor instead of sitting on their own empty state forever —
+// safe because apiCall() is mocked for the exact same condition.
+const getAuthToken = () => _isSignedIn ? 'clerk_active' : (PUBLIC_DEMO ? 'demo_token' : null);
 const getCachedUser = () => {
   try { return JSON.parse(localStorage.getItem("vtrx_user") || "null"); } catch(_e){ return null; }
 };
@@ -190,6 +229,10 @@ let _openPaymentSheet = null;
 // UpgradePlanPage) — skips PaymentSheet's own duplicate monthly/annual picker
 // instead of asking the same question twice back to back.
 const openPaymentSheet = (plan = "monthly", opts = {}) => {
+  if (PUBLIC_DEMO) {
+    window.alert("This is a shared demo account, so upgrades are disabled here — join the waitlist for real early access!");
+    return;
+  }
   track("upgrade_clicked", { plan });
   if (_openPaymentSheet) {
     _openPaymentSheet(plan, opts);
@@ -10781,6 +10824,12 @@ function VTRXAppInner({ setPaymentPlan }) {
   const { isLoaded: clerkLoaded, isSignedIn, getToken } = useClerkAuth();
   const { signOut: clerkSignOut } = useClerk();
 
+  // Keep this ahead of any other effect that calls apiCall()/getAuthToken() on
+  // mount (e.g. the splash-transition effect below) — a real signed-in user
+  // opening a stray ?demo=1 link must never have apiCall's PUBLIC_DEMO mock
+  // branch fire on a stale (default-false) _isSignedIn read.
+  useEffect(() => { _isSignedIn = isSignedIn; return () => { _isSignedIn = false; }; }, [isSignedIn]);
+
   // ── Phase / onboarding state ──────────────────────────────────────────────
   const [phase, setPhase]           = useState("splash");
   const [pendingEmail,    setPendingEmail]    = useState("");
@@ -10921,11 +10970,11 @@ function VTRXAppInner({ setPaymentPlan }) {
   // Push one sentinel history entry so the first back press fires popstate instead
   // of leaving the app. Must be declared before any early returns to satisfy rules of hooks.
   useEffect(() => {
-    window.history.pushState({ vtrx: true }, '', window.location.pathname);
+    window.history.pushState({ vtrx: true }, '', window.location.pathname + (PUBLIC_DEMO ? '?demo=1' : ''));
     const onPopState = () => {
       const handled = handleAppBackRef.current?.();
       if (handled) {
-        window.history.pushState({ vtrx: true }, '', window.location.pathname);
+        window.history.pushState({ vtrx: true }, '', window.location.pathname + (PUBLIC_DEMO ? '?demo=1' : ''));
       }
     };
     window.addEventListener('popstate', onPopState);
@@ -10936,7 +10985,7 @@ function VTRXAppInner({ setPaymentPlan }) {
   // Cache the result in localStorage keyed by userId+date so re-mounts don't burn API quota.
   useEffect(()=>{
     const userId = liveUser?.id;
-    if (!isSignedIn || !userId) return;
+    if ((!isSignedIn && !PUBLIC_DEMO) || !userId) return;
 
     const today    = new Date().toLocaleDateString('en-CA');
     const cacheKey = `vtrx_daily_workout_${userId}`;
@@ -10963,7 +11012,7 @@ function VTRXAppInner({ setPaymentPlan }) {
 
   useEffect(()=>{
     const userId = liveUser?.id;
-    if (!isSignedIn || !userId) return;
+    if ((!isSignedIn && !PUBLIC_DEMO) || !userId) return;
     apiCall('/workouts/active-plan')
       .then(d => {
         if (d?.data?.plan) {
@@ -11014,8 +11063,8 @@ function VTRXAppInner({ setPaymentPlan }) {
       setTimeout(() => setPhase(nextPhase), delay);
     };
 
-    if (DEMO_MODE) { afterSplash("onboarding"); return; }
-    if (!isSignedIn) { afterSplash("onboarding"); return; }
+    if (DEMO_MODE && !PUBLIC_DEMO) { afterSplash("onboarding"); return; }
+    if (!isSignedIn && !PUBLIC_DEMO) { afterSplash("onboarding"); return; }
 
     // skipAuthRedirect: this is the initial app-load fetch, fired on every page
     // load/refresh for an already-signed-in user. It already falls back to
@@ -11114,8 +11163,6 @@ function VTRXAppInner({ setPaymentPlan }) {
     _getClerkToken = () => getToken();
     return () => { _getClerkToken = null; };
   }, [getToken]);
-
-  useEffect(() => { _isSignedIn = isSignedIn; return () => { _isSignedIn = false; }; }, [isSignedIn]);
 
   // When any protected API call returns 401, clear auth and send to login.
   // The actual grace period against a transient 401 during navigation lives in
@@ -11604,7 +11651,7 @@ function VTRXAppInner({ setPaymentPlan }) {
               const _trainingSessions = (_week?.sessions||[]).filter(s=>!s.isRestDay);
               const _nextIdx = (activeW.planSessionIdx ?? planSessionIdx) + 1;
               if (_nextIdx >= _trainingSessions.length) {
-                const _newWeek = Math.min(activePlan.weekNumber + 1, 4);
+                const _newWeek = Math.min(activePlan.weekNumber + 1, activePlan.plan.weeks?.length || 1);
                 apiCall('/workouts/active-plan/advance-week', { method:'PATCH' }).catch(()=>{});
                 setActivePlan(prev => prev ? {...prev, weekNumber: _newWeek} : prev);
                 setPlanSessionIdx(0);
