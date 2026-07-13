@@ -13,36 +13,50 @@ vtrx-backend/
 ├── .gitignore                   ← Keeps secrets out of git
 │
 ├── config/
-│   ├── aws.js                   ← AWS SDK setup (Cognito, Secrets Manager)
 │   └── database.js              ← Prisma database client
 │
 ├── prisma/
 │   └── schema.prisma            ← Your entire database structure
 │
 ├── middleware/
-│   ├── auth.js                  ← JWT token verification
+│   ├── auth.js                  ← Clerk session token verification
 │   └── errorHandler.js          ← Catches all errors cleanly
 │
 ├── services/
-│   ├── cognitoService.js        ← AWS Cognito (signup, login, etc)
-│   ├── aiService.js             ← OpenAI workout summaries
-│   └── ymoveService.js          ← Ymove content integration
+│   ├── clerkService.js          ← Clerk auth (password change, etc.)
+│   ├── stripeService.js         ← Billing/subscriptions
+│   ├── supabaseStorageService.js← Progress photo/avatar uploads
+│   ├── ymoveService.js          ← Workout/exercise content integration
+│   ├── aiService.js / aiPlanGenerator.js / anthropicClient.js / openaiClient.js
+│   │                            ← AI plan generation & coaching summaries
+│   ├── notificationService.js / notificationScheduler.js
+│   │                            ← Push notifications (Firebase) + the cron
+│   │                              jobs that trigger them (in-process, needs
+│   │                              a persistent server — see note below)
+│   └── ...                      ← nutritionPlanService, embeddingService,
+│                                   pineconeService, emailService, makeService
 │
-├── controllers/
-│   ├── authController.js        ← Auth business logic
-│   ├── workoutController.js     ← Workout & logging logic
-│   ├── userController.js        ← Profile & progress logic
-│   └── nutritionController.js   ← Recipe & meal plan logic
+├── controllers/                 ← One per resource (auth, users, workouts,
+│                                   nutrition, payments, notifications, ai,
+│                                   upload, n8n, linear)
 │
-├── routes/
-│   ├── auth.js                  ← /api/auth/* endpoints
-│   ├── users.js                 ← /api/users/* endpoints
-│   ├── workouts.js              ← /api/workouts/* endpoints
-│   └── nutrition.js             ← /api/nutrition/* endpoints
+├── routes/                      ← /api/<resource>/* endpoint definitions
 │
 └── utils/
-    └── logger.js                ← CloudWatch-ready logging
+    └── logger.js                ← Structured logging
 ```
+
+**Auth is Clerk, not AWS Cognito.** Signup/login/password-reset all happen
+client-side via Clerk's hosted UI — this backend only verifies the session
+token Clerk issues (`middleware/auth.js`) and exposes `/api/auth/me` +
+`/api/auth/change-password`.
+
+**This is a long-running process, not serverless.** `notificationScheduler.js`
+runs an in-process `node-cron` schedule, and a few one-time sync jobs run at
+boot (`server.js`'s `app.listen` callback). It needs a host that keeps the
+Node process alive continuously (Railway, Render, Fly.io, a VPS) — it will
+not work as-is on a serverless platform (Vercel functions, AWS Lambda)
+without rearchitecting those jobs as externally-triggered endpoints.
 
 ---
 
@@ -63,8 +77,9 @@ Open your terminal, navigate to the vtrx-backend folder, then run:
 ```bash
 npm install
 ```
-This downloads all the packages listed in package.json.
-It creates a `node_modules` folder (never commit this to git — it's huge).
+This downloads all the packages listed in package.json, and (via
+`postinstall`) generates the Prisma client and pushes the schema to your
+database. It creates a `node_modules` folder (never commit this to git).
 
 ---
 
@@ -73,99 +88,73 @@ It creates a `node_modules` folder (never commit this to git — it's huge).
 ```bash
 cp .env.example .env
 ```
-Now open `.env` and fill in the values one section at a time.
-**NEVER commit this file to git.** It's already in .gitignore.
+Now open `.env` and fill in the values — see `.env.example` for what each
+one is for and which are required vs. optional. **Never commit `.env`** —
+it's already in `.gitignore`.
+
+The two you can't skip: `DATABASE_URL` (Step 4) and `CLERK_SECRET_KEY`
+(Step 5). Everything else degrades gracefully or gates a specific feature
+(e.g. no `FIREBASE_SERVICE_ACCOUNT_BASE64` just disables push notifications).
 
 ---
 
-## STEP 4 — Set up AWS Cognito (Authentication)
+## STEP 4 — Set up a PostgreSQL database
 
-**Why Cognito?** It handles user accounts, password hashing, email verification,
-and token generation — all securely, without you writing any crypto code.
-
-### 4a — Create a User Pool
-
-1. Go to AWS Console → search "Cognito" → click "User Pools"
-2. Click "Create user pool"
-3. Settings to choose:
-   - **Sign-in options:** Email
-   - **Password policy:** Cognito defaults (min 8 chars, uppercase, lowercase, number)
-   - **MFA:** Optional (skip for now)
-   - **Email verification:** Yes (sends code automatically)
-   - **App client name:** `vtrx-app`
-   - **App client type:** Public client
-   - **Auth flows:** Enable `ALLOW_USER_PASSWORD_AUTH` and `ALLOW_REFRESH_TOKEN_AUTH`
-
-4. After creation, note down:
-   - **User Pool ID** (looks like: `us-east-1_AbCdEfGhI`) → paste into `COGNITO_USER_POOL_ID`
-   - **App Client ID** (looks like: `1a2b3c4d5e6f...`) → paste into `COGNITO_CLIENT_ID`
-   - If your client has a secret, paste into `COGNITO_CLIENT_SECRET` (leave blank if none)
-
-### 4b — Create an IAM user for local development
-
-1. AWS Console → IAM → Users → Create User
-2. Name: `vtrx-local-dev`
-3. Attach policies: `AmazonCognitoFullAccess`
-4. Create access keys → copy into `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`
-
-> ⚠️ In production (AWS Lambda/EC2), you use IAM roles, NOT access keys.
-> Access keys are for local development only.
-
----
-
-## STEP 5 — Set up AWS RDS PostgreSQL (Database)
-
-**Why RDS?** It's a managed PostgreSQL database hosted by AWS.
-You don't have to worry about backups, patches, or scaling.
-
-1. AWS Console → RDS → Create database
-2. Engine: **PostgreSQL**
-3. Template: **Free tier** (for development)
-4. Settings:
-   - DB identifier: `vtrx-db`
-   - Username: `vtrx_user`
-   - Password: (create a strong one, save it)
-5. Instance: `db.t3.micro` (free tier)
-6. Storage: 20GB (default)
-7. Connectivity:
-   - Public access: **Yes** (for local development only — turn off in production)
-   - VPC security group: Create new → allow inbound PostgreSQL (port 5432) from your IP
-
-8. After creation, copy the **Endpoint** from the RDS console.
-
-Build your DATABASE_URL:
+Any Postgres instance works — this app has no provider-specific dependency
+in code, just a standard `DATABASE_URL` connection string read by Prisma.
+Common options: your hosting provider's managed Postgres (Railway, Render,
+etc.), Supabase, or Neon. Whichever you pick, copy its connection string
+into `DATABASE_URL`:
 ```
-postgresql://vtrx_user:yourpassword@your-endpoint.rds.amazonaws.com:5432/vtrx_db
+postgresql://user:password@host:5432/dbname
 ```
 
 ---
 
-## STEP 6 — Set up Prisma and run migrations
+## STEP 5 — Set up Clerk (Authentication)
 
-Prisma reads your schema.prisma and creates the actual database tables.
+1. Go to https://clerk.com → create an application
+2. In the Clerk dashboard, grab the **Secret Key** → paste into
+   `CLERK_SECRET_KEY` in your `.env`
+3. The frontend needs the matching **Publishable Key** (`VITE_CLERK_PUBLISHABLE_KEY`
+   in its own `.env`) — see `vtrxfrontend/vtrx-frontend/.env.example`
+
+---
+
+## STEP 6 — Set up Prisma and push the schema
+
+Prisma reads `schema.prisma` and creates the actual database tables. This
+project uses `prisma db push` (declarative schema sync), not versioned
+migration files.
 
 ```bash
-# Generate the Prisma client (do this after any schema changes)
-npm run db:generate
-
-# Create the tables in your database (first time setup)
-npm run db:migrate -- --name initial_setup
+npx prisma generate     # Generate the Prisma client
+npx prisma db push      # Create/update tables to match schema.prisma
 ```
 
 To view your database visually in a browser:
 ```bash
-npm run db:studio
+npx prisma studio
 # Opens at http://localhost:5555
 ```
 
 ---
 
-## STEP 7 — Get your OpenAI API key
+## STEP 7 — Get your third-party API keys
 
-1. Go to https://platform.openai.com
-2. Create account → API Keys → Create new key
-3. Copy it into `OPENAI_API_KEY` in your .env
-4. Add a spending limit (Settings → Billing → Spend limits) — recommended: $10/month to start
+See `.env.example` for the full list and what each one gates. At minimum
+for local dev you'll likely want:
+
+- **OpenAI** (https://platform.openai.com) → `OPENAI_API_KEY` — set a
+  spending limit under Billing → Spend limits
+- **Anthropic** (https://console.anthropic.com) → `ANTHROPIC_API_KEY`
+- **Stripe** (https://dashboard.stripe.com, test mode) → `STRIPE_SECRET_KEY`,
+  `STRIPE_WEBHOOK_SECRET`, and your test price IDs
+
+Everything else (Pinecone, Ymove, Supabase, Firebase, Resend, Sentry, n8n,
+Linear, Make.com) only needs to be set if you're actively working on that
+feature — the app boots fine without them, just with that integration
+disabled/logging a warning.
 
 ---
 
@@ -182,8 +171,8 @@ npm start
 You should see:
 ```
 ✅ Database connected
-🚀 VTRX API running on port 5000 [development]
-📡 Health check: http://localhost:5000/health
+🚀 VTRX API v2.0 on port 5000 [development]
+📡 Health: http://localhost:5000/health
 ```
 
 Test it works:
@@ -220,13 +209,15 @@ curl http://localhost:5000/api/users/profile \
 | POST   | /api/users/mood                   | Yes  | Log mood check-in        |
 | GET    | /api/users/progress               | Yes  | Progress history         |
 | POST   | /api/users/progress               | Yes  | Log measurements         |
+| GET    | /api/users/water                  | Yes  | Today's water intake     |
+| POST   | /api/users/water                  | Yes  | Log water intake         |
 | GET    | /api/users/notifications          | Yes  | Get notifications        |
 | GET    | /api/workouts                     | Yes  | Browse workouts          |
 | GET    | /api/workouts/:id                 | Yes  | Single workout           |
 | POST   | /api/workouts/log                 | Yes  | Log completed workout    |
-| GET    | /api/workouts/history             | Yes  | Workout history          |
-| GET    | /api/workouts/stats               | Yes  | Weekly stats             |
-| GET    | /api/workouts/ai-summary/:logId   | Yes  | AI coaching summary      |
+| GET    | /api/workouts/history              | Yes  | Workout history          |
+| GET    | /api/workouts/stats                | Yes  | Weekly stats             |
+| GET    | /api/workouts/ai-summary/:logId    | Yes  | AI coaching summary      |
 | GET    | /api/nutrition/recipes            | Yes  | Browse recipes           |
 | GET    | /api/nutrition/recipes/:id        | Yes  | Single recipe            |
 | GET    | /api/nutrition/saved              | Yes  | Saved recipes            |
@@ -234,30 +225,26 @@ curl http://localhost:5000/api/users/profile \
 | DELETE | /api/nutrition/saved/:id          | Yes  | Unsave a recipe          |
 | GET    | /api/nutrition/meal-plan          | Yes* | Today's meal plan        |
 
-*Premium only
+*Premium only. This table covers the most commonly used routes — see
+`routes/*.js` for the complete list (payments, notifications, AI, uploads,
+n8n/Linear webhooks).
 
 ---
 
 ## Common Beginner Mistakes
 
 **"Cannot connect to database"**
-→ Check DATABASE_URL format, make sure RDS security group allows your IP
+→ Check `DATABASE_URL` format and that your database allows connections
+from wherever this is running (IP allowlist / SSL mode, depending on provider)
 
 **"Not authorized" on every request**
-→ Make sure you're sending `Authorization: Bearer YOUR_TOKEN` header
-
-**"Cognito error: UserPool not found"**
-→ Check COGNITO_USER_POOL_ID matches your AWS region prefix
+→ Make sure you're sending `Authorization: Bearer YOUR_TOKEN` header, and
+that the token is a real Clerk session token (not an old JWT — this backend
+doesn't issue its own tokens)
 
 **"OpenAI error: Incorrect API key"**
-→ Make sure OPENAI_API_KEY starts with `sk-` and has billing set up
+→ Make sure `OPENAI_API_KEY` starts with `sk-` and has billing set up
 
----
-
-## Next Steps (Phase 2)
-
-1. Connect your React frontend to these APIs
-2. Set up AWS Amplify for frontend hosting
-3. Configure AWS S3 + CloudFront for media
-4. Set up AWS Secrets Manager for production secrets
-5. Add Ymove API once you have their documentation
+**Every frontend request fails with a CORS error**
+→ `FRONTEND_URL` is unset or doesn't exactly match your deployed frontend's
+origin — see the `[CORS]` warning/error in the server logs on boot
