@@ -14,7 +14,7 @@ const sanitizeForLog = (value) => String(value).replace(/[\r\n]/g, ' ');
 const errorHandler = (err, req, res, next) => {
   // Log the full error internally (goes to CloudWatch in production)
   logger.error(sanitizeForLog(err.message), {
-    stack:  err.stack,
+    stack:  err.stack ? sanitizeForLog(err.stack) : err.stack,
     url:    sanitizeForLog(req.originalUrl),
     method: req.method,
     userId: req.user?.id || 'unauthenticated',

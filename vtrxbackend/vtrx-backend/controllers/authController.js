@@ -3,9 +3,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Actual signup/login/verification/password-reset all happen client-side via
 // Clerk's own hosted UI (@clerk/clerk-react) — the frontend never calls a
-// custom /auth/signup|login|... endpoint. requests. What's left here just
-// reads/mutates the Prisma user record once `middleware/auth.js` has already
-// verified the caller's Clerk session token.
+// custom /auth/signup|login|... endpoint. What's left here just reads/mutates
+// the Prisma user record once `middleware/auth.js` has already verified the
+// caller's Clerk session token.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const prisma = require('../config/database');

@@ -57,6 +57,18 @@ if (allowedVercelOrigins.length === 0) {
   );
 }
 
+// Loud, hard-to-miss check for the specific misconfiguration that silently
+// breaks every browser API call: production, with no allowlisted origin at
+// all. A plain warn() above is easy to miss in production logs during a
+// deploy — this failure mode looks like "the API is down" to users even
+// though the server itself is healthy.
+if (process.env.NODE_ENV === 'production' && !process.env.FRONTEND_URL && allowedVercelOrigins.length === 0) {
+  logger.error(
+    '[CORS] Running in production with neither FRONTEND_URL nor ALLOWED_VERCEL_ORIGINS set — ' +
+    'no browser origin will be allowed. Every frontend API call will fail CORS.'
+  );
+}
+
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (mobile apps, Postman)
@@ -176,8 +188,13 @@ const server = app.listen(PORT, () => {
 process.on('SIGTERM', () => {
   logger.info('SIGTERM — shutting down gracefully');
   server.close(async () => {
-    await require('./config/database').$disconnect();
-    process.exit(0);
+    try {
+      await require('./config/database').$disconnect();
+    } catch (err) {
+      logger.error('Error disconnecting Prisma during shutdown:', err.message);
+    } finally {
+      process.exit(0);
+    }
   });
 });
 

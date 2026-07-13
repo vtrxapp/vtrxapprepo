@@ -246,15 +246,22 @@ const getTodayWater = async (req, res) => {
 // ── POST /api/users/water — Log water intake ──────────────────────────────────
 const logWater = async (req, res) => {
   const { glasses } = req.body;
-  if (glasses === undefined || glasses === null || !Number.isInteger(Number(glasses)) || Number(glasses) < 0 || Number(glasses) > 50) {
+  // Number(glasses) alone would accept "", " ", false, null, and "0x10" as
+  // valid counts (all coerce to a finite number) — only allow an actual
+  // number or a plain digit string.
+  const numericGlasses =
+    typeof glasses === 'number' ? glasses :
+    typeof glasses === 'string' && /^\d+$/.test(glasses.trim()) ? Number(glasses.trim()) :
+    NaN;
+  if (!Number.isInteger(numericGlasses) || numericGlasses < 0 || numericGlasses > 50) {
     return res.status(400).json({ success: false, message: 'glasses must be an integer between 0 and 50' });
   }
   try {
     const today = toDateOnly(new Date());
     const log = await prisma.waterLog.upsert({
       where:  { userId_loggedAt: { userId: req.user.id, loggedAt: today } },
-      create: { userId: req.user.id, glasses: Number(glasses), loggedAt: today },
-      update: { glasses: Number(glasses) },
+      create: { userId: req.user.id, glasses: numericGlasses, loggedAt: today },
+      update: { glasses: numericGlasses },
     });
     res.json({ success: true, data: { glasses: log.glasses } });
   } catch (err) {

@@ -195,21 +195,11 @@ curl http://localhost:5000/health
 
 ## STEP 9 — Test the API
 
-### Sign up a test user:
-```bash
-curl -X POST http://localhost:5000/api/auth/signup \
-  -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com","password":"Test1234!","username":"testuser","name":"Test User"}'
-```
-
-### Log in:
-```bash
-curl -X POST http://localhost:5000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com","password":"Test1234!"}'
-```
-
-Copy the `token` from the response. Then use it:
+Signup/login happen client-side via Clerk's hosted UI (`@clerk/clerk-react`) —
+this backend has no `/api/auth/signup` or `/api/auth/login` to curl. To test
+an authenticated endpoint, sign in through the frontend, copy the Clerk
+session token it sends (DevTools → Network → any `/api/*` request →
+`Authorization` header), and use that as `YOUR_TOKEN_HERE` below.
 
 ### Get your profile:
 ```bash
@@ -223,13 +213,8 @@ curl http://localhost:5000/api/users/profile \
 
 | Method | Endpoint                          | Auth | Description              |
 |--------|-----------------------------------|------|--------------------------|
-| POST   | /api/auth/signup                  | No   | Create account           |
-| POST   | /api/auth/confirm-email           | No   | Verify email             |
-| POST   | /api/auth/login                   | No   | Login                    |
-| POST   | /api/auth/logout                  | Yes  | Logout                   |
-| POST   | /api/auth/forgot-password         | No   | Send reset email         |
-| POST   | /api/auth/reset-password          | No   | Set new password         |
 | GET    | /api/auth/me                      | Yes  | Get current user         |
+| POST   | /api/auth/change-password         | Yes  | Change password (Clerk)  |
 | GET    | /api/users/profile                | Yes  | Full profile             |
 | PUT    | /api/users/profile                | Yes  | Update profile           |
 | POST   | /api/users/mood                   | Yes  | Log mood check-in        |
