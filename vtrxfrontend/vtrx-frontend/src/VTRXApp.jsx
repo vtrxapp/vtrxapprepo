@@ -28,8 +28,11 @@ const PUBLIC_DEMO = typeof window !== "undefined" && new URLSearchParams(window.
 
 // ── API Helper ────────────────────────────────────────────────────────────────
 const apiCall = async (endpoint, options = {}) => {
-  // Demo/preview mode — no backend configured, return mock success
-  if (DEMO_MODE || PUBLIC_DEMO) {
+  // Demo/preview mode — no backend configured, return mock success.
+  // PUBLIC_DEMO also requires !_isSignedIn: a real signed-in user who opens a
+  // stray ?demo=1 link must still hit the real API for their own account, not
+  // get the shared demo profile/plan mocked over their real data.
+  if (DEMO_MODE || (PUBLIC_DEMO && !_isSignedIn)) {
     // Simulate a brief network delay
     await new Promise(r => setTimeout(r, 400));
     // Return plausible mock responses per endpoint
@@ -52,7 +55,11 @@ const apiCall = async (endpoint, options = {}) => {
       plan_summary:"A protein-forward plan built around your goal, fitness level, and training days.",
       daily_targets:{ calories:1650, protein_g:119, carbs_g:148, fat_g:54 },
       week:{ monday:day(1650), tuesday:day(1650), wednesday:day(1650), thursday:day(1650), friday:day(1650), saturday:day(1650), sunday:day(1650) },
-      supplement_suggestions:["Whey protein","Creatine monohydrate","Vitamin D3"],
+      supplement_suggestions:[
+        {supplement:"Whey Protein", reason:"Helps you hit your daily protein target without extra cooking.", timing:"Post-workout"},
+        {supplement:"Creatine Monohydrate", reason:"Well-studied support for strength and lean mass gains.", timing:"Any time, daily"},
+        {supplement:"Vitamin D3", reason:"Commonly low for indoor trainers; supports recovery.", timing:"With breakfast"},
+      ],
       nutrition_coach_message:"This is a sample plan for the demo — the real plan adapts to your logged meals and progress over time.",
       shopping_list:{},
       meal_prep_tips:["Batch-cook grains on Sunday for the week ahead.","Portion proteins into containers right after cooking."],
@@ -67,7 +74,7 @@ const apiCall = async (endpoint, options = {}) => {
     if (endpoint === "/payments/create-checkout") return { success:true, data:{ url:"#" } };
     if (endpoint === "/notifications")       return { success:true, data:[] };
     if (endpoint === "/users/mood")          return { success:true };
-    if (endpoint === "/workouts/log")        return { success:true };
+    if (endpoint === "/workouts/log")        return { success:true, data:{ workoutLog:{ id:`demo-log-${Date.now()}` } } };
     return { success:true, data:{} };
   }
   const { skipAuthRedirect, ...fetchOptions } = options;
@@ -147,7 +154,11 @@ const clearAuth = () => {
     .forEach(k => localStorage.removeItem(k));
 };
 
-const getAuthToken = () => _isSignedIn ? 'clerk_active' : null;
+// PUBLIC_DEMO yields a truthy sentinel here too, so the loaders that gate on
+// getAuthToken() (Nutrition's AI plan, recipe grids, etc.) actually fire for a
+// signed-out demo visitor instead of sitting on their own empty state forever —
+// safe because apiCall() is mocked for the exact same condition.
+const getAuthToken = () => _isSignedIn ? 'clerk_active' : (PUBLIC_DEMO ? 'demo_token' : null);
 const getCachedUser = () => {
   try { return JSON.parse(localStorage.getItem("vtrx_user") || "null"); } catch(_e){ return null; }
 };
@@ -10813,6 +10824,12 @@ function VTRXAppInner({ setPaymentPlan }) {
   const { isLoaded: clerkLoaded, isSignedIn, getToken } = useClerkAuth();
   const { signOut: clerkSignOut } = useClerk();
 
+  // Keep this ahead of any other effect that calls apiCall()/getAuthToken() on
+  // mount (e.g. the splash-transition effect below) — a real signed-in user
+  // opening a stray ?demo=1 link must never have apiCall's PUBLIC_DEMO mock
+  // branch fire on a stale (default-false) _isSignedIn read.
+  useEffect(() => { _isSignedIn = isSignedIn; return () => { _isSignedIn = false; }; }, [isSignedIn]);
+
   // ── Phase / onboarding state ──────────────────────────────────────────────
   const [phase, setPhase]           = useState("splash");
   const [pendingEmail,    setPendingEmail]    = useState("");
@@ -10953,11 +10970,11 @@ function VTRXAppInner({ setPaymentPlan }) {
   // Push one sentinel history entry so the first back press fires popstate instead
   // of leaving the app. Must be declared before any early returns to satisfy rules of hooks.
   useEffect(() => {
-    window.history.pushState({ vtrx: true }, '', window.location.pathname);
+    window.history.pushState({ vtrx: true }, '', window.location.pathname + (PUBLIC_DEMO ? '?demo=1' : ''));
     const onPopState = () => {
       const handled = handleAppBackRef.current?.();
       if (handled) {
-        window.history.pushState({ vtrx: true }, '', window.location.pathname);
+        window.history.pushState({ vtrx: true }, '', window.location.pathname + (PUBLIC_DEMO ? '?demo=1' : ''));
       }
     };
     window.addEventListener('popstate', onPopState);
@@ -11046,7 +11063,7 @@ function VTRXAppInner({ setPaymentPlan }) {
       setTimeout(() => setPhase(nextPhase), delay);
     };
 
-    if (DEMO_MODE) { afterSplash("onboarding"); return; }
+    if (DEMO_MODE && !PUBLIC_DEMO) { afterSplash("onboarding"); return; }
     if (!isSignedIn && !PUBLIC_DEMO) { afterSplash("onboarding"); return; }
 
     // skipAuthRedirect: this is the initial app-load fetch, fired on every page
@@ -11146,8 +11163,6 @@ function VTRXAppInner({ setPaymentPlan }) {
     _getClerkToken = () => getToken();
     return () => { _getClerkToken = null; };
   }, [getToken]);
-
-  useEffect(() => { _isSignedIn = isSignedIn; return () => { _isSignedIn = false; }; }, [isSignedIn]);
 
   // When any protected API call returns 401, clear auth and send to login.
   // The actual grace period against a transient 401 during navigation lives in
@@ -11636,7 +11651,7 @@ function VTRXAppInner({ setPaymentPlan }) {
               const _trainingSessions = (_week?.sessions||[]).filter(s=>!s.isRestDay);
               const _nextIdx = (activeW.planSessionIdx ?? planSessionIdx) + 1;
               if (_nextIdx >= _trainingSessions.length) {
-                const _newWeek = Math.min(activePlan.weekNumber + 1, 4);
+                const _newWeek = Math.min(activePlan.weekNumber + 1, activePlan.plan.weeks?.length || 1);
                 apiCall('/workouts/active-plan/advance-week', { method:'PATCH' }).catch(()=>{});
                 setActivePlan(prev => prev ? {...prev, weekNumber: _newWeek} : prev);
                 setPlanSessionIdx(0);
