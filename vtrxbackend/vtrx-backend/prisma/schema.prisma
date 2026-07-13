@@ -472,10 +472,11 @@ model WaterLog {
   id        String   @id @default(uuid())
   userId    String
   glasses   Int      @default(0)
-  loggedAt  DateTime @default(now())
+  loggedAt  DateTime @default(now()) // normalized to UTC midnight — one row per user per day
 
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, loggedAt])
   @@map("water_logs")
 }
 

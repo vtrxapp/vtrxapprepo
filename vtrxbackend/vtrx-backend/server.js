@@ -2,9 +2,9 @@
 // server.js — VTRX Backend API Server v2.0
 // ─────────────────────────────────────────────────────────────────────────────
 
+require('dotenv').config();
 // Sentry MUST be initialised before any other require so it can instrument them
 require('./instrument');
-require('dotenv').config();
 
 const express     = require('express');
 const cors        = require('cors');
@@ -41,18 +41,19 @@ const allowedOrigins = [
 ].filter(Boolean);
 
 // ALLOWED_VERCEL_ORIGINS (optional, comma-separated list of exact Vercel origin URLs,
-// e.g. "https://vtrx-app.vercel.app,https://vtrx-staging.vercel.app").
-// When set, ONLY those specific Vercel origins are allowed — the *.vercel.app wildcard
-// is disabled. If not set, ANY *.vercel.app subdomain is allowed (legacy behaviour).
+// e.g. "https://vtrx-app.vercel.app,https://vtrx-staging.vercel.app"). Only origins
+// in this list (plus FRONTEND_URL/localhost above) are allowed — there is no
+// *.vercel.app wildcard, since combined with credentials:true that would let any
+// attacker-controlled vercel.app deployment make authenticated requests against
+// this API.
 const allowedVercelOrigins = process.env.ALLOWED_VERCEL_ORIGINS
   ? process.env.ALLOWED_VERCEL_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
-  : null;
+  : [];
 
-if (!allowedVercelOrigins) {
+if (allowedVercelOrigins.length === 0) {
   logger.warn(
-    '[CORS] ALLOWED_VERCEL_ORIGINS is not set — falling back to allowing ANY *.vercel.app ' +
-    'origin with credentials. Anyone can deploy a project to a vercel.app subdomain. ' +
-    'Set ALLOWED_VERCEL_ORIGINS to your exact production frontend URL(s) to close this.'
+    '[CORS] ALLOWED_VERCEL_ORIGINS is not set — no *.vercel.app origins are allowed. ' +
+    'Set it to your exact production frontend URL(s) if the frontend is hosted on Vercel.'
   );
 }
 
@@ -62,14 +63,11 @@ app.use(cors({
     if (!origin) return callback(null, true);
     // Check static allowed origins (FRONTEND_URL, localhost)
     if (allowedOrigins.includes(origin)) return callback(null, true);
-    // Vercel origin check — restricted to specific list when ALLOWED_VERCEL_ORIGINS is set
-    if (allowedVercelOrigins) {
-      if (allowedVercelOrigins.includes(origin)) return callback(null, true);
-    } else if (origin.endsWith('.vercel.app')) {
-      // Fallback: allow any *.vercel.app when the env var is not configured
-      return callback(null, true);
-    }
-    callback(new Error('Not allowed by CORS'));
+    // Exact-match only — no wildcard subdomain matching
+    if (allowedVercelOrigins.includes(origin)) return callback(null, true);
+    const err = new Error('Not allowed by CORS');
+    err.statusCode = 403;
+    callback(err);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -113,7 +111,16 @@ app.use('/api/payments/webhook',
 );
 
 // ── Body parsing ─────────────────────────────────────────────────────────────
-app.use(express.json({ limit: '10mb' }));
+// Captures the raw bytes alongside the parsed body for every JSON request, so
+// webhook handlers that need to verify an HMAC signature over the exact raw
+// payload (e.g. Linear) can use req.rawBody without a route-specific parser.
+// Routes that already installed their own raw-body middleware (Stripe, above)
+// are unaffected — body-parser skips re-parsing (and this verify callback)
+// once a request's body has already been parsed.
+app.use(express.json({
+  limit:  '10mb',
+  verify: (req, res, buf) => { req.rawBody = buf; },
+}));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(compression());
 app.use(morgan(
@@ -168,8 +175,8 @@ const server = app.listen(PORT, () => {
 
 process.on('SIGTERM', () => {
   logger.info('SIGTERM — shutting down gracefully');
-  server.close(() => {
-    require('./config/database').$disconnect();
+  server.close(async () => {
+    await require('./config/database').$disconnect();
     process.exit(0);
   });
 });

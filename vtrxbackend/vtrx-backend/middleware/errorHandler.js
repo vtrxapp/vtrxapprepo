@@ -7,11 +7,15 @@
 
 const logger = require('../utils/logger');
 
+// Strips newlines so attacker-controlled values (error messages, URLs) can't
+// forge extra log lines/fields when written into the log stream.
+const sanitizeForLog = (value) => String(value).replace(/[\r\n]/g, ' ');
+
 const errorHandler = (err, req, res, next) => {
   // Log the full error internally (goes to CloudWatch in production)
-  logger.error(`${err.message}`, {
+  logger.error(sanitizeForLog(err.message), {
     stack:  err.stack,
-    url:    req.originalUrl,
+    url:    sanitizeForLog(req.originalUrl),
     method: req.method,
     userId: req.user?.id || 'unauthenticated',
   });
@@ -31,7 +35,7 @@ const errorHandler = (err, req, res, next) => {
   }
 
   // JWT errors
-  if (err.name === 'JsonWebTokenError') {
+  if (['JsonWebTokenError', 'TokenExpiredError', 'NotBeforeError'].includes(err.name)) {
     return res.status(401).json({ success: false, message: 'Invalid token' });
   }
 

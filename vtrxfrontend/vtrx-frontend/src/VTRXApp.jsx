@@ -4543,7 +4543,7 @@ function PricingScreen({ onContinue, onBack }) {
                     <div style={{ fontFamily:FONT,fontSize:26,fontWeight:900,color:"#fff" }}>$5.83<span style={{ fontSize:13,fontWeight:500,color:"#888" }}>/month</span></div>
                     <div style={{ fontFamily:FONT,fontSize:11,color:"#22C55E",fontWeight:600,marginTop:2 }}>$69.99 billed annually · Save 40%</div>
                   </div>
-                : <div style={{ fontFamily:FONT,fontSize:26,fontWeight:900,color:"#fff" }}>$9.83<span style={{ fontSize:13,fontWeight:500,color:"#888" }}>/month</span></div>
+                : <div style={{ fontFamily:FONT,fontSize:26,fontWeight:900,color:"#fff" }}>$9.99<span style={{ fontSize:13,fontWeight:500,color:"#888" }}>/month</span></div>
               }
             </div>
             <div style={{ width:22,height:22,borderRadius:"50%",border:`2px solid ${selected==="premium"?PRIMARY:"#444"}`,background:selected==="premium"?PRIMARY:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:8 }}>
@@ -6954,23 +6954,27 @@ function FitnessGoalPage({ onBack }) {
 }
 
 // ─ Change Email ───────────────────────────────────────────────────────────────
+// Email is Clerk's identity for the account (login, notifications), not a
+// plain profile field — changing it for real means going through Clerk's own
+// add-and-verify-email flow, which this page doesn't implement. Rather than
+// fake a save against a hardcoded placeholder email, show the user's real
+// current email and disable submission with an honest explanation.
 function ChangeEmailPage({ onBack }) {
-  const [email, setEmail] = useState("john@example.com");
+  const { user } = useUser();
   const [newEmail, setNewEmail] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [saved, setSaved] = useState(false);
   const match = newEmail && newEmail===confirm;
 
   return (
     <SubShell title="CHANGE EMAIL" onBack={onBack}>
       <div style={{ background:"#ffffff",borderRadius:20,border:"1px solid #e8e8e8",padding:"20px",marginBottom:14 }}>
-        <div style={{ fontFamily:FONT,fontSize:13,color:"#888888",marginBottom:18,lineHeight:1.5 }}>Current: <span style={{ color:PRIMARY,fontWeight:600 }}>{email}</span></div>
+        <div style={{ fontFamily:FONT,fontSize:13,color:"#888888",marginBottom:18,lineHeight:1.5 }}>Current: <span style={{ color:PRIMARY,fontWeight:600 }}>{user?.email || "—"}</span></div>
         <DarkInput label="NEW EMAIL" value={newEmail} onChange={setNewEmail} type="email" placeholder="Enter new email address"/>
         <DarkInput label="CONFIRM NEW EMAIL" value={confirm} onChange={setConfirm} type="email" placeholder="Confirm new email address"/>
         {confirm&&!match&&<div style={{ fontFamily:FONT,fontSize:12,color:"#EF4444",marginBottom:8,marginTop:-8 }}>Emails do not match</div>}
         {match&&<div style={{ fontFamily:FONT,fontSize:12,color:"#22C55E",marginBottom:8,marginTop:-8 }}>Emails match</div>}
       </div>
-      <SaveBtn onClick={()=>{if(match){setSaved(true);setEmail(newEmail);setNewEmail("");setConfirm("");setTimeout(()=>setSaved(false),2200);}}} saved={saved} label="UPDATE EMAIL"/>
+      <div style={{ fontFamily:FONT,fontSize:12,color:"#888888",textAlign:"center",padding:"0 8px" }}>Changing your account email isn't available yet — contact support if you need this updated.</div>
     </SubShell>
   );
 }
@@ -7488,6 +7492,22 @@ function CheckoutForm({ plan, isTrial, clientSecret, onSuccess, onBack }) {
   const PLAN_LABEL  = { monthly:"$9.99 / month", annual:"$69.99 / year" };
   const PLAN_AMOUNT = { monthly: 999, annual: 6999 };
 
+  // Stripe confirming the PaymentIntent/SetupIntent client-side only means the
+  // card was accepted — the subscription doesn't actually flip to active/trialing
+  // in our DB until the Stripe webhook lands a beat later. Poll the backend
+  // (source of truth) instead of trusting client-side confirmation alone, so we
+  // never show "Welcome to Premium" for an entitlement that isn't real yet.
+  const confirmPremiumActivated = async () => {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      try {
+        const res = await apiCall("/payments/status");
+        if (res?.data?.isPremium) return true;
+      } catch (_e) { /* keep polling */ }
+      await new Promise(r => setTimeout(r, 1500));
+    }
+    return false;
+  };
+
   // Build a PaymentRequest so we can show native Apple Pay / Google Pay buttons
   useEffect(() => {
     if (!stripe || !clientSecret) return;
@@ -7522,9 +7542,15 @@ function CheckoutForm({ plan, isTrial, clientSecret, onSuccess, onBack }) {
       } else {
         ev.complete("success");
         track("subscription_started", { plan, method: "wallet", isTrial });
-        setIsPremium(true);
-        setDone(true);
-        setTimeout(onSuccess, 2600);
+        const activated = await confirmPremiumActivated();
+        if (activated) {
+          setIsPremium(true);
+          setDone(true);
+          setTimeout(onSuccess, 2600);
+        } else {
+          setErr("Payment succeeded but activation is taking longer than expected. Check back in a moment, or contact support if Premium doesn't appear.");
+          setLoading(false);
+        }
       }
     });
   }, [stripe, clientSecret, plan, isTrial]);
@@ -7547,9 +7573,15 @@ function CheckoutForm({ plan, isTrial, clientSecret, onSuccess, onBack }) {
       return;
     }
     track("subscription_started", { plan, method: "card", isTrial });
-    setIsPremium(true);
-    setDone(true);
-    setTimeout(onSuccess, 2600);
+    const activated = await confirmPremiumActivated();
+    if (activated) {
+      setIsPremium(true);
+      setDone(true);
+      setTimeout(onSuccess, 2600);
+    } else {
+      setErr("Payment succeeded but activation is taking longer than expected. Check back in a moment, or contact support if Premium doesn't appear.");
+      setLoading(false);
+    }
   };
 
   if (done) return (
@@ -7624,21 +7656,19 @@ function CheckoutForm({ plan, isTrial, clientSecret, onSuccess, onBack }) {
 }
 
 // ── DARK MODE ROW ────────────────────────────────────────────────────────────
+// Dark-only MVP (see LIGHT = DARK above) — there's no light theme to switch to
+// yet, so this renders as a disabled "coming soon" row rather than a Toggle
+// that silently does nothing when tapped.
 function DarkModeRow() {
-  const { dark, toggle } = useTheme();
   return (
     <div style={{ display:"flex",alignItems:"center",gap:14,padding:"15px 0",borderTop:"1px solid #f0f0f0" }}>
       <div style={{ width:20,height:20,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
-        {dark
-          ? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="1.8"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
-          : <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="1.8"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-        }
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="1.8"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
       </div>
       <div style={{ flex:1 }}>
-        <div style={{ fontFamily:FONT,fontWeight:600,fontSize:15,color:"#111" }}>{dark?"Dark Mode":"Light Mode"}</div>
-        <div style={{ fontFamily:FONT,fontSize:12,color:"#888888",marginTop:2 }}>{dark?"Switch to light theme":"Switch to dark theme"}</div>
+        <div style={{ fontFamily:FONT,fontWeight:600,fontSize:15,color:"#111" }}>Dark Mode</div>
+        <div style={{ fontFamily:FONT,fontSize:12,color:"#888888",marginTop:2 }}>Light theme coming soon</div>
       </div>
-      <Toggle on={dark} onToggle={toggle}/>
     </div>
   );
 }
@@ -8077,6 +8107,11 @@ function SupportPage({ onBack }) {
 }
 
 function ProgressPhotosPage({ onBack }) {
+  const { isPremium } = useUser();
+  const scrollRef = useScrollPos("progress-photos");
+  const [photos, setPhotos] = useState([
+    { id: 1, date: "Week 1", label: "Add note...", img: null },
+  ]);
   const [compareMode, setCompareMode] = useState(false);
   const [compareA, setCompareA] = useState(0);
   const [compareB, setCompareB] = useState(2);

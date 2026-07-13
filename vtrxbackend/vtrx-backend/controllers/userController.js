@@ -7,6 +7,7 @@ const logger  = require('../utils/logger');
 const { validatePlan }    = require('../data/planGenerator');
 const { generateAIPlan }  = require('../services/aiPlanGenerator');
 const { canGeneratePlan } = require('../utils/planAccess');
+const { toDateOnly }      = require('../services/streakFreezeService');
 
 // ── GET /api/users/profile ────────────────────────────────────────────────────
 const getProfile = async (req, res) => {
@@ -234,13 +235,11 @@ const logWater = async (req, res) => {
     return res.status(400).json({ success: false, message: 'glasses must be an integer between 0 and 50' });
   }
   try {
-    const today = new Date(); today.setHours(0,0,0,0);
+    const today = toDateOnly(new Date());
     await prisma.waterLog.upsert({
       where:  { userId_loggedAt: { userId: req.user.id, loggedAt: today } },
       create: { userId: req.user.id, glasses: Number(glasses), loggedAt: today },
       update: { glasses: Number(glasses) },
-    }).catch(async () => {
-      await prisma.waterLog.create({ data: { userId: req.user.id, glasses: Number(glasses) } });
     });
     res.json({ success: true });
   } catch (err) {

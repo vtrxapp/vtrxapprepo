@@ -187,9 +187,11 @@ const sendToUser = async ({ userId, title, body, data = {}, imageUrl }) => {
     },
   }).catch(() => {});
 
-  // Delete notifications older than 24 hours
+  // Delete this user's notifications older than 24 hours — scoped to userId,
+  // since this runs on every send and an unscoped delete would purge every
+  // other user's notification feed too.
   await prisma.notification.deleteMany({
-    where: { createdAt: { lt: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
+    where: { userId, createdAt: { lt: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
   }).catch(() => {});
 
   logger.info(`Push notification sent to user ${userId}: ${succeeded} success, ${failed} failed`);
