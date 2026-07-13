@@ -186,14 +186,21 @@ curl http://localhost:5000/health
 
 Signup/login happen client-side via Clerk's hosted UI (`@clerk/clerk-react`) —
 this backend has no `/api/auth/signup` or `/api/auth/login` to curl. To test
-an authenticated endpoint, sign in through the frontend, copy the Clerk
+an authenticated endpoint, sign in through the frontend and copy the Clerk
 session token it sends (DevTools → Network → any `/api/*` request →
-`Authorization` header), and use that as `YOUR_TOKEN_HERE` below.
+`Authorization` header).
+
+Read it into a shell variable rather than pasting it into the command —
+`read -s` doesn't echo the input or write it to shell history the way a
+literal token in the command line would:
+```bash
+read -s -p "Paste token: " TOKEN && echo
+```
 
 ### Get your profile:
 ```bash
 curl http://localhost:5000/api/users/profile \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE"
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 ---
