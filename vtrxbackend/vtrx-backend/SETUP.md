@@ -27,8 +27,10 @@ vtrx-backend/
 │   ├── stripeService.js         ← Billing/subscriptions
 │   ├── supabaseStorageService.js← Progress photo/avatar uploads
 │   ├── ymoveService.js          ← Workout/exercise content integration
-│   ├── aiService.js / aiPlanGenerator.js / anthropicClient.js / openaiClient.js
-│   │                            ← AI plan generation & coaching summaries
+│   ├── aiService.js / aiPlanGenerator.js / anthropicClient.js
+│   │                            ← AI plan generation & coaching summaries (Anthropic)
+│   ├── embeddingService.js      ← OpenAI embeddings for Pinecone recommendation
+│   │                              search — the one place OpenAI is still used
 │   ├── notificationService.js / notificationScheduler.js
 │   │                            ← Push notifications (Firebase) + the cron
 │   │                              jobs that trigger them (in-process, needs
