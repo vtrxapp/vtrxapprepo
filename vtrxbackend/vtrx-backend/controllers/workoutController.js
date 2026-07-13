@@ -1411,7 +1411,7 @@ const generateWorkout = async (req, res) => {
       },
     });
   } catch (err) {
-    logger.error('generateWorkout error:', err.message);
+    logger.error(`generateWorkout error: ${err.message}`);
     res.status(500).json({ success: false, message: 'Failed to generate workout' });
   }
 };
@@ -1446,7 +1446,7 @@ const generateProgram = async (req, res) => {
       },
     });
   } catch (err) {
-    logger.error('generateProgram error:', err.message);
+    logger.error(`generateProgram error: ${err.message}`);
     res.status(500).json({ success: false, message: 'Failed to generate program' });
   }
 };
@@ -1472,7 +1472,7 @@ const analyzePosture = async (req, res) => {
     if (!result) return res.status(503).json({ success: false, message: 'Posture analysis unavailable' });
     res.json({ success: true, data: result });
   } catch (err) {
-    logger.error('analyzePosture error:', err.message);
+    logger.error(`analyzePosture error: ${err.message}`);
     res.status(500).json({ success: false, message: 'Posture analysis failed' });
   }
 };
@@ -1684,7 +1684,7 @@ const getYmoveExerciseLibrary = async (muscleGroups = []) => {
     _exerciseLibraryCache.set(cacheKey, { data: normalized, expiresAt: Date.now() + EXERCISE_CACHE_TTL });
     return normalized;
   } catch (err) {
-    logger.error('getYmoveExerciseLibrary error:', err.message);
+    logger.error(`getYmoveExerciseLibrary error: ${err.message}`);
     return [];
   }
 };

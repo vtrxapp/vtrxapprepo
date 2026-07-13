@@ -334,7 +334,7 @@ const checkMilestones = async (userId) => {
       }
     }
   } catch (err) {
-    logger.error('Milestone check error:', err.message);
+    logger.error(`Milestone check error: ${err.message}`);
   }
 };
 
@@ -390,7 +390,7 @@ const runOnboardingNotification = async () => {
       logger.info(`Onboarding notifications sent for user ${user.id}`);
     }
   } catch (err) {
-    logger.error('runOnboardingNotification error:', err.message);
+    logger.error(`runOnboardingNotification error: ${err.message}`);
   }
 };
 
@@ -421,7 +421,7 @@ const tick = async () => {
       await runTrialWarning(user, prefs);
     }
   } catch (err) {
-    logger.error('Notification scheduler tick error:', err.message);
+    logger.error(`Notification scheduler tick error: ${err.message}`);
   }
 };
 

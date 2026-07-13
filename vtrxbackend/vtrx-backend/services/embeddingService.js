@@ -21,7 +21,7 @@ const embedText = async (text) => {
     const res = await client.embeddings.create({ model: MODEL, input: text.slice(0, 8000) });
     return res.data[0].embedding;
   } catch (err) {
-    logger.error('embedText error:', err.message);
+    logger.error(`embedText error: ${err.message}`);
     return null;
   }
 };
@@ -37,7 +37,7 @@ const embedBatch = async (texts) => {
       const res = await client.embeddings.create({ model: MODEL, input: slice });
       results.push(...res.data.map(d => d.embedding));
     } catch (err) {
-      logger.error('embedBatch error:', err.message);
+      logger.error(`embedBatch error: ${err.message}`);
       results.push(...slice.map(() => null));
     }
   }

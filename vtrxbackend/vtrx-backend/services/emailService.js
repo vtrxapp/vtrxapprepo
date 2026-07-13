@@ -118,12 +118,12 @@ const sendWelcomeEmail = async ({ email, name }) => {
       html,
     });
     if (error) {
-      logger.warn(`Welcome email failed for ${email}:`, error.message);
+      logger.warn(`Welcome email failed for ${email}: ${error.message}`);
     } else {
       logger.info(`Welcome email sent to ${email} (id: ${data?.id})`);
     }
   } catch (err) {
-    logger.warn(`Welcome email error for ${email}:`, err.message);
+    logger.warn(`Welcome email error for ${email}: ${err.message}`);
   }
 };
 

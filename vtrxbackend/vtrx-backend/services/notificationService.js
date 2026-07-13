@@ -49,7 +49,7 @@ const initFirebase = () => {
     firebaseInitialised = true;
     logger.info('Firebase Admin initialised');
   } catch (err) {
-    logger.error('Firebase init failed:', err.message);
+    logger.error(`Firebase init failed: ${err.message}`);
   }
 };
 

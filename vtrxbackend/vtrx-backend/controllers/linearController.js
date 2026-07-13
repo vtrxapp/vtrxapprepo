@@ -65,7 +65,7 @@ const handleWebhook = async (req, res) => {
       }
     }
   } catch (err) {
-    logger.error('Linear webhook processing error:', err.message);
+    logger.error(`Linear webhook processing error: ${err.message}`);
   }
 };
 

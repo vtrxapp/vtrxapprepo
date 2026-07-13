@@ -80,7 +80,7 @@ const webhook = async (req, res) => {
     const result = await stripe.handleWebhookEvent(req.rawBody, signature);
     res.json(result);
   } catch (err) {
-    logger.error('Webhook error:', err.message);
+    logger.error(`Webhook error: ${err.message}`);
     res.status(400).json({ error: err.message });
   }
 };

@@ -404,7 +404,7 @@ const getSubscriptionStatus = async (userId) => {
       cancelAtEnd:     stripeSub.cancel_at_period_end,
     };
   } catch (err) {
-    logger.error('Stripe subscription check failed:', err.message);
+    logger.error(`Stripe subscription check failed: ${err.message}`);
     return { plan: sub.plan, status: sub.status, isPremium: sub.status === 'active' };
   }
 };

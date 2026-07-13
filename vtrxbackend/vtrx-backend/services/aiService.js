@@ -32,7 +32,7 @@ const callGPT = async (userPrompt, maxTokens = 300) => {
       model:      'claude-haiku-4-5-20251001',
     };
   } catch (err) {
-    logger.error('Claude call failed:', err.message);
+    logger.error(`Claude call failed: ${err.message}`);
     throw err;
   }
 };

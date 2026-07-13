@@ -66,7 +66,7 @@ const tagPremium = async (req, res) => {
     logger.info(`n8n tagPremium: premium activated for user ${user.id}`);
     res.json({ success: true });
   } catch (err) {
-    logger.error('n8n tagPremium error:', err.message);
+    logger.error(`n8n tagPremium error: ${err.message}`);
     res.status(500).json({ success: false, message: err.message });
   }
 };
@@ -87,7 +87,7 @@ const sendNotification = async (req, res) => {
     });
     res.json({ success: true });
   } catch (err) {
-    logger.error('n8n sendNotification error:', err.message);
+    logger.error(`n8n sendNotification error: ${err.message}`);
     res.status(500).json({ success: false, message: err.message });
   }
 };

@@ -191,7 +191,7 @@ process.on('SIGTERM', () => {
     try {
       await require('./config/database').$disconnect();
     } catch (err) {
-      logger.error('Error disconnecting Prisma during shutdown:', err.message);
+      logger.error(`Error disconnecting Prisma during shutdown: ${err.message}`);
     } finally {
       process.exit(0);
     }
