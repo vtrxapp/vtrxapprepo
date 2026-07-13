@@ -11856,11 +11856,32 @@ function VTRXApp() {
   const [profileImg, setProfileImg] = useState(null);
   const [isPremium, setIsPremium] = useState(false);
   const [paymentPlan, setPaymentPlan] = useState(null);
-  return (
+  const content = (
     <UserCtx.Provider value={{ user, setUser, profileImg, setProfileImg, isPremium, setIsPremium }}>
       <VTRXAppInner setPaymentPlan={setPaymentPlan}/>
       {paymentPlan && <PaymentSheet initialPlan={paymentPlan.plan} skipPicker={paymentPlan.skipPicker} onClose={()=>setPaymentPlan(null)}/>}
     </UserCtx.Provider>
+  );
+
+  // Public demo visitors are as likely to open this on a desktop browser as a
+  // phone, but the UI itself is mobile-only (bottom tab bar, single-column
+  // cards) — so constrain it to a phone-width frame instead of stretching
+  // every card full-bleed across a wide window. Real app usage (PUBLIC_DEMO
+  // false, incl. any real mobile/PWA session) renders exactly as before.
+  if (!PUBLIC_DEMO) return content;
+  return (
+    <div style={{ minHeight:"100vh", width:"100%", background:"#000", display:"flex", justifyContent:"center" }}>
+      <div style={{
+        width:"100%", maxWidth:430, minHeight:"100vh", background:"#0a0a0a",
+        position:"relative", overflow:"hidden", boxShadow:"0 0 80px rgba(0,0,0,0.7)",
+        // A transform establishes a containing block for position:fixed
+        // descendants (the bottom tab bar, sheets, modals) so they constrain
+        // to this frame instead of the full browser viewport.
+        transform:"translateZ(0)",
+      }}>
+        {content}
+      </div>
+    </div>
   );
 }
 
