@@ -4,7 +4,7 @@
 // API docs:  https://ymove.app/exercise-api/docs
 // Sign up:   https://ymove.app/exercise-api/signup  (free trial, no CC needed)
 // Base URL:  https://exercise-api.ymove.app/api/v2
-// Auth:      X-API-Key header  (set YMOVE_API_KEY in Railway environment)
+// Auth:      X-API-Key header  (set YMOVE_API_KEY as an env var on your host)
 //
 // Video URLs are pre-signed CDN links that EXPIRE after 48 hours.
 // Always fetch fresh — never cache the URL itself; cache the exercise metadata.
@@ -34,7 +34,7 @@ ymoveApi.interceptors.response.use(
   res  => res,
   err => {
     const status = err.response?.status;
-    if (status === 401)      logger.error('ymove 401 — check YMOVE_API_KEY in Railway env');
+    if (status === 401)      logger.error('ymove 401 — check the YMOVE_API_KEY env var');
     else if (status === 429) logger.warn('ymove rate-limited');
     else                     logger.error(`ymove error ${status}: ${err.message}`);
     throw err;

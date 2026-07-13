@@ -72,7 +72,7 @@ const startOfTodayInTz = (timezone) => {
 // Atomically claim a notification slot. Returns true if this caller "won" the slot
 // (should send), false if another instance already claimed it (skip send).
 // Uses a unique DB constraint on (userId, type, date) to prevent races across
-// multiple Railway instances that each run their own cron.
+// multiple instances of this service that each run their own cron.
 const claimSend = async (userId, type) => {
   const date = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD" UTC
   try {

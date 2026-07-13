@@ -1100,7 +1100,7 @@ const getExerciseVideoUrl = async (req, res) => {
 // Returns a sample exercise with its video URL to confirm the API key is valid.
 const ymovePing = async (req, res) => {
   if (!ymove.isConfigured()) {
-    return res.status(503).json({ success: false, message: 'YMOVE_API_KEY not set in Railway' });
+    return res.status(503).json({ success: false, message: 'YMOVE_API_KEY not configured' });
   }
   try {
     const { exercises } = await ymove.getExercises({ limit: 1, page: 1 });
@@ -1488,7 +1488,7 @@ const getYmoveUsage = async (_req, res) => {
 const debugYmoveExercise = async (req, res) => {
   const { id } = req.params;
   if (!ymove.isConfigured()) {
-    return res.status(503).json({ success: false, message: 'YMOVE_API_KEY not set in Railway' });
+    return res.status(503).json({ success: false, message: 'YMOVE_API_KEY not configured' });
   }
   try {
     const raw = await ymove.getExerciseById(id);
