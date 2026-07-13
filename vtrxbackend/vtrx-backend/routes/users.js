@@ -13,6 +13,7 @@ router.post('/progress',                     user.logProgress);
 router.get('/notifications',                 user.getNotifications);
 router.patch('/notifications/read',          user.markNotificationsRead);
 router.get('/personal-records',              user.getPersonalRecords);
+router.get('/water',                         user.getTodayWater);
 router.post('/water',                        user.logWater);
 
 module.exports = router;

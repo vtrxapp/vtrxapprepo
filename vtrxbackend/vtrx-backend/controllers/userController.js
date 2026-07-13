@@ -228,6 +228,21 @@ const getPersonalRecords = async (req, res) => {
   }
 };
 
+// ── GET /api/users/water — Today's water intake ────────────────────────────────
+const getTodayWater = async (req, res) => {
+  try {
+    const today = toDateOnly(new Date());
+    const log = await prisma.waterLog.findUnique({
+      where:  { userId_loggedAt: { userId: req.user.id, loggedAt: today } },
+      select: { glasses: true },
+    });
+    res.json({ success: true, data: { glasses: log?.glasses || 0 } });
+  } catch (err) {
+    logger.error('getTodayWater error:', err);
+    res.status(500).json({ success: false, message: 'Failed to fetch water intake' });
+  }
+};
+
 // ── POST /api/users/water — Log water intake ──────────────────────────────────
 const logWater = async (req, res) => {
   const { glasses } = req.body;
@@ -236,12 +251,12 @@ const logWater = async (req, res) => {
   }
   try {
     const today = toDateOnly(new Date());
-    await prisma.waterLog.upsert({
+    const log = await prisma.waterLog.upsert({
       where:  { userId_loggedAt: { userId: req.user.id, loggedAt: today } },
       create: { userId: req.user.id, glasses: Number(glasses), loggedAt: today },
       update: { glasses: Number(glasses) },
     });
-    res.json({ success: true });
+    res.json({ success: true, data: { glasses: log.glasses } });
   } catch (err) {
     logger.error('logWater error:', err);
     res.status(500).json({ success: false, message: 'Failed to log water' });
@@ -257,5 +272,6 @@ module.exports = {
   getNotifications,
   markNotificationsRead,
   getPersonalRecords,
+  getTodayWater,
   logWater,
 };

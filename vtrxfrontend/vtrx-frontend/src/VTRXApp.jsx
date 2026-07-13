@@ -10271,6 +10271,65 @@ function MyPlanPage({ onBack, onNavigate, onPlanChanged }) {
   );
 }
 
+// ── WATER INTAKE TRACKER ────────────────────────────────────────────────────
+// Tap-to-fill droplets, Apple Health style: tapping droplet i sets the count
+// to i+1 (fill up to here) if it's currently empty, or i (empty back down to
+// here) if it's already filled — one tap either way, no separate +/- buttons.
+const WATER_GOAL = 8;
+function WaterDroplet({ filled }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill={filled ? PRIMARY : "none"} stroke={filled ? PRIMARY : "#444"} strokeWidth="1.8">
+      <path d="M12 2.5c0 0-7 8.5-7 13.2a7 7 0 0014 0c0-4.7-7-13.2-7-13.2z"/>
+    </svg>
+  );
+}
+function WaterTrackerCard() {
+  const [glasses, setGlasses] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [saving,  setSaving]  = useState(false);
+  const [err,     setErr]     = useState("");
+
+  useEffect(() => {
+    apiCall('/users/water')
+      .then(d => setGlasses(d?.data?.glasses ?? 0))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const setLevel = async (level) => {
+    const prev = glasses;
+    setGlasses(level);
+    setSaving(true); setErr("");
+    try {
+      await apiCall('/users/water', { method: 'POST', body: JSON.stringify({ glasses: level }) });
+    } catch (e) {
+      setGlasses(prev);
+      setErr("Couldn't save — try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"16px 18px",marginBottom:13,animation:"fadeUp 0.4s ease 0.12s both" }}>
+      <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14 }}>
+        <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#fff" }}>Water Intake</div>
+        <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:PRIMARY }}>{loading ? "…" : `${glasses}/${WATER_GOAL}`}</div>
+      </div>
+      <div style={{ display:"flex",justifyContent:"space-between",gap:6,opacity:loading?0.4:1 }}>
+        {Array.from({ length: WATER_GOAL }, (_, i) => (
+          <button key={i} disabled={loading||saving}
+            onClick={() => setLevel(i < glasses ? i : i + 1)}
+            style={{ background:"none",border:"none",padding:4,cursor:loading||saving?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center" }}>
+            <WaterDroplet filled={i < glasses}/>
+          </button>
+        ))}
+      </div>
+      {err && <div style={{ fontFamily:FONT,fontSize:11,color:"#EF4444",marginTop:10,textAlign:"center" }}>{err}</div>}
+    </div>
+  );
+}
+
 function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, streakDay=1, energyKey, onMoodSelect, weeklyWorkoutDays=0, weeklyAvgCal=null, weeklyAvgMin=null, apiWorkout=null, notifCount=0, onNotifReset, onLogout }) {
   const { dark } = useTheme();
   const { user, profileImg, isPremium } = useUser();
@@ -10498,6 +10557,9 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
             </div>
           </div>
         </div>
+
+        {/* WATER INTAKE */}
+        <WaterTrackerCard/>
 
         {/* MEAL OF THE DAY */}
         <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"16px 18px",marginBottom:13,animation:"fadeUp 0.4s ease 0.15s both" }}>
