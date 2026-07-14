@@ -11879,6 +11879,29 @@ function VTRXApp() {
         // to this frame instead of the full browser viewport.
         transform:"translateZ(0)",
       }}>
+        <button
+          onClick={() => {
+            // Demo links open in a new tab, and browsers only honor
+            // window.close() on tabs a script opened itself — a real user
+            // click on a target="_blank" link doesn't count. Try anyway (free
+            // when it works), then fall back to navigating back to whatever
+            // linked here (the landing page), which always works.
+            window.close();
+            if (document.referrer) window.location.href = document.referrer;
+            else window.history.back();
+          }}
+          aria-label="Exit demo"
+          style={{
+            position:"fixed", top:14, right:14, zIndex:99999,
+            width:36, height:36, borderRadius:"50%",
+            background:"rgba(0,0,0,0.55)", border:"1px solid rgba(255,255,255,0.25)",
+            color:"#fff", cursor:"pointer",
+            display:"flex", alignItems:"center", justifyContent:"center",
+            backdropFilter:"blur(4px)", padding:0,
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
         {content}
       </div>
     </div>
