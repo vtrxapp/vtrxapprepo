@@ -10337,7 +10337,8 @@ function MyPlanPage({ onBack, onNavigate, onPlanChanged }) {
 // Compact +/- stepper (not a row of 8 tap targets) so it stays a single slim
 // row on the dashboard. One glass is treated as one US customary cup (8 fl oz
 // / ~237 ml) purely for the L/oz display; the backend still stores glasses.
-const WATER_GOAL = 8;
+const WATER_GOAL = 8;   // daily target shown in the UI — not a hard ceiling
+const MAX_GLASSES = 50; // matches the backend's validated range (logWater in userController.js)
 const ML_PER_GLASS = 237;
 function waterAmountLabel(glasses, unit) {
   const ml = glasses * ML_PER_GLASS;
@@ -10365,7 +10366,10 @@ function WaterTrackerCard() {
   }, []);
 
   const setLevel = async (level) => {
-    const clamped = Math.max(0, Math.min(WATER_GOAL, level));
+    // Clamp to the backend's actual valid range, not the daily goal — if the
+    // stored value is already above WATER_GOAL, decrementing must still step
+    // down by 1 from wherever it really is, not snap down to the goal.
+    const clamped = Math.max(0, Math.min(MAX_GLASSES, level));
     const prev = glasses;
     setGlasses(clamped);
     setSaving(true); setErr("");
