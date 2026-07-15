@@ -21,6 +21,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 const admin  = require('firebase-admin');
+const { getMessaging } = require('firebase-admin/messaging');
 const prisma = require('../config/database');
 const logger = require('../utils/logger');
 
@@ -43,7 +44,8 @@ const initFirebase = () => {
     );
 
     admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
+      // firebase-admin v14 moved credential.cert() to a top-level export.
+      credential: admin.cert(serviceAccount),
     });
 
     firebaseInitialised = true;
@@ -122,7 +124,7 @@ const sendToUser = async ({ userId, title, body, data = {}, imageUrl }) => {
 
   const results = await Promise.allSettled(
     tokens.map(({ token, platform }) =>
-      admin.messaging().send({
+      getMessaging().send({
         token,
         notification: {
           title,
