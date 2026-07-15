@@ -709,15 +709,16 @@ function BackHeader({ title, right, onBack }) {
   );
 }
 
-function CTA({ label, onClick, icon, secondary }) {
+function CTA({ label, onClick, icon, secondary, disabled }) {
   return (
-    <button onClick={onClick} style={{
+    <button onClick={disabled ? undefined : onClick} disabled={disabled} style={{
       width:"100%",padding:"16px 0",borderRadius:50,
       border: secondary?"1.5px solid rgba(255,255,255,0.35)":"none",
       background: secondary?"transparent":`linear-gradient(135deg,${PRIMARY},#0068CC)`,
       fontFamily:FONT,fontWeight:800,fontSize:14,
       color: secondary?"rgba(255,255,255,0.85)":"#fff",
-      letterSpacing: secondary?0.5:2,cursor:"pointer",
+      letterSpacing: secondary?0.5:2,cursor:disabled?"not-allowed":"pointer",
+      opacity: disabled?0.7:1,
       boxShadow: secondary?"none":`0 4px 28px ${PRIMARY}55`,
       display:"flex",alignItems:"center",justifyContent:"center",gap:8,
     }}>{label}{icon&&<span style={{display:"flex",alignItems:"center",marginLeft:4}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></span>}</button>
@@ -3564,9 +3565,11 @@ function ForgotPasswordPage({ onBack }) {
   const [newPass, setNewPass]     = useState("");
   const [confirmPass, setConfirmPass] = useState("");
   const [err, setErr]             = useState("");
+  const [info, setInfo]           = useState("");
   const [loading, setLoading]     = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const { signIn, setActive } = useClerkSignIn();
+  const submitRef = useRef(false);
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
@@ -3575,56 +3578,100 @@ function ForgotPasswordPage({ onBack }) {
   }, [resendCooldown]);
 
   const sendCode = async () => {
+    if (submitRef.current) return;
     if (!email.trim()) { setErr("Please enter your email."); return; }
-    setErr(""); setLoading(true);
+    const isResend = step === "code";
+    setErr(""); setInfo(""); setLoading(true);
+    submitRef.current = true;
     try {
       await signIn.create({
         strategy: 'reset_password_email_code',
         identifier: email.trim().toLowerCase(),
       });
+      setCode("");
       setStep("code");
       setResendCooldown(30);
+      if (isResend) {
+        setInfo("New code sent. Check your inbox (and spam folder).");
+        setTimeout(() => setInfo(""), 5000);
+      }
     } catch (e) {
       const clerkErr = e?.errors?.[0];
-      // Treat "user not found" as success to avoid email enumeration
-      if (clerkErr?.code === 'form_identifier_not_found') { setStep("code"); setResendCooldown(30); }
-      else { setErr(clerkErr?.longMessage || clerkErr?.message || e?.message || "Failed to send code."); }
+      if (clerkErr?.code === 'form_identifier_not_found') {
+        // Treat "user not found" as success to avoid email enumeration
+        setCode("");
+        setStep("code");
+        setResendCooldown(30);
+        if (isResend) {
+          setInfo("New code sent. Check your inbox (and spam folder).");
+          setTimeout(() => setInfo(""), 5000);
+        }
+      } else if (clerkErr?.code === 'verification_exists') {
+        // A verification is already pending for this identifier — the code is
+        // already out there, so this is a success case, not an error.
+        setCode("");
+        setStep("code");
+        setResendCooldown(30);
+        setInfo("A code was already sent. Check your inbox (and spam folder).");
+        setTimeout(() => setInfo(""), 5000);
+      } else {
+        setErr(clerkErr?.longMessage || clerkErr?.message || e?.message || "Failed to send code.");
+      }
     }
-    finally { setLoading(false); }
+    finally { setLoading(false); submitRef.current = false; }
   };
 
   const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
 
   const resetPass = async () => {
+    if (submitRef.current) return;
     if (!code.trim() || code.trim().length !== 6) { setErr("Please enter the complete 6-digit code."); return; }
     if (!passwordRegex.test(newPass)) {
       setErr("Password must be at least 8 characters and include uppercase, lowercase, and a number.");
       return;
     }
     if (newPass !== confirmPass) { setErr("Passwords do not match."); return; }
-    setErr(""); setLoading(true);
+    setErr(""); setInfo(""); setLoading(true);
+    submitRef.current = true;
     try {
-      const result = await signIn.attemptFirstFactor({
-        strategy: 'reset_password_email_code',
-        code: code.trim(),
-        password: newPass,
-      });
+      let result;
+      try {
+        result = await signIn.attemptFirstFactor({
+          strategy: 'reset_password_email_code',
+          code: code.trim(),
+          password: newPass,
+        });
+      } catch (e) {
+        const clerkErr = e?.errors?.[0];
+        setCode("");
+        if (clerkErr?.code === 'form_code_incorrect') { setErr("Incorrect code. Please try again."); }
+        else if (clerkErr?.code === 'form_code_expired' || clerkErr?.code === 'verification_expired' || clerkErr?.code === 'verification_failed') {
+          setResendCooldown(0);
+          setErr('This code is no longer valid. Tap "Resend code" above to get a new one.');
+        }
+        else if (clerkErr?.code === 'too_many_attempts') { setErr("Too many attempts. Please wait a few seconds and try again."); }
+        else if (clerkErr?.code?.includes('password')) { setErr(clerkErr?.longMessage || clerkErr?.message || "Password does not meet requirements."); }
+        else { setErr(clerkErr?.longMessage || clerkErr?.message || e?.message || "Failed to reset password."); }
+        return;
+      }
+      // The password reset itself already succeeded server-side at this point —
+      // keep setActive's own failure out of the catch above so a transient
+      // session-activation hiccup isn't mislabeled as "Failed to reset password"
+      // (which would invite a retry against an already-consumed code).
       if (result.status === 'complete') {
-        await setActive({ session: result.createdSessionId });
-        setStep("done");
+        try {
+          await setActive({ session: result.createdSessionId });
+          setStep("done");
+        } catch (e) {
+          setErr("Your password was reset, but we couldn't sign you in automatically. Please log in with your new password.");
+        }
       } else {
         // e.g. needs_second_factor — no session was actually established,
         // so don't show the success screen.
         setErr("Your password was updated, but sign-in needs an extra step this screen doesn't support. Please contact support.");
       }
-    } catch (e) {
-      const clerkErr = e?.errors?.[0];
-      if (clerkErr?.code === 'form_code_incorrect') { setErr("Incorrect code. Please try again."); }
-      else if (clerkErr?.code === 'form_code_expired') { setErr("Code expired. Please request a new one."); }
-      else if (clerkErr?.code?.includes('password')) { setErr(clerkErr?.longMessage || clerkErr?.message || "Password does not meet requirements."); }
-      else { setErr(clerkErr?.longMessage || clerkErr?.message || e?.message || "Failed to reset password."); }
     }
-    finally { setLoading(false); }
+    finally { setLoading(false); submitRef.current = false; }
   };
 
   const bg = "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=800&q=80";
@@ -3668,12 +3715,13 @@ function ForgotPasswordPage({ onBack }) {
             <div style={{ fontFamily:FONT,fontSize:14,color:"#888",marginBottom:8,lineHeight:1.6 }}>We sent a code to <span style={{ color:"#fff",fontWeight:600 }}>{email}</span></div>
             <div style={{ fontFamily:FONT,fontSize:13,color:"#666",marginBottom:12 }}>Check your spam folder if you don't see it.</div>
             <button onClick={sendCode} disabled={resendCooldown > 0 || loading}
-              style={{ background:"none",border:"none",padding:0,marginBottom:20,fontFamily:FONT,fontSize:13,fontWeight:700,color:resendCooldown>0?"#666":PRIMARY,cursor:resendCooldown>0?"default":"pointer" }}>
+              style={{ background:"none",border:"none",padding:0,marginBottom:8,fontFamily:FONT,fontSize:13,fontWeight:700,color:resendCooldown>0?"#666":PRIMARY,cursor:resendCooldown>0?"default":"pointer" }}>
               {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : "Resend code"}
             </button>
+            {info && <div style={{ fontFamily:FONT,fontSize:13,color:PRIMARY,marginBottom:12,fontWeight:600 }}>{info}</div>}
             <div style={{ fontFamily:FONT,fontSize:11,fontWeight:700,color:"#888",letterSpacing:1,marginBottom:6 }}>VERIFICATION CODE</div>
-            <input value={code} onChange={e=>setCode(e.target.value)} placeholder="6-digit code"
-              inputMode="numeric" maxLength={6}
+            <input value={code} onChange={e=>setCode(e.target.value.replace(/[^0-9]/g,"").slice(0,6))} placeholder="6-digit code"
+              inputMode="numeric"
               style={{ width:"100%",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:14,padding:"15px 18px",fontFamily:FONT,fontSize:20,color:"#fff",outline:"none",boxSizing:"border-box",marginBottom:16,letterSpacing:6,textAlign:"center" }}/>
             <div style={{ fontFamily:FONT,fontSize:11,fontWeight:700,color:"#888",letterSpacing:1,marginBottom:6 }}>NEW PASSWORD</div>
             <input value={newPass} onChange={e=>setNewPass(e.target.value)} placeholder="Min 8 chars, uppercase & number" type="password"
@@ -3735,7 +3783,7 @@ function OAuthButtons({ onGoogle, onApple, loadingProvider }) {
   );
 }
 
-function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
+function LoginScreen({ onLogin, onSignUp, onForgot }) {
   const { setUser } = useUser();   // ← This was missing
   const { signIn, setActive } = useClerkSignIn();
   const { isLoaded: clerkLoaded, isSignedIn } = useClerkAuth();
@@ -3806,20 +3854,27 @@ function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
     }
   };
 
+  // A same-tick double-tap (easy on mobile) fires this twice before React
+  // re-renders the now-disabled button — loading state alone doesn't block a
+  // second call started in that window. Lock with a ref, same fix already
+  // used elsewhere in this file for the identical class of bug.
+  const submitRef = useRef(false);
   const handle = async () => {
+    if (submitRef.current) return;
     setSubmitted(true);
     const errs = {};
     if (!email.trim()) errs.email = "Email is required.";
     else if (!emailRegex.test(email.trim())) errs.email = "Please enter a valid email address.";
     if (!pass.trim()) errs.pass = "Password is required.";
 
-    if (Object.keys(errs).length) { 
-      setErrors(errs); 
+    if (Object.keys(errs).length) {
+      setErrors(errs);
       return; 
     }
 
-    setErrors({}); 
+    setErrors({});
     setLoading(true);
+    submitRef.current = true;
 
     try {
       const result = await signIn.create({
@@ -3852,14 +3907,21 @@ function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
         await fetchProfileAndLogin();
       } else if (clerkErr?.code === 'form_identifier_not_found' || clerkErr?.code === 'form_password_incorrect' || clerkErr?.code === 'not_found') {
         setErrors({ general: "Incorrect email or password." });
-      } else if (clerkErr?.code === 'strategy_for_user_invalid' || clerkErr?.code === 'verification_failed') {
-        setErrors({ general: "Please verify your email before logging in." });
-        if (onEmailVerify) onEmailVerify(email.trim().toLowerCase());
       } else {
+        // Previously assumed strategy_for_user_invalid/verification_failed meant
+        // "unverified email" and routed to EmailVerifyScreen — but per Clerk's own
+        // error catalog, strategy_for_user_invalid means this sign-in *method*
+        // isn't valid for the account (e.g. an OAuth-only account trying a
+        // password), and verification_failed is about a verification *code*,
+        // which doesn't apply to a password sign-in call at all. Neither is
+        // reliably "unverified email", and EmailVerifyScreen needs a signUp
+        // resource this sign-in flow never creates — routing there was a
+        // guaranteed dead end. Show Clerk's own accurate message instead.
         setErrors({ general: clerkErr?.longMessage || clerkErr?.message || e?.message || "Incorrect email or password." });
       }
     } finally {
       setLoading(false);
+      submitRef.current = false;
     }
   };
 
@@ -3935,7 +3997,7 @@ function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
 
         {/* Sign in button */}
         <div style={{ marginTop:4 }}>
-          <CTA label={loading ? "SIGNING IN..." : "SIGN IN"} onClick={handle}/>
+          <CTA label={loading ? "SIGNING IN..." : "SIGN IN"} onClick={handle} disabled={loading}/>
         </div>
 
         <OrDivider label="OR"/>
@@ -4018,7 +4080,9 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
     lastName:     f.name.split(' ').slice(1).join(' ') || undefined,
   });
 
-   const handle = async () => {
+  const submitRef = useRef(false);
+  const handle = async () => {
+    if (submitRef.current) return;
     setSubmitted(true);
     const errs = {};
     if (!f.name.trim())                       errs.name     = "Full name is required.";
@@ -4028,6 +4092,7 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
     if (f.password !== f.confirm)             errs.confirm  = "Passwords do not match.";
     if (Object.keys(errs).length) { setErrors(errs); return; }
     setErrors({}); setLoading(true);
+    submitRef.current = true;
 
     try {
       try {
@@ -4055,6 +4120,7 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
       }
     } finally {
       setLoading(false);
+      submitRef.current = false;
     }
   };
 
@@ -4116,7 +4182,7 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
 
         {/* Sign up button */}
         <div style={{ marginTop:4 }}>
-          <CTA label={loading ? "CREATING ACCOUNT..." : "SIGN UP"} onClick={handle}/>
+          <CTA label={loading ? "CREATING ACCOUNT..." : "SIGN UP"} onClick={handle} disabled={loading}/>
         </div>
 
         <OrDivider label="OR"/>
@@ -4145,12 +4211,16 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
   const [code,      setCode]      = React.useState("");
   const [loading,   setLoading]   = React.useState(false);
   const [error,     setError]     = React.useState("");
+  const [info,      setInfo]      = React.useState("");
   const [resending, setResending] = React.useState(false);
   const [cooldown,  setCooldown]  = React.useState(0);
+  const submitRef = useRef(false);
 
   const verify = async () => {
+    if (submitRef.current) return;
     if (code.length !== 6) { setError("Please enter the full 6-digit code"); return; }
-    setLoading(true); setError("");
+    setLoading(true); setError(""); setInfo("");
+    submitRef.current = true;
     try {
       const result = await signUp.attemptEmailAddressVerification({ code });
       if (result.status === 'complete') {
@@ -4161,8 +4231,28 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
       }
     } catch (e) {
       const clerkErr = e?.errors?.[0];
-      setError(clerkErr?.longMessage || clerkErr?.message || e?.message || "Invalid or expired code. Please try again.");
-    } finally { setLoading(false); }
+      // form_code_incorrect: wrong code, but this verification is still alive — retry works.
+      // verification_expired/verification_failed: the verification itself is dead (too old, or
+      // too many wrong attempts already made against it) — no code will ever succeed against it
+      // again, so silently letting the user keep retyping just looks like a hang/timeout. Send
+      // them to Resend instead, and clear any cooldown blocking that.
+      if (clerkErr?.code === 'form_code_incorrect') {
+        setCode("");
+        setError("Incorrect code. Please try again.");
+      } else if (clerkErr?.code === 'verification_expired' || clerkErr?.code === 'verification_failed') {
+        setCode("");
+        setCooldown(0);
+        setError('This code is no longer valid. Tap "Resend code" below to get a new one.');
+      } else if (clerkErr?.code === 'too_many_attempts') {
+        setError("Too many attempts. Please wait a few seconds and try again.");
+      } else {
+        setCode("");
+        setError(clerkErr?.longMessage || clerkErr?.message || e?.message || "Invalid or expired code. Please try again.");
+      }
+    } finally {
+      setLoading(false);
+      submitRef.current = false;
+    }
   };
 
   React.useEffect(() => {
@@ -4172,16 +4262,24 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
   }, [cooldown]);
 
   const resend = async () => {
-    if (cooldown > 0 || resending) return;
-    setResending(true); setError("");
+    if (cooldown > 0 || resending || loading) return;
+    setResending(true); setError(""); setInfo("");
     try {
       await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
-      setError("New code sent. Check your inbox (and spam folder).");
+      setCode("");
+      setInfo("New code sent. Check your inbox (and spam folder).");
       setCooldown(60);
-      setTimeout(() => setError(""), 5000);
+      setTimeout(() => setInfo(""), 5000);
     } catch (e) {
       const clerkErr = e?.errors?.[0];
-      setError(clerkErr?.message || e?.message || "Failed to resend code. Please try again.");
+      if (clerkErr?.code === 'verification_exists') {
+        setCode("");
+        setInfo("A code was already sent. Check your inbox (and spam folder).");
+        setCooldown(60);
+        setTimeout(() => setInfo(""), 5000);
+      } else {
+        setError(clerkErr?.longMessage || clerkErr?.message || e?.message || "Failed to resend code. Please try again.");
+      }
     } finally { setResending(false); }
   };
 
@@ -4199,22 +4297,22 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
         onChange={e=>setCode(e.target.value.replace(/[^0-9]/g,"").slice(0,6))}
         placeholder="000000"
         inputMode="numeric"
-        maxLength={6}
         style={{ width:"100%",background:"rgba(255,255,255,0.06)",border:`2px solid ${code.length===6?PRIMARY:BORDER}`,borderRadius:16,padding:"18px 0",fontFamily:FONT,fontWeight:800,fontSize:28,color:"#fff",outline:"none",textAlign:"center",letterSpacing:12,marginBottom:8,boxSizing:"border-box",transition:"border-color 0.2s" }}
       />
 
       {error && <div style={{ fontFamily:FONT,fontSize:13,color:"#EF4444",marginBottom:16,textAlign:"center",fontWeight:600 }}>{error}</div>}
+      {info && <div style={{ fontFamily:FONT,fontSize:13,color:PRIMARY,marginBottom:16,textAlign:"center",fontWeight:600 }}>{info}</div>}
 
       <button
         onClick={verify}
-        disabled={loading || code.length !== 6}
-        style={{ width:"100%",padding:"16px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1.5,cursor:loading?"not-allowed":"pointer",opacity:loading||code.length!==6?0.7:1,marginBottom:16,boxShadow:`0 4px 24px ${PRIMARY}44` }}
+        disabled={loading || resending || code.length !== 6}
+        style={{ width:"100%",padding:"16px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1.5,cursor:loading?"not-allowed":"pointer",opacity:loading||resending||code.length!==6?0.7:1,marginBottom:16,boxShadow:`0 4px 24px ${PRIMARY}44` }}
       >
         {loading ? "VERIFYING..." : "VERIFY EMAIL"}
       </button>
 
-      <button onClick={resend} disabled={cooldown > 0 || resending}
-        style={{ background:"none",border:"none",fontFamily:FONT,fontSize:13,color:cooldown>0?"#555":PRIMARY,cursor:cooldown>0||resending?"default":"pointer",marginBottom:12,opacity:cooldown>0?0.6:1 }}>
+      <button onClick={resend} disabled={cooldown > 0 || resending || loading}
+        style={{ background:"none",border:"none",fontFamily:FONT,fontSize:13,color:cooldown>0?"#555":PRIMARY,cursor:cooldown>0||resending||loading?"default":"pointer",marginBottom:12,opacity:cooldown>0||loading?0.6:1 }}>
         {resending ? "Sending..." : cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}
       </button>
       <button onClick={onBack} style={{ background:"none",border:"none",fontFamily:FONT,fontSize:13,color:"#555",cursor:"pointer" }}>
@@ -11380,7 +11478,7 @@ function VTRXAppInner({ setPaymentPlan }) {
       email={pendingEmail}
       onVerified={()=>{
         // Clerk already established the session in EmailVerifyScreen via setActive()
-        setPhase("preferences"); setScreen(2);
+        setPhase("preferences"); setScreen(1);
       }}
       onBack={()=>setPhase("login")}
     />
@@ -11393,25 +11491,30 @@ function VTRXAppInner({ setPaymentPlan }) {
           setPhase("dashboard");
         } else {
           // No onboarding complete yet — send to body metrics (skip signup/verify)
-          setPhase("preferences"); setScreen(2);
+          setPhase("preferences"); setScreen(1);
         }
       }}
       onSignUp={()=>{ setPhase("preferences"); setScreen(0); }}
-      onForgot={()=>setPhase("forgot")}
-      onEmailVerify={(email)=>{ setPendingEmail(email); setPhase("emailVerify"); }}/>
+      onForgot={()=>setPhase("forgot")}/>
   );
   if (phase==="forgot") return (
     <ForgotPasswordPage onBack={()=>setPhase("login")}/>
   );
 
   if (phase==="preferences") {
+    // No EmailVerifyScreen in this array — verification only ever happens via
+    // the phase==="emailVerify" route above, which already advances straight to
+    // BodyScreen (screen 1) on success. A second EmailVerifyScreen instance
+    // here was only reachable via BodyScreen's back button and was guaranteed
+    // broken every way it could be reached: signUp already complete (nothing
+    // left to verify) or signUp never created (no pendingEmail, no signUp
+    // resource — LoginScreen's onLogin path lands on BodyScreen directly).
     const SCREENS = [
       <SignUpScreen              key={0} onContinue={(email)=>{ if(email){ setPendingEmail(email); setPhase("emailVerify"); } else goNext(); }} onBack={()=>setPhase("onboarding")} onLogin={()=>setPhase("login")}/>,
-      <EmailVerifyScreen   key={1} email={pendingEmail} onVerified={goNext} onBack={goPrev}/>,
-      <BodyScreen                key={2} onContinue={goNext} onBack={goPrev}/>,
-      <TrainingScreen            key={3} onContinue={goNext} onBack={goPrev}/>,
-      <PricingScreen             key={4} onContinue={goNext} onBack={goPrev}/>,
-      <ReadyScreen               key={5} onFinish={goToDashboard}/>,
+      <BodyScreen                key={1} onContinue={goNext} onBack={goPrev}/>,
+      <TrainingScreen            key={2} onContinue={goNext} onBack={goPrev}/>,
+      <PricingScreen             key={3} onContinue={goNext} onBack={goPrev}/>,
+      <ReadyScreen               key={4} onFinish={goToDashboard}/>,
     ];
     return SCREENS[Math.min(screen, SCREENS.length-1)];
   }
