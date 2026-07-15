@@ -4002,9 +4002,11 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
     return suffix ? `${base}_${suffix}` : base;
   };
   // Math.random() isn't a CSPRNG — use Web Crypto for the collision-retry suffix instead.
+  // Uint16Array (max 65535 = "1ekf" in base36, 4 chars) + padStart guarantees exactly
+  // 4 characters every time, instead of slice()'s variable length for small values.
   const randomSuffix = () => {
-    const n = crypto.getRandomValues(new Uint32Array(1))[0];
-    return n.toString(36).slice(0, 4);
+    const n = crypto.getRandomValues(new Uint16Array(1))[0];
+    return n.toString(36).padStart(4, '0');
   };
   const attemptSignUp = (username) => signUp.create({
     emailAddress: f.email.trim().toLowerCase(),
