@@ -3760,12 +3760,14 @@ function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
 
   React.useEffect(() => {
     if (!clerkLoaded || !isSignedIn) return;
-    // Already signed in (e.g., after password reset) — fetch profile and route.
-    // skipAuthRedirect: a 401 here (fresh session, first authenticated call) should
-    // route to onboarding via the catch below, not force a full Clerk sign-out.
+    // Already signed in (e.g., after password reset) — fetch the real profile and
+    // route accordingly. If the fetch fails (stale/expired token, network blip),
+    // do NOT assume "new user" and bounce them into profile setup — that silently
+    // sent already-onboarded users back through BodyScreen just from loading this
+    // screen with a stale session. Leave them on the normal login form instead.
     apiCall("/users/profile", { skipAuthRedirect: true })
       .then(res => onLogin(res?.data?.user || {}))
-      .catch(() => onLogin({}));
+      .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clerkLoaded, isSignedIn]);
 
