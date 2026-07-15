@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, createContext, useContext, useImperativeHandle, forwardRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, createContext, useContext, useImperativeHandle, forwardRef } from "react";
 import { useAuth as useClerkAuth, useSignUp as useClerkSignUp, useSignIn as useClerkSignIn, useClerk } from '@clerk/clerk-react';
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, PaymentRequestButtonElement, useStripe, useElements } from "@stripe/react-stripe-js";
@@ -7393,6 +7393,10 @@ function PaymentSheet({ initialPlan = "monthly", skipPicker = false, onClose }) 
   const [fetching,     setFetching]     = useState(false);
   const [err,          setErr]          = useState("");
 
+  // Computed once per clientSecret change (not on every render) so Stripe.js
+  // loading stays a memoized value, not a side effect invoked from JSX.
+  const stripePromise = useMemo(() => (clientSecret ? getStripePromise() : null), [clientSecret]);
+
   const PLANS = {
     monthly: { label:"Monthly",  price:"$9.99",  period:"/month", sub:"Billed monthly" },
     annual:  { label:"Annual",   price:"$69.99", period:"/year",  sub:"Save 41% · $5.83/mo", badge:"BEST VALUE" },
@@ -7508,9 +7512,9 @@ function PaymentSheet({ initialPlan = "monthly", skipPicker = false, onClose }) 
                 🔒 Secured by Stripe · 256-bit SSL encryption
               </div>
             </>
-          ) : getStripePromise() ? (
+          ) : stripePromise ? (
             <Elements
-              stripe={getStripePromise()}
+              stripe={stripePromise}
               options={{
                 clientSecret,
                 appearance: STRIPE_APPEARANCE,
