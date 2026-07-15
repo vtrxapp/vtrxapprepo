@@ -4268,7 +4268,11 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
   }, [cooldown]);
 
   const resend = async () => {
-    if (cooldown > 0 || resending || loading) return;
+    // Shares submitRef with verify() — a verify/resend tap in the same tick
+    // must not start both Clerk operations concurrently, since the loading/
+    // resending state checks below aren't visible until React re-renders.
+    if (submitRef.current || cooldown > 0 || resending || loading) return;
+    submitRef.current = true;
     setResending(true); setError(""); setInfo("");
     try {
       await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
@@ -4286,7 +4290,10 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
       } else {
         setError(clerkErr?.longMessage || clerkErr?.message || e?.message || "Failed to resend code. Please try again.");
       }
-    } finally { setResending(false); }
+    } finally {
+      setResending(false);
+      submitRef.current = false;
+    }
   };
 
   return (
@@ -11012,7 +11019,13 @@ function VTRXAppInner({ setPaymentPlan }) {
   const goPrev = () => {
     if (screenTransitionRef.current) return;
     screenTransitionRef.current = true;
-    setDir(-1); setScreen(s=>Math.max(0,s-1));
+    // goPrev is only ever wired to screens inside the preferences SCREENS array
+    // (BodyScreen onward) and the phase==="preferences" hardware-back handler.
+    // Screen 0 there is SignUpScreen — reaching screen 1+ always means the user
+    // is already authenticated (via signup+verify or via login), so walking
+    // back to 0 would drop an already-signed-in user onto a fresh signup form.
+    // Floor at 1, not 0.
+    setDir(-1); setScreen(s=>Math.max(1,s-1));
   };
   useEffect(() => { screenTransitionRef.current = false; }, [screen]);
   const dashboardTransitionRef = useRef(false);
