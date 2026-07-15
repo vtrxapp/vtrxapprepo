@@ -43,8 +43,6 @@ export default defineConfig({
           if (!id.includes('node_modules')) return;
           const CHUNK_PACKAGES = {
             vendor:  ['react', 'react-dom', 'react-router-dom'],
-            charts:  ['chart.js', 'react-chartjs-2'],
-            network: ['axios'],
           };
           for (const [chunk, pkgs] of Object.entries(CHUNK_PACKAGES)) {
             if (pkgs.some(pkg => id.includes(`/node_modules/${pkg}/`) || id.includes(`\\node_modules\\${pkg}\\`))) {
