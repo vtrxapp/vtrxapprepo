@@ -10334,13 +10334,18 @@ function MyPlanPage({ onBack, onNavigate, onPlanChanged }) {
 }
 
 // ── WATER INTAKE TRACKER ────────────────────────────────────────────────────
-// Tap-to-fill droplets, Apple Health style: tapping droplet i sets the count
-// to i+1 (fill up to here) if it's currently empty, or i (empty back down to
-// here) if it's already filled — one tap either way, no separate +/- buttons.
+// Compact +/- stepper (not a row of 8 tap targets) so it stays a single slim
+// row on the dashboard. One glass is treated as one US customary cup (8 fl oz
+// / ~237 ml) purely for the L/oz display; the backend still stores glasses.
 const WATER_GOAL = 8;
-function WaterDroplet({ filled }) {
+const ML_PER_GLASS = 237;
+function waterAmountLabel(glasses, unit) {
+  const ml = glasses * ML_PER_GLASS;
+  return unit === "L" ? `${(ml / 1000).toFixed(1)}L` : `${Math.round(ml / 29.5735)}oz`;
+}
+function WaterDroplet({ filled, size = 20 }) {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill={filled ? PRIMARY : "none"} stroke={filled ? PRIMARY : "#444"} strokeWidth="1.8">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? PRIMARY : "none"} stroke={filled ? PRIMARY : "#444"} strokeWidth="1.8">
       <path d="M12 2.5c0 0-7 8.5-7 13.2a7 7 0 0014 0c0-4.7-7-13.2-7-13.2z"/>
     </svg>
   );
@@ -10350,6 +10355,7 @@ function WaterTrackerCard() {
   const [loading, setLoading] = useState(true);
   const [saving,  setSaving]  = useState(false);
   const [err,     setErr]     = useState("");
+  const [unit,    setUnit]    = useState(() => getUnitPref("vtrx_water_unit", "oz"));
 
   useEffect(() => {
     apiCall('/users/water')
@@ -10359,35 +10365,55 @@ function WaterTrackerCard() {
   }, []);
 
   const setLevel = async (level) => {
+    const clamped = Math.max(0, Math.min(WATER_GOAL, level));
     const prev = glasses;
-    setGlasses(level);
+    setGlasses(clamped);
     setSaving(true); setErr("");
     try {
-      await apiCall('/users/water', { method: 'POST', body: JSON.stringify({ glasses: level }) });
+      await apiCall('/users/water', { method: 'POST', body: JSON.stringify({ glasses: clamped }) });
     } catch (e) {
       setGlasses(prev);
-      setErr("Couldn't save — try again.");
+      setErr("Couldn't save. Try again.");
     } finally {
       setSaving(false);
     }
   };
 
+  const toggleUnit = () => {
+    const next = unit === "oz" ? "L" : "oz";
+    setUnit(next);
+    try { localStorage.setItem("vtrx_water_unit", next); } catch (_e) {}
+  };
+
+  const pct = loading ? 0 : Math.min(100, Math.round((glasses / WATER_GOAL) * 100));
+  const atMin = loading || saving || glasses <= 0;
+  const atMax = loading || saving || glasses >= WATER_GOAL;
+
   return (
-    <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"16px 18px",marginBottom:13,animation:"fadeUp 0.4s ease 0.12s both" }}>
-      <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14 }}>
-        <div style={{ fontFamily:FONT,fontWeight:800,fontSize:16,color:"#fff" }}>Water Intake</div>
-        <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:PRIMARY }}>{loading ? "…" : `${glasses}/${WATER_GOAL}`}</div>
+    <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"12px 16px",marginBottom:13,animation:"fadeUp 0.4s ease 0.12s both" }}>
+      <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",gap:10 }}>
+        <div style={{ display:"flex",alignItems:"center",gap:9,minWidth:0 }}>
+          <WaterDroplet filled={glasses>0}/>
+          <div style={{ minWidth:0 }}>
+            <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff" }}>Water Intake</div>
+            <button onClick={toggleUnit} disabled={loading}
+              style={{ background:"none",border:"none",padding:0,cursor:loading?"default":"pointer",fontFamily:FONT,fontWeight:600,fontSize:11,color:"#888" }}>
+              {loading ? "…" : `${waterAmountLabel(glasses, unit)} of ${waterAmountLabel(WATER_GOAL, unit)} · tap to switch ${unit === "oz" ? "L" : "oz"}`}
+            </button>
+          </div>
+        </div>
+        <div style={{ display:"flex",alignItems:"center",gap:8,flexShrink:0 }}>
+          <button aria-label="Remove a glass" disabled={atMin} onClick={() => setLevel(glasses - 1)}
+            style={{ width:26,height:26,borderRadius:"50%",border:`1px solid ${BORDER}`,background:"none",color:atMin?"#444":"#fff",fontFamily:FONT,fontWeight:700,fontSize:15,cursor:atMin?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,padding:0 }}>−</button>
+          <span style={{ fontFamily:FONT,fontWeight:700,fontSize:12,color:PRIMARY,minWidth:26,textAlign:"center" }}>{loading ? "…" : `${glasses}/${WATER_GOAL}`}</span>
+          <button aria-label="Add a glass" disabled={atMax} onClick={() => setLevel(glasses + 1)}
+            style={{ width:26,height:26,borderRadius:"50%",border:"none",background:atMax?"#333":PRIMARY,color:"#fff",fontFamily:FONT,fontWeight:700,fontSize:15,cursor:atMax?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,padding:0 }}>+</button>
+        </div>
       </div>
-      <div style={{ display:"flex",justifyContent:"space-between",gap:6,opacity:loading?0.4:1 }}>
-        {Array.from({ length: WATER_GOAL }, (_, i) => (
-          <button key={i} disabled={loading||saving}
-            onClick={() => setLevel(i < glasses ? i : i + 1)}
-            style={{ background:"none",border:"none",padding:4,cursor:loading||saving?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center" }}>
-            <WaterDroplet filled={i < glasses}/>
-          </button>
-        ))}
+      <div style={{ height:4,background:"rgba(255,255,255,0.08)",borderRadius:2,marginTop:10,overflow:"hidden" }}>
+        <div style={{ width:`${pct}%`,height:"100%",background:PRIMARY,borderRadius:2,transition:"width 0.25s ease" }}/>
       </div>
-      {err && <div style={{ fontFamily:FONT,fontSize:11,color:"#EF4444",marginTop:10,textAlign:"center" }}>{err}</div>}
+      {err && <div style={{ fontFamily:FONT,fontSize:11,color:"#EF4444",marginTop:8,textAlign:"center" }}>{err}</div>}
     </div>
   );
 }
