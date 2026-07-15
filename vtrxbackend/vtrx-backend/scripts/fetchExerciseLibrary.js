@@ -187,7 +187,7 @@ function csvRow(ex) {
 async function main() {
   console.log('\n=== VTRX Exercise Library Fetcher ===');
   console.log(`Base URL : https://${BASE}${BASE_PATH}`);
-  console.log(`API Key  : ${API_KEY.slice(0, 8)}...\n`);
+  console.log(`API Key  : present\n`);
 
   // STEP 1-3: Fetch all muscle groups
   console.log('── Fetching from ymove API ──');

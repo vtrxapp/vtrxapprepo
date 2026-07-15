@@ -43,6 +43,11 @@ ymoveApi.interceptors.response.use(
 
 const isConfigured = () => !!process.env.YMOVE_API_KEY;
 
+// ymove resource IDs are always simple identifiers from ymove's own API responses.
+// Reject anything else before it reaches a URL path — closes off path traversal /
+// request forgery via a crafted id (e.g. containing "://", "..", or "@").
+const isSafeId = (id) => /^[a-zA-Z0-9_-]+$/.test(String(id));
+
 // Normalise response shapes — ymove wraps lists in { data: [...], pagination: { total } }
 const toArray = r => Array.isArray(r) ? r : (r?.data || r?.exercises || r?.items || r?.results || []);
 const getTotal = r => r?.pagination?.total ?? r?.total ?? 0;
@@ -77,7 +82,7 @@ const getExercises = async ({ muscleGroup, exerciseType, equipment, difficulty, 
 
 // GET /exercises/:id — single exercise with video URL
 const getExerciseById = async (ymoveId) => {
-  if (!isConfigured() || ymoveId == null || ymoveId === '') return null;
+  if (!isConfigured() || ymoveId == null || ymoveId === '' || !isSafeId(ymoveId)) return null;
   try {
     const { data } = await ymoveApi.get(`/exercises/${ymoveId}`);
     return data?.data || data || null;
@@ -178,7 +183,7 @@ const getWorkouts = async ({ type, difficulty, limit = 20, page = 1 } = {}) => {
 };
 
 const getWorkoutById = async (ymoveId) => {
-  if (!isConfigured() || !ymoveId) return null;
+  if (!isConfigured() || !ymoveId || !isSafeId(ymoveId)) return null;
   try {
     const { data } = await ymoveApi.get(`/workouts/${ymoveId}`);
     return data?.data || data || null;
@@ -288,7 +293,7 @@ const getRecipes = async ({ query, diet, cuisine, mealType, maxCalories, minProt
 };
 
 const getRecipeById = async (ymoveId) => {
-  if (!isConfigured() || !ymoveId) return null;
+  if (!isConfigured() || !ymoveId || !isSafeId(ymoveId)) return null;
   try {
     const { data } = await ymoveApi.get(`/recipes/${ymoveId}`);
     return data?.data || data || null;
@@ -324,7 +329,7 @@ const getFoods = async ({ query, source, usdaOnly, country, per, limit = 20, pag
 };
 
 const getFoodById = async (id) => {
-  if (!isConfigured() || !id) return null;
+  if (!isConfigured() || !id || !isSafeId(id)) return null;
   try {
     const { data } = await ymoveApi.get(`/foods/${id}`);
     return data?.data || data || null;

@@ -4001,6 +4001,11 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
     const base = (f.email.trim().toLowerCase().split('@')[0] || 'user').replace(/[^a-z0-9_]/g, '_').slice(0, 16) || 'user';
     return suffix ? `${base}_${suffix}` : base;
   };
+  // Math.random() isn't a CSPRNG — use Web Crypto for the collision-retry suffix instead.
+  const randomSuffix = () => {
+    const n = crypto.getRandomValues(new Uint32Array(1))[0];
+    return n.toString(36).slice(0, 4);
+  };
   const attemptSignUp = (username) => signUp.create({
     emailAddress: f.email.trim().toLowerCase(),
     password:     f.password,
@@ -4026,7 +4031,7 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
       } catch (e1) {
         const err1 = e1?.errors?.[0];
         if (err1?.code === 'form_identifier_exists' && err1?.meta?.paramName === 'username') {
-          await attemptSignUp(genUsername(Math.random().toString(36).slice(2, 6)));
+          await attemptSignUp(genUsername(randomSuffix()));
         } else {
           throw e1;
         }
