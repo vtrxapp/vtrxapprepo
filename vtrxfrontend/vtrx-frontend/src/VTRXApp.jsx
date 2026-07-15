@@ -58,7 +58,7 @@ const apiCall = async (endpoint, options = {}) => {
       { sessionName:"Rest Day",            durationMins:0,  isRestDay:true,  exercises:[] },
     ] }] } } };
     if (endpoint === "/nutrition/active-plan") { const day=(cal)=>({ day_total_calories:cal, meals:[ {meal_name:"Greek Yogurt & Berry Bowl",recipe_name:"Greek Yogurt & Berry Bowl",calories:420,protein_g:32,carbs_g:45,fat_g:12}, {meal_name:"Grilled Chicken & Quinoa Salad",recipe_name:"Grilled Chicken & Quinoa Salad",calories:580,protein_g:45,carbs_g:55,fat_g:18}, {meal_name:"Salmon, Sweet Potato & Greens",recipe_name:"Salmon, Sweet Potato & Greens",calories:650,protein_g:42,carbs_g:48,fat_g:24} ] }); return { success:true, data:{ plan:{
-      plan_name:"Build Muscle — Balanced Plan",
+      plan_name:"Build Muscle: Balanced Plan",
       plan_summary:"A protein-forward plan built around your goal, fitness level, and training days.",
       daily_targets:{ calories:1650, protein_g:119, carbs_g:148, fat_g:54 },
       week:{ monday:day(1650), tuesday:day(1650), wednesday:day(1650), thursday:day(1650), friday:day(1650), saturday:day(1650), sunday:day(1650) },
@@ -67,7 +67,7 @@ const apiCall = async (endpoint, options = {}) => {
         {supplement:"Creatine Monohydrate", reason:"Well-studied support for strength and lean mass gains.", timing:"Any time, daily"},
         {supplement:"Vitamin D3", reason:"Commonly low for indoor trainers; supports recovery.", timing:"With breakfast"},
       ],
-      nutrition_coach_message:"This is a sample plan for the demo — the real plan adapts to your logged meals and progress over time.",
+      nutrition_coach_message:"This is a sample plan for the demo. The real plan adapts to your logged meals and progress over time.",
       shopping_list:{},
       meal_prep_tips:["Batch-cook grains on Sunday for the week ahead.","Portion proteins into containers right after cooking."],
     } } }; }
@@ -237,7 +237,7 @@ let _openPaymentSheet = null;
 // instead of asking the same question twice back to back.
 const openPaymentSheet = (plan = "monthly", opts = {}) => {
   if (PUBLIC_DEMO) {
-    window.alert("This is a shared demo account, so upgrades are disabled here — join the waitlist for real early access!");
+    window.alert("This is a shared demo account, so upgrades are disabled here. Join the waitlist for real early access!");
     return;
   }
   track("upgrade_clicked", { plan });
@@ -520,10 +520,10 @@ const GROCERY_CATEGORIES = {
 
 const AI_SUGGESTIONS = {
   empty: { title:"Rest Day Nutrition",       tip:"Slight calorie reduction on rest days. Keep protein high to preserve muscle while your body recovers.",              rec:[4,8,6]  },
-  low:   { title:"Light Day Fueling",        tip:"Easy movement today — keep meals light but protein-rich. Anti-inflammatory foods like salmon help.",                 rec:[0,6,11] },
+  low:   { title:"Light Day Fueling",        tip:"Easy movement today: keep meals light but protein-rich. Anti-inflammatory foods like salmon help.",                 rec:[0,6,11] },
   okay:  { title:"Steady Day Nutrition",     tip:"Balanced macros support steady energy. Aim for even distribution across 3–4 meals throughout the day.",              rec:[1,2,3]  },
-  good:  { title:"Performance Nutrition",    tip:"You're training hard — fuel accordingly. High protein post-workout and complex carbs to sustain energy.",             rec:[0,1,9]  },
-  peak:  { title:"Max Effort Nutrition",     tip:"Carb-loading the night before helps. Post-workout window is critical — eat within 30 min for optimal recovery.",     rec:[0,9,10] },
+  good:  { title:"Performance Nutrition",    tip:"You're training hard, so fuel accordingly. High protein post-workout and complex carbs to sustain energy.",             rec:[0,1,9]  },
+  peak:  { title:"Max Effort Nutrition",     tip:"Carb-loading the night before helps. Post-workout window is critical: eat within 30 min for optimal recovery.",     rec:[0,9,10] },
 };
 
 // Rotates daily (Mon–Sun). Each entry drives the VTRX Smart Nutrition banner.
@@ -531,14 +531,14 @@ const AI_SUGGESTIONS = {
 const DAILY_NUTRITION_FACTS = [
   {
     focus:      "Carbohydrates & Energy",
-    fact:       "Complex carbs are your body's preferred fuel source. Unlike simple sugars, they digest slowly — giving you steady energy throughout your workout and keeping you fuller for longer.",
+    fact:       "Complex carbs are your body's preferred fuel source. Unlike simple sugars, they digest slowly, giving you steady energy throughout your workout and keeping you fuller for longer.",
     examples:   "Best sources: oats, sweet potatoes, brown rice, quinoa, lentils, whole-grain bread, chickpeas.",
     recipeTag:  "High Protein",
     showRecipe: true,
   },
   {
     focus:      "Protein & Muscle Recovery",
-    fact:       "After training, your muscle fibres micro-tear and need protein to rebuild stronger. Spread your intake across meals — your body can only absorb around 30–40 g per sitting.",
+    fact:       "After training, your muscle fibres micro-tear and need protein to rebuild stronger. Spread your intake across meals: your body can only absorb around 30–40 g per sitting.",
     examples:   "Best sources: chicken breast, eggs, Greek yoghurt, cottage cheese, salmon, tofu, edamame.",
     recipeTag:  "High Protein",
     showRecipe: true,
@@ -558,7 +558,7 @@ const DAILY_NUTRITION_FACTS = [
   },
   {
     focus:      "Pre-Workout Nutrition",
-    fact:       "Eating 1–2 hours before training fills your glycogen stores and gives muscles a pool of amino acids to draw from — directly improving power output and delaying fatigue.",
+    fact:       "Eating 1–2 hours before training fills your glycogen stores and gives muscles a pool of amino acids to draw from, directly improving power output and delaying fatigue.",
     examples:   "Ideas: banana + peanut butter, oat porridge with berries, brown rice with chicken, rice cakes + turkey.",
     recipeTag:  "High Protein",
     showRecipe: true,
@@ -621,11 +621,11 @@ function EnergyFaceIcon({ type, color, size=28 }) {
 }
 
 const ENERGY_LEVELS = [
-  { key: "empty", faceType: "empty", label: "Running on Empty",   sub: "Rest & recover — gentle session today", color: "#EF4444", bg: "rgba(239,68,68,0.1)"  },
-  { key: "low",   faceType: "low",   label: "Getting Through It", sub: "A light push — you can do this",        color: "#F97316", bg: "rgba(249,115,22,0.1)" },
+  { key: "empty", faceType: "empty", label: "Running on Empty",   sub: "Rest & recover: gentle session today", color: "#EF4444", bg: "rgba(239,68,68,0.1)"  },
+  { key: "low",   faceType: "low",   label: "Getting Through It", sub: "A light push: you can do this",        color: "#F97316", bg: "rgba(249,115,22,0.1)" },
   { key: "okay",  faceType: "okay",  label: "Feeling Okay",       sub: "Standard session ready for you",        color: "#EAB308", bg: "rgba(234,179,8,0.1)"  },
   { key: "good",  faceType: "good",  label: "Feeling Good",       sub: "Let's push a little harder today",      color: "#22C55E", bg: "rgba(34,197,94,0.1)"  },
-  { key: "peak",  faceType: "peak",  label: "Let's Go Hard",      sub: "Maximum effort — this is your day",     color: PRIMARY,   bg: "rgba(0,163,255,0.1)"  },
+  { key: "peak",  faceType: "peak",  label: "Let's Go Hard",      sub: "Maximum effort: this is your day",     color: PRIMARY,   bg: "rgba(0,163,255,0.1)"  },
 ];
 
 // How today's mood check-in scales an AI-generated plan session for display —
@@ -675,7 +675,7 @@ const ONBOARDING_SLIDES = [
     overlay: "linear-gradient(180deg,rgba(0,0,0,0.3) 0%,rgba(0,0,0,0.5) 45%,rgba(0,0,0,0.88) 100%)",
     tag: "BUILT FOR BEGINNERS",
     headline: ["Never feel lost at the gym again."],
-    body: "A coach that adapts to you — your experience level, your schedule, your pace. No judgment, no guesswork, just a clear plan every time you walk in.",
+    body: "A coach that adapts to you: your experience level, your schedule, your pace. No judgment, no guesswork, just a clear plan every time you walk in.",
     features: [{ icon: "bolt",  text: "Workouts built for your exact level" },
                { icon: "fork",  text: "Meals that fit your goals, no guesswork" },
                { icon: "chart", text: "Watch yourself get stronger every week" }],
@@ -2080,85 +2080,85 @@ const VideoPlayer = forwardRef(function VideoPlayer({ videoUrl, hlsUrl = null, t
 // ─────────────────────────────────────────────────────────────────────────────
 const EXERCISE_INSTRUCTIONS_MAP = {
   // ── BICEPS ──────────────────────────────────────────────────────────────
-  "alternating dumbbell curl":["Stand with feet shoulder-width apart, a dumbbell in each hand with palms facing forward","Keep your upper arms still and elbows pinned close to your torso throughout","Curl one dumbbell up toward your shoulder, squeezing your bicep hard at the top","Lower slowly over 2–3 seconds, then repeat on the other arm","Alternate sides for each rep — avoid swinging or using momentum"],
-  "dumbbell curl":["Stand feet shoulder-width apart, dumbbells at your sides with palms facing forward","Keep elbows pinned to your sides and curl both dumbbells up to shoulder height","Squeeze your biceps hard at the top for a full contraction","Lower slowly over 2–3 seconds back to full extension","Avoid swinging — keep the movement strictly controlled"],
-  "bicep curl":["Stand feet shoulder-width apart, dumbbells at your sides with palms facing forward","Keep elbows pinned to your sides and curl both dumbbells up to shoulder height","Squeeze your biceps hard at the top for a full contraction","Lower slowly over 2–3 seconds back to full extension","Avoid swinging — keep the movement strictly controlled"],
-  "barbell curl":["Stand feet shoulder-width apart, grip the barbell underhand at hip level","Keep your elbows close to your body and curl the bar up toward your chest","Squeeze your biceps at the top and hold for 1 second","Lower the bar slowly over 2–3 seconds — keep your back straight","Avoid leaning back to cheat the weight up"],
+  "alternating dumbbell curl":["Stand with feet shoulder-width apart, a dumbbell in each hand with palms facing forward","Keep your upper arms still and elbows pinned close to your torso throughout","Curl one dumbbell up toward your shoulder, squeezing your bicep hard at the top","Lower slowly over 2–3 seconds, then repeat on the other arm","Alternate sides for each rep. Avoid swinging or using momentum"],
+  "dumbbell curl":["Stand feet shoulder-width apart, dumbbells at your sides with palms facing forward","Keep elbows pinned to your sides and curl both dumbbells up to shoulder height","Squeeze your biceps hard at the top for a full contraction","Lower slowly over 2–3 seconds back to full extension","Avoid swinging. Keep the movement strictly controlled"],
+  "bicep curl":["Stand feet shoulder-width apart, dumbbells at your sides with palms facing forward","Keep elbows pinned to your sides and curl both dumbbells up to shoulder height","Squeeze your biceps hard at the top for a full contraction","Lower slowly over 2–3 seconds back to full extension","Avoid swinging. Keep the movement strictly controlled"],
+  "barbell curl":["Stand feet shoulder-width apart, grip the barbell underhand at hip level","Keep your elbows close to your body and curl the bar up toward your chest","Squeeze your biceps at the top and hold for 1 second","Lower the bar slowly over 2–3 seconds. Keep your back straight","Avoid leaning back to cheat the weight up"],
   "hammer curl":["Stand feet shoulder-width apart, dumbbells at your sides with palms facing inward (thumbs up)","Without rotating your wrists, curl both dumbbells up toward your shoulders","Squeeze at the top then lower slowly back over 2–3 seconds","This neutral grip targets the brachialis alongside the biceps for thicker arms"],
-  "preacher curl":["Sit at the preacher bench and rest the back of your upper arms flat against the pad","Hold the barbell or dumbbell underhand with arms nearly fully extended","Curl the weight up toward your chin, squeezing your biceps hard at the top","Lower slowly — do not fully lock out at the bottom to keep constant tension"],
-  "concentration curl":["Sit on a bench, feet wide apart — rest your right upper arm against your inner right thigh","Hold a dumbbell with your right hand and let it hang fully extended","Curl the weight up toward your shoulder, rotating your pinky slightly outward at the top","Lower slowly and complete all reps before switching arms"],
-  "cable curl":["Attach a straight bar or EZ-bar to the low pulley of a cable machine","Stand close, grip the bar underhand at hip height with elbows tucked in","Curl the bar up toward your chest against the constant cable tension","Squeeze at the top then lower slowly — the cable keeps tension through the whole movement"],
-  "incline dumbbell curl":["Set a bench to 45–60° incline and sit back with dumbbells hanging at full extension","The incline creates a long-head bicep stretch at the bottom for greater muscle development","Curl both dumbbells up toward your shoulders keeping elbows pulled back","Squeeze at the top and lower slowly — feel the full stretch at the bottom"],
+  "preacher curl":["Sit at the preacher bench and rest the back of your upper arms flat against the pad","Hold the barbell or dumbbell underhand with arms nearly fully extended","Curl the weight up toward your chin, squeezing your biceps hard at the top","Lower slowly. Do not fully lock out at the bottom to keep constant tension"],
+  "concentration curl":["Sit on a bench, feet wide apart. Rest your right upper arm against your inner right thigh","Hold a dumbbell with your right hand and let it hang fully extended","Curl the weight up toward your shoulder, rotating your pinky slightly outward at the top","Lower slowly and complete all reps before switching arms"],
+  "cable curl":["Attach a straight bar or EZ-bar to the low pulley of a cable machine","Stand close, grip the bar underhand at hip height with elbows tucked in","Curl the bar up toward your chest against the constant cable tension","Squeeze at the top then lower slowly: the cable keeps tension through the whole movement"],
+  "incline dumbbell curl":["Set a bench to 45–60° incline and sit back with dumbbells hanging at full extension","The incline creates a long-head bicep stretch at the bottom for greater muscle development","Curl both dumbbells up toward your shoulders keeping elbows pulled back","Squeeze at the top and lower slowly. Feel the full stretch at the bottom"],
   // ── CHEST ───────────────────────────────────────────────────────────────
-  "bench press":["Lie flat on the bench with feet firmly on the floor for stability","Grip the bar slightly wider than shoulder-width with an overhand grip","Unrack the bar and lower it to your mid-chest — keep elbows at 45° from your body","Press the bar upward explosively until your arms are fully extended","Lower the weight slowly over 2–3 seconds — never bounce off your chest"],
-  "barbell bench press":["Lie flat on the bench with feet firmly on the floor for stability","Grip the bar slightly wider than shoulder-width with an overhand grip","Lower the bar to your mid-chest — elbows at roughly 45° to your torso","Press upward until arms are fully extended, squeezing your chest at the top","Lower slowly over 2–3 seconds — never bounce off your chest"],
-  "dumbbell bench press":["Lie flat on the bench, hold a dumbbell in each hand at chest level","Press both dumbbells upward until your arms are straight, bringing them slightly together","Squeeze your chest at the top of the movement","Lower the dumbbells slowly — feel a stretch across your chest at the bottom","Keep feet flat, back slightly arched, and shoulders retracted throughout"],
-  "incline bench press":["Set the bench to 30–45° and lie back with feet flat on the floor","Grip the bar just outside shoulder-width and unrack it","Lower the bar to your upper chest — keep elbows at 45–60° from your body","Press back up powerfully until arms are extended — squeeze your upper chest","Lower slowly — the incline targets the upper pectoral muscle"],
+  "bench press":["Lie flat on the bench with feet firmly on the floor for stability","Grip the bar slightly wider than shoulder-width with an overhand grip","Unrack the bar and lower it to your mid-chest. Keep elbows at 45° from your body","Press the bar upward explosively until your arms are fully extended","Lower the weight slowly over 2–3 seconds. Never bounce off your chest"],
+  "barbell bench press":["Lie flat on the bench with feet firmly on the floor for stability","Grip the bar slightly wider than shoulder-width with an overhand grip","Lower the bar to your mid-chest, elbows at roughly 45° to your torso","Press upward until arms are fully extended, squeezing your chest at the top","Lower slowly over 2–3 seconds. Never bounce off your chest"],
+  "dumbbell bench press":["Lie flat on the bench, hold a dumbbell in each hand at chest level","Press both dumbbells upward until your arms are straight, bringing them slightly together","Squeeze your chest at the top of the movement","Lower the dumbbells slowly. Feel a stretch across your chest at the bottom","Keep feet flat, back slightly arched, and shoulders retracted throughout"],
+  "incline bench press":["Set the bench to 30–45° and lie back with feet flat on the floor","Grip the bar just outside shoulder-width and unrack it","Lower the bar to your upper chest. Keep elbows at 45–60° from your body","Press back up powerfully until arms are extended. Squeeze your upper chest","Lower slowly: the incline targets the upper pectoral muscle"],
   "incline dumbbell press":["Set the bench to 30–45°, sit back with a dumbbell in each hand resting on your thighs","Kick the dumbbells up as you lie back, positioning them at chest level","Press both dumbbells up and slightly together until arms are straight","Squeeze your upper chest at the top, then lower slowly back to the starting position"],
-  "push up":["Place hands slightly wider than shoulder-width on the floor, fingers pointing forward","Start in a straight-arm plank — keep your body in a rigid straight line from head to heels","Lower your chest toward the floor, keeping elbows at roughly 45° from your body","Press back up powerfully until your arms are fully extended","Keep your core tight throughout — don't let your hips sag or pike up"],
-  "push-up":["Place hands slightly wider than shoulder-width on the floor, fingers pointing forward","Start in a straight-arm plank — keep your body in a rigid straight line from head to heels","Lower your chest toward the floor, keeping elbows at roughly 45° from your body","Press back up powerfully until your arms are fully extended","Keep your core tight throughout — don't let your hips sag or pike up"],
-  "pushup":["Place hands slightly wider than shoulder-width on the floor, fingers pointing forward","Start in a straight-arm plank — keep your body in a rigid straight line from head to heels","Lower your chest toward the floor, keeping elbows at roughly 45° from your body","Press back up powerfully until your arms are fully extended","Keep your core tight throughout — don't let your hips sag or pike up"],
-  "dumbbell flye":["Lie flat on a bench, hold dumbbells above your chest with a slight bend in your elbows","Open your arms in a wide arc, lowering dumbbells out to your sides until you feel a chest stretch","Squeeze your chest and bring the dumbbells back together in the same arc motion","Maintain the slight elbow bend throughout — do not straighten or over-bend your arms"],
-  "cable flye":["Set both cable stations to the high position and stand in the center","Hold a handle in each hand and lean forward slightly at the hips","Bring your hands together in front of your lower chest in a wide arc, squeezing your pecs","Slowly let your arms return to the starting position — feel the chest stretch"],
-  "chest dip":["Grip the parallel bars and support your bodyweight with arms straight","Lean your torso forward slightly — this shifts focus to the chest rather than triceps","Lower your body by bending your elbows until they reach 90° or slightly below","Press back up strongly until arms are fully straight, squeezing your chest at the top"],
+  "push up":["Place hands slightly wider than shoulder-width on the floor, fingers pointing forward","Start in a straight-arm plank. Keep your body in a rigid straight line from head to heels","Lower your chest toward the floor, keeping elbows at roughly 45° from your body","Press back up powerfully until your arms are fully extended","Keep your core tight throughout. Don't let your hips sag or pike up"],
+  "push-up":["Place hands slightly wider than shoulder-width on the floor, fingers pointing forward","Start in a straight-arm plank. Keep your body in a rigid straight line from head to heels","Lower your chest toward the floor, keeping elbows at roughly 45° from your body","Press back up powerfully until your arms are fully extended","Keep your core tight throughout. Don't let your hips sag or pike up"],
+  "pushup":["Place hands slightly wider than shoulder-width on the floor, fingers pointing forward","Start in a straight-arm plank. Keep your body in a rigid straight line from head to heels","Lower your chest toward the floor, keeping elbows at roughly 45° from your body","Press back up powerfully until your arms are fully extended","Keep your core tight throughout. Don't let your hips sag or pike up"],
+  "dumbbell flye":["Lie flat on a bench, hold dumbbells above your chest with a slight bend in your elbows","Open your arms in a wide arc, lowering dumbbells out to your sides until you feel a chest stretch","Squeeze your chest and bring the dumbbells back together in the same arc motion","Maintain the slight elbow bend throughout. Do not straighten or over-bend your arms"],
+  "cable flye":["Set both cable stations to the high position and stand in the center","Hold a handle in each hand and lean forward slightly at the hips","Bring your hands together in front of your lower chest in a wide arc, squeezing your pecs","Slowly let your arms return to the starting position. Feel the chest stretch"],
+  "chest dip":["Grip the parallel bars and support your bodyweight with arms straight","Lean your torso forward slightly: this shifts focus to the chest rather than triceps","Lower your body by bending your elbows until they reach 90° or slightly below","Press back up strongly until arms are fully straight, squeezing your chest at the top"],
   // ── BACK ────────────────────────────────────────────────────────────────
-  "pull up":["Hang from the bar with an overhand grip, hands slightly wider than shoulder-width","Start from a dead hang with arms fully extended and shoulders engaged","Pull your chest toward the bar — drive your elbows down and back toward your hips","Squeeze your lats and upper back when your chin clears the bar","Lower yourself slowly over 2–3 seconds back to the full hang"],
-  "pull-up":["Hang from the bar with an overhand grip, hands slightly wider than shoulder-width","Start from a dead hang with arms fully extended and shoulders engaged","Pull your chest toward the bar — drive your elbows down and back toward your hips","Squeeze your lats and upper back when your chin clears the bar","Lower yourself slowly over 2–3 seconds back to the full hang"],
+  "pull up":["Hang from the bar with an overhand grip, hands slightly wider than shoulder-width","Start from a dead hang with arms fully extended and shoulders engaged","Pull your chest toward the bar. Drive your elbows down and back toward your hips","Squeeze your lats and upper back when your chin clears the bar","Lower yourself slowly over 2–3 seconds back to the full hang"],
+  "pull-up":["Hang from the bar with an overhand grip, hands slightly wider than shoulder-width","Start from a dead hang with arms fully extended and shoulders engaged","Pull your chest toward the bar. Drive your elbows down and back toward your hips","Squeeze your lats and upper back when your chin clears the bar","Lower yourself slowly over 2–3 seconds back to the full hang"],
   "chin up":["Hang from the bar with an underhand (supinated) grip, hands shoulder-width apart","Start from a dead hang with arms fully extended","Pull your chin above the bar by driving your elbows down and back","Squeeze your biceps and lats at the top, then lower slowly"],
-  "lat pulldown":["Sit at the machine and adjust the thigh pad to lock your legs in","Grip the bar slightly wider than shoulder-width with an overhand grip","Lean back slightly and pull the bar down to your upper chest, leading with your elbows","Squeeze your lats hard at the bottom — hold for a second","Slowly return the bar to the top, maintaining muscle tension throughout"],
-  "bent over row":["Stand with feet hip-width apart, grip the bar overhand at hip level","Hinge forward at the hips until your torso is roughly parallel to the floor","Keep your back flat, core braced — pull the bar to your lower chest or upper abdomen","Drive your elbows back and squeeze your shoulder blades together at the top","Lower slowly under control back to the start"],
-  "barbell row":["Stand with feet hip-width apart, grip the bar overhand at hip level","Hinge forward at the hips until your torso is roughly parallel to the floor","Keep your back flat, core braced — pull the bar to your lower chest or upper abdomen","Drive your elbows back and squeeze your shoulder blades together at the top","Lower slowly under control back to the start"],
-  "dumbbell row":["Place your left knee and hand on a flat bench for support","Hold a dumbbell in your right hand and let it hang fully extended","Row the dumbbell to your hip by driving your elbow straight back — keep your back flat","Squeeze your lat at the top and lower slowly","Complete all reps then switch sides"],
-  "seated cable row":["Sit at the cable row machine with feet on the platform and knees slightly bent","Grip the handle and sit tall with your back straight and chest up","Pull the handle to your abdomen, driving your elbows back and squeezing your shoulder blades","Hold the contraction for a second, then slowly extend arms back to the start","Avoid rocking your torso — keep the movement isolated to your back"],
-  "deadlift":["Stand with feet hip-width apart, barbell over your mid-foot","Hinge at your hips and bend your knees to grip the bar just outside your legs","Take a big breath, brace your core, and drive through your heels to pull the bar up","Keep the bar dragging close to your body — up your shins and thighs","Stand fully upright squeezing glutes at the top, then hinge back down under control"],
+  "lat pulldown":["Sit at the machine and adjust the thigh pad to lock your legs in","Grip the bar slightly wider than shoulder-width with an overhand grip","Lean back slightly and pull the bar down to your upper chest, leading with your elbows","Squeeze your lats hard at the bottom; hold for a second","Slowly return the bar to the top, maintaining muscle tension throughout"],
+  "bent over row":["Stand with feet hip-width apart, grip the bar overhand at hip level","Hinge forward at the hips until your torso is roughly parallel to the floor","Keep your back flat, core braced. Pull the bar to your lower chest or upper abdomen","Drive your elbows back and squeeze your shoulder blades together at the top","Lower slowly under control back to the start"],
+  "barbell row":["Stand with feet hip-width apart, grip the bar overhand at hip level","Hinge forward at the hips until your torso is roughly parallel to the floor","Keep your back flat, core braced. Pull the bar to your lower chest or upper abdomen","Drive your elbows back and squeeze your shoulder blades together at the top","Lower slowly under control back to the start"],
+  "dumbbell row":["Place your left knee and hand on a flat bench for support","Hold a dumbbell in your right hand and let it hang fully extended","Row the dumbbell to your hip by driving your elbow straight back; keep your back flat","Squeeze your lat at the top and lower slowly","Complete all reps then switch sides"],
+  "seated cable row":["Sit at the cable row machine with feet on the platform and knees slightly bent","Grip the handle and sit tall with your back straight and chest up","Pull the handle to your abdomen, driving your elbows back and squeezing your shoulder blades","Hold the contraction for a second, then slowly extend arms back to the start","Avoid rocking your torso. Keep the movement isolated to your back"],
+  "deadlift":["Stand with feet hip-width apart, barbell over your mid-foot","Hinge at your hips and bend your knees to grip the bar just outside your legs","Take a big breath, brace your core, and drive through your heels to pull the bar up","Keep the bar dragging close to your body, up your shins and thighs","Stand fully upright squeezing glutes at the top, then hinge back down under control"],
   "romanian deadlift":["Stand with feet hip-width apart, hold the barbell in front of your thighs with an overhand grip","Push your hips back while keeping your back flat and chest tall","Lower the bar along your legs until you feel a deep hamstring stretch","Drive your hips forward to return to standing, squeezing your glutes at the top","Keep the bar close to your body and maintain a neutral spine throughout"],
   "rdl":["Stand with feet hip-width apart, hold the barbell in front of your thighs with an overhand grip","Push your hips back while keeping your back flat and chest tall","Lower the bar along your legs until you feel a deep hamstring stretch","Drive your hips forward to return to standing, squeezing your glutes at the top"],
   // ── SHOULDERS ───────────────────────────────────────────────────────────
-  "overhead press":["Stand feet shoulder-width apart, hold the barbell at shoulder height with an overhand grip","Brace your core — keep your ribs down and glutes tight to protect your spine","Press the bar straight overhead until your arms are fully extended","Shrug your traps slightly at the top to lock out the shoulder joint","Lower the bar slowly back to your shoulders under control"],
-  "barbell overhead press":["Stand feet shoulder-width apart, hold the barbell at shoulder height with an overhand grip","Brace your core — keep your ribs down and glutes tight","Press the bar straight overhead until your arms are fully extended","Shrug your traps slightly at the top to lock out the shoulder joint","Lower the bar slowly back to your shoulders under control"],
-  "military press":["Stand feet shoulder-width apart, grip the barbell at shoulder height","Brace your core tightly — do not arch your lower back","Press the bar straight overhead until your arms are fully locked out","Keep the bar over your center of mass throughout the movement","Lower the bar slowly back to shoulder level under control"],
-  "dumbbell shoulder press":["Sit on an upright bench, hold dumbbells at shoulder height with palms facing forward","Brace your core and press both dumbbells directly overhead until arms are extended","Bring the dumbbells slightly together at the top without touching","Lower slowly back to shoulder level — full range of motion on every rep"],
-  "arnold press":["Sit upright, hold dumbbells in front of your shoulders with palms facing you (like a top curl position)","As you press upward, rotate your palms outward — palms face forward by full extension","Reverse the rotation as you lower back to the starting position","This rotation targets the anterior and medial deltoid across a full range of motion"],
-  "lateral raise":["Stand feet shoulder-width apart, hold dumbbells at your sides with a slight elbow bend","Raise both arms out to the sides until they reach shoulder height — lead with your elbows","At the top, let your pinkies be slightly higher than your thumbs for full medial delt activation","Lower the dumbbells slowly over 3 seconds — control the descent","Avoid using momentum — keep the movement strict and isolated"],
-  "front raise":["Stand feet shoulder-width apart, hold dumbbells in front of your thighs with palms facing down","With a slight elbow bend, raise one or both arms forward to shoulder height","Pause at the top, then lower slowly back to the start","Avoid swinging — this targets the anterior (front) deltoid"],
-  "rear delt fly":["Stand and hinge forward at the hips about 45°, or use an incline bench","Hold dumbbells hanging down with a slight bend in your elbows","Raise both arms out to the sides in a wide arc — squeeze your rear delts and upper back at the top","Lower slowly back to the starting position — feel the stretch in your rear delts"],
-  "face pull":["Attach a rope to a cable machine at approximately head height","Grip the rope with both hands and step back with arms extended","Pull the rope toward your face, driving your elbows back and out to the sides","Externally rotate your shoulders at the end — thumbs pointing back behind you","Slowly return to the start — great for shoulder health and rear delt development"],
-  "upright row":["Stand feet shoulder-width apart, grip the barbell narrow with an overhand grip","Pull the bar straight up toward your chin, leading with your elbows","Elbows should travel up and flare out — keep the bar close to your body","Lower the bar slowly back to hip level under full control"],
+  "overhead press":["Stand feet shoulder-width apart, hold the barbell at shoulder height with an overhand grip","Brace your core: keep your ribs down and glutes tight to protect your spine","Press the bar straight overhead until your arms are fully extended","Shrug your traps slightly at the top to lock out the shoulder joint","Lower the bar slowly back to your shoulders under control"],
+  "barbell overhead press":["Stand feet shoulder-width apart, hold the barbell at shoulder height with an overhand grip","Brace your core: keep your ribs down and glutes tight","Press the bar straight overhead until your arms are fully extended","Shrug your traps slightly at the top to lock out the shoulder joint","Lower the bar slowly back to your shoulders under control"],
+  "military press":["Stand feet shoulder-width apart, grip the barbell at shoulder height","Brace your core tightly: do not arch your lower back","Press the bar straight overhead until your arms are fully locked out","Keep the bar over your center of mass throughout the movement","Lower the bar slowly back to shoulder level under control"],
+  "dumbbell shoulder press":["Sit on an upright bench, hold dumbbells at shoulder height with palms facing forward","Brace your core and press both dumbbells directly overhead until arms are extended","Bring the dumbbells slightly together at the top without touching","Lower slowly back to shoulder level: full range of motion on every rep"],
+  "arnold press":["Sit upright, hold dumbbells in front of your shoulders with palms facing you (like a top curl position)","As you press upward, rotate your palms outward. Palms face forward by full extension","Reverse the rotation as you lower back to the starting position","This rotation targets the anterior and medial deltoid across a full range of motion"],
+  "lateral raise":["Stand feet shoulder-width apart, hold dumbbells at your sides with a slight elbow bend","Raise both arms out to the sides until they reach shoulder height. Lead with your elbows","At the top, let your pinkies be slightly higher than your thumbs for full medial delt activation","Lower the dumbbells slowly over 3 seconds. Control the descent","Avoid using momentum. Keep the movement strict and isolated"],
+  "front raise":["Stand feet shoulder-width apart, hold dumbbells in front of your thighs with palms facing down","With a slight elbow bend, raise one or both arms forward to shoulder height","Pause at the top, then lower slowly back to the start","Avoid swinging: this targets the anterior (front) deltoid"],
+  "rear delt fly":["Stand and hinge forward at the hips about 45°, or use an incline bench","Hold dumbbells hanging down with a slight bend in your elbows","Raise both arms out to the sides in a wide arc. Squeeze your rear delts and upper back at the top","Lower slowly back to the starting position. Feel the stretch in your rear delts"],
+  "face pull":["Attach a rope to a cable machine at approximately head height","Grip the rope with both hands and step back with arms extended","Pull the rope toward your face, driving your elbows back and out to the sides","Externally rotate your shoulders at the end, thumbs pointing back behind you","Slowly return to the start: great for shoulder health and rear delt development"],
+  "upright row":["Stand feet shoulder-width apart, grip the barbell narrow with an overhand grip","Pull the bar straight up toward your chin, leading with your elbows","Elbows should travel up and flare out. Keep the bar close to your body","Lower the bar slowly back to hip level under full control"],
   // ── TRICEPS ─────────────────────────────────────────────────────────────
-  "tricep dip":["Support your bodyweight on parallel bars with arms straight","Keep your torso upright (vertical) to target the triceps","Lower your body by bending your elbows until they reach 90°","Press back up powerfully until your arms are fully extended — squeeze triceps at the top"],
-  "skull crusher":["Lie flat on a bench, hold the EZ-bar or dumbbells directly above your forehead with arms extended","Keeping your upper arms stationary and vertical, bend your elbows to lower the weight toward your forehead","Stop just before the weight reaches your head, then extend your arms back to the top","Control the descent — do not rush this movement","Only your forearms should move — upper arms stay fixed and vertical"],
-  "overhead tricep extension":["Stand or sit and hold a dumbbell with both hands, raising it overhead with arms extended","Keeping your upper arms close to your head, lower the dumbbell behind your head by bending your elbows","Feel the stretch in your triceps at the bottom of the movement","Extend your arms back overhead — squeeze your triceps hard at full extension"],
-  "tricep pushdown":["Stand at the cable machine with a straight bar or rope attached to the high pulley","Grip the attachment and pin your elbows to your sides — keep them locked throughout","Push the bar or rope down until your arms are fully extended, squeezing your triceps hard","Slowly allow the weight to rise back up — control the movement throughout"],
-  "close grip bench press":["Lie flat on the bench and grip the bar with hands about shoulder-width apart (narrower than a normal bench press)","Lower the bar to your lower chest keeping your elbows tucked close to your body","Press the bar back up — squeeze your triceps hard at full extension","The close grip shifts the focus from the chest to the triceps"],
+  "tricep dip":["Support your bodyweight on parallel bars with arms straight","Keep your torso upright (vertical) to target the triceps","Lower your body by bending your elbows until they reach 90°","Press back up powerfully until your arms are fully extended. Squeeze triceps at the top"],
+  "skull crusher":["Lie flat on a bench, hold the EZ-bar or dumbbells directly above your forehead with arms extended","Keeping your upper arms stationary and vertical, bend your elbows to lower the weight toward your forehead","Stop just before the weight reaches your head, then extend your arms back to the top","Control the descent. Do not rush this movement","Only your forearms should move. Upper arms stay fixed and vertical"],
+  "overhead tricep extension":["Stand or sit and hold a dumbbell with both hands, raising it overhead with arms extended","Keeping your upper arms close to your head, lower the dumbbell behind your head by bending your elbows","Feel the stretch in your triceps at the bottom of the movement","Extend your arms back overhead. Squeeze your triceps hard at full extension"],
+  "tricep pushdown":["Stand at the cable machine with a straight bar or rope attached to the high pulley","Grip the attachment and pin your elbows to your sides. Keep them locked throughout","Push the bar or rope down until your arms are fully extended, squeezing your triceps hard","Slowly allow the weight to rise back up. Control the movement throughout"],
+  "close grip bench press":["Lie flat on the bench and grip the bar with hands about shoulder-width apart (narrower than a normal bench press)","Lower the bar to your lower chest keeping your elbows tucked close to your body","Press the bar back up. Squeeze your triceps hard at full extension","The close grip shifts the focus from the chest to the triceps"],
   "diamond push up":["Get into push-up position but place your hands close together, forming a diamond with thumbs and index fingers","Keep your elbows tucked in close to your body throughout","Lower your chest toward your hands then press back up powerfully","This variation places maximum stress on the triceps"],
   // ── LEGS ────────────────────────────────────────────────────────────────
-  "squat":["Stand with feet shoulder-width apart, toes pointing slightly outward","Brace your core and sit back and down as if lowering into a chair","Keep your chest tall and knees tracking over your toes — do not let them cave in","Lower until your thighs are at least parallel to the floor","Drive through your heels to stand, squeezing your glutes at the top"],
-  "barbell squat":["Set the bar across your upper traps, grip outside shoulder-width, and unrack","Step back with feet shoulder-width apart and toes slightly out","Brace your core — break at the hips and knees simultaneously and descend until thighs are parallel","Drive powerfully through your heels to stand — knees track over toes throughout","Keep your chest tall and lower back neutral — no rounding"],
-  "goblet squat":["Hold a dumbbell or kettlebell vertically at your chest with both hands","Stand with feet shoulder-width apart, toes turned slightly outward","Squat down keeping your chest tall — let your elbows brush inside your knees at the bottom","Drive through your heels to stand, squeezing your glutes at the top"],
-  "leg press":["Sit in the leg press machine with your back and head firmly against the pad","Place feet shoulder-width on the platform, toes slightly turned out","Unlock the safety handles and lower the platform toward you until knees reach 90°","Do not let your lower back round off the pad at the bottom","Drive the platform away pressing through your heels until legs are nearly straight — do not lock out"],
-  "lunge":["Stand tall with feet hip-width apart, hands on hips or holding dumbbells at your sides","Step forward with one leg and lower your back knee toward the floor","Keep your front shin vertical and torso upright — front knee should not travel past your toes","Push back off your front foot to return to the starting position","Alternate legs for each rep — focus on balance and control"],
-  "walking lunge":["Stand tall holding dumbbells at your sides","Step forward with your right foot and lower your left knee toward the floor","Keep your torso upright and front shin vertical","Push through your right heel and step forward with your left foot to continue walking","Alternate legs continuously — keep the movement smooth and controlled"],
-  "leg extension":["Sit in the leg extension machine and adjust the pad to rest just above your lower shins","Grip the handles and extend your legs until fully straight — squeeze your quads hard at the top","Hold the top position for a second, then lower slowly over 2–3 seconds","Stop just before the weights touch — keep constant tension on the quads"],
-  "leg curl":["Lie face down on the leg curl machine — position the pad just above your heels","Grip the handles and curl your heels toward your glutes, squeezing your hamstrings at the top","Hold the contraction for a second at the top","Lower slowly over 2–3 seconds back to the start"],
-  "hip thrust":["Sit on the floor with your upper back against a bench and a barbell across your hips","Plant your feet flat on the floor, hip-width apart, shins vertical","Drive your hips toward the ceiling by squeezing your glutes — create a straight line from knees to shoulders","Pause at the top for a full glute contraction","Lower your hips back down slowly and repeat — keep chin tucked throughout"],
+  "squat":["Stand with feet shoulder-width apart, toes pointing slightly outward","Brace your core and sit back and down as if lowering into a chair","Keep your chest tall and knees tracking over your toes. Do not let them cave in","Lower until your thighs are at least parallel to the floor","Drive through your heels to stand, squeezing your glutes at the top"],
+  "barbell squat":["Set the bar across your upper traps, grip outside shoulder-width, and unrack","Step back with feet shoulder-width apart and toes slightly out","Brace your core. Break at the hips and knees simultaneously and descend until thighs are parallel","Drive powerfully through your heels to stand. Knees track over toes throughout","Keep your chest tall and lower back neutral: no rounding"],
+  "goblet squat":["Hold a dumbbell or kettlebell vertically at your chest with both hands","Stand with feet shoulder-width apart, toes turned slightly outward","Squat down keeping your chest tall. Let your elbows brush inside your knees at the bottom","Drive through your heels to stand, squeezing your glutes at the top"],
+  "leg press":["Sit in the leg press machine with your back and head firmly against the pad","Place feet shoulder-width on the platform, toes slightly turned out","Unlock the safety handles and lower the platform toward you until knees reach 90°","Do not let your lower back round off the pad at the bottom","Drive the platform away pressing through your heels until legs are nearly straight. Do not lock out"],
+  "lunge":["Stand tall with feet hip-width apart, hands on hips or holding dumbbells at your sides","Step forward with one leg and lower your back knee toward the floor","Keep your front shin vertical and torso upright. Front knee should not travel past your toes","Push back off your front foot to return to the starting position","Alternate legs for each rep. Focus on balance and control"],
+  "walking lunge":["Stand tall holding dumbbells at your sides","Step forward with your right foot and lower your left knee toward the floor","Keep your torso upright and front shin vertical","Push through your right heel and step forward with your left foot to continue walking","Alternate legs continuously. Keep the movement smooth and controlled"],
+  "leg extension":["Sit in the leg extension machine and adjust the pad to rest just above your lower shins","Grip the handles and extend your legs until fully straight. Squeeze your quads hard at the top","Hold the top position for a second, then lower slowly over 2–3 seconds","Stop just before the weights touch. Keep constant tension on the quads"],
+  "leg curl":["Lie face down on the leg curl machine. Position the pad just above your heels","Grip the handles and curl your heels toward your glutes, squeezing your hamstrings at the top","Hold the contraction for a second at the top","Lower slowly over 2–3 seconds back to the start"],
+  "hip thrust":["Sit on the floor with your upper back against a bench and a barbell across your hips","Plant your feet flat on the floor, hip-width apart, shins vertical","Drive your hips toward the ceiling by squeezing your glutes. Create a straight line from knees to shoulders","Pause at the top for a full glute contraction","Lower your hips back down slowly and repeat. Keep chin tucked throughout"],
   "glute bridge":["Lie flat on your back with knees bent and feet flat on the floor, hip-width apart","Drive your hips toward the ceiling by squeezing your glutes hard","Create a straight line from your knees to your shoulders at the top","Pause and squeeze hard, then lower slowly back to the floor"],
-  "calf raise":["Stand with the balls of your feet on the edge of a step or raised platform","Let your heels drop below the platform level to get a full calf stretch","Rise up onto your toes as high as possible — squeeze your calves hard at the top","Lower slowly over 3 seconds — feel the full stretch at the bottom","Avoid bouncing — slow controlled reps build the most muscle"],
-  "seated calf raise":["Sit at the seated calf raise machine with pads resting on your lower thighs","Place the balls of your feet on the platform, heels hanging off the edge","Push up onto your toes as high as possible — squeeze your calves hard at the top","Lower slowly — this seated variation particularly targets the soleus muscle"],
+  "calf raise":["Stand with the balls of your feet on the edge of a step or raised platform","Let your heels drop below the platform level to get a full calf stretch","Rise up onto your toes as high as possible. Squeeze your calves hard at the top","Lower slowly over 3 seconds. Feel the full stretch at the bottom","Avoid bouncing: slow controlled reps build the most muscle"],
+  "seated calf raise":["Sit at the seated calf raise machine with pads resting on your lower thighs","Place the balls of your feet on the platform, heels hanging off the edge","Push up onto your toes as high as possible. Squeeze your calves hard at the top","Lower slowly: this seated variation particularly targets the soleus muscle"],
   // ── CORE ────────────────────────────────────────────────────────────────
-  "plank":["Place forearms on the floor with elbows directly under your shoulders","Lift your body into a rigid straight line from head to heels — squeeze everything tight","Keep your hips level — do not let them sag down or pike up","Look slightly forward, breathe steadily and hold the position","Quality over duration — a perfect 30 seconds beats a sloppy 2 minutes"],
-  "crunch":["Lie flat on your back with knees bent and feet flat on the floor","Place hands lightly behind your head — do not pull your neck forward","Engage your abs and curl your upper body upward, bringing your chest toward your knees","Pause at the top with a full ab contraction, then lower slowly","Focus on the contraction — a short intense range of motion is all you need"],
-  "sit up":["Lie flat with knees bent and feet flat on the floor","Cross arms over your chest or place hands behind your head","Engage your core and lift your torso all the way up toward your knees","Lower slowly back to the floor — keep the movement controlled throughout"],
-  "leg raise":["Lie flat on your back with legs extended and hands under your glutes for support","Keep your legs straight and raise them toward the ceiling until they reach 90°","Lower your legs slowly — stop just before they touch the floor to keep tension","Avoid arching your lower back — press it into the floor throughout"],
-  "hanging leg raise":["Hang from a pull-up bar with an overhand grip, body fully extended","Keep your legs straight and raise them up to hip height or higher","Avoid swinging — control the movement entirely with your abs","Lower your legs slowly, stopping just before the dead hang position"],
-  "russian twist":["Sit with knees bent and feet slightly off the floor, or flat for an easier version","Lean back to about 45° and hold your hands or a weight in front of you","Rotate your torso side to side, bringing your hands toward the floor on each side","Keep your core tight and movements controlled — feel the obliques working"],
-  "mountain climber":["Get into a straight-arm plank with hands directly under your shoulders","Drive your right knee toward your chest, then quickly switch — left knee in as right goes back","Keep your hips low and your core tight throughout — don't let them rise up","Maintain a quick alternating pace while holding full core tension"],
-  "bicycle crunch":["Lie flat with hands behind your head and legs raised off the floor","Bring your right elbow and left knee toward each other while extending your right leg straight","Rotate to the other side in a smooth pedaling motion — left elbow to right knee","Keep your lower back pressed into the floor throughout"],
-  "cable crunch":["Kneel in front of a high cable machine with a rope attachment","Hold the rope beside your head and keep your hips completely stationary","Crunch downward by contracting your abs — bring your elbows toward your knees","Pause at the bottom with a full contraction then slowly return to the start"],
+  "plank":["Place forearms on the floor with elbows directly under your shoulders","Lift your body into a rigid straight line from head to heels. Squeeze everything tight","Keep your hips level. Do not let them sag down or pike up","Look slightly forward, breathe steadily and hold the position","Quality over duration: a perfect 30 seconds beats a sloppy 2 minutes"],
+  "crunch":["Lie flat on your back with knees bent and feet flat on the floor","Place hands lightly behind your head. Do not pull your neck forward","Engage your abs and curl your upper body upward, bringing your chest toward your knees","Pause at the top with a full ab contraction, then lower slowly","Focus on the contraction: a short intense range of motion is all you need"],
+  "sit up":["Lie flat with knees bent and feet flat on the floor","Cross arms over your chest or place hands behind your head","Engage your core and lift your torso all the way up toward your knees","Lower slowly back to the floor. Keep the movement controlled throughout"],
+  "leg raise":["Lie flat on your back with legs extended and hands under your glutes for support","Keep your legs straight and raise them toward the ceiling until they reach 90°","Lower your legs slowly. Stop just before they touch the floor to keep tension","Avoid arching your lower back. Press it into the floor throughout"],
+  "hanging leg raise":["Hang from a pull-up bar with an overhand grip, body fully extended","Keep your legs straight and raise them up to hip height or higher","Avoid swinging. Control the movement entirely with your abs","Lower your legs slowly, stopping just before the dead hang position"],
+  "russian twist":["Sit with knees bent and feet slightly off the floor, or flat for an easier version","Lean back to about 45° and hold your hands or a weight in front of you","Rotate your torso side to side, bringing your hands toward the floor on each side","Keep your core tight and movements controlled. Feel the obliques working"],
+  "mountain climber":["Get into a straight-arm plank with hands directly under your shoulders","Drive your right knee toward your chest, then quickly switch: left knee in as right goes back","Keep your hips low and your core tight throughout. Don't let them rise up","Maintain a quick alternating pace while holding full core tension"],
+  "bicycle crunch":["Lie flat with hands behind your head and legs raised off the floor","Bring your right elbow and left knee toward each other while extending your right leg straight","Rotate to the other side in a smooth pedaling motion: left elbow to right knee","Keep your lower back pressed into the floor throughout"],
+  "cable crunch":["Kneel in front of a high cable machine with a rope attachment","Hold the rope beside your head and keep your hips completely stationary","Crunch downward by contracting your abs. Bring your elbows toward your knees","Pause at the bottom with a full contraction then slowly return to the start"],
   // ── FULL BODY / CARDIO ──────────────────────────────────────────────────
   "burpee":["Stand with feet shoulder-width apart","Drop your hands to the floor and jump your feet back to a plank position","Perform a push-up, then jump your feet back toward your hands","Explode upward, jumping with your arms raised overhead","Land softly and immediately go into the next rep"],
-  "kettlebell swing":["Stand feet hip-width apart, kettlebell on the floor in front of you","Hinge at the hips to grip the kettlebell — back flat, chest up","Swing the kettlebell back between your legs to load your hips and hamstrings","Drive your hips forward explosively to swing the bell to shoulder height","Let the bell swing back down and immediately load your hips for the next rep"],
+  "kettlebell swing":["Stand feet hip-width apart, kettlebell on the floor in front of you","Hinge at the hips to grip the kettlebell, back flat, chest up","Swing the kettlebell back between your legs to load your hips and hamstrings","Drive your hips forward explosively to swing the bell to shoulder height","Let the bell swing back down and immediately load your hips for the next rep"],
   "box jump":["Stand facing a box, feet shoulder-width apart","Bend your knees and swing your arms back to load up","Explode upward and forward, pulling your knees toward your chest","Land softly on top of the box with knees slightly bent to absorb the impact","Step back down carefully and reset for the next rep"],
-  "jump squat":["Stand feet shoulder-width apart, toes slightly out","Descend into a squat until thighs reach parallel — arms swinging back","Explode upward through the balls of your feet, leaving the floor","Land softly with knees slightly bent to absorb the impact","Immediately descend into the next squat rep"],
+  "jump squat":["Stand feet shoulder-width apart, toes slightly out","Descend into a squat until thighs reach parallel, arms swinging back","Explode upward through the balls of your feet, leaving the floor","Land softly with knees slightly bent to absorb the impact","Immediately descend into the next squat rep"],
 };
 
 function getExerciseInstructions(ex) {
@@ -2189,45 +2189,45 @@ function getExerciseInstructions(ex) {
   const e = (ex.equipment || '').toLowerCase();
   if (m.includes('bicep')) return [
     "Stand or sit in a stable position, gripping the weight with palms facing up",
-    "Pin your elbows close to your sides — keep them stationary throughout",
+    "Pin your elbows close to your sides. Keep them stationary throughout",
     "Curl the weight upward by bending at the elbow, squeezing your bicep at the top",
     "Lower slowly over 2–3 seconds back to full extension",
-    "Avoid swinging — the movement should be fully controlled",
+    "Avoid swinging: the movement should be fully controlled",
   ];
   if (m.includes('tricep')) return [
     "Set up with your upper arm stationary in a fixed position",
     "Begin with your elbow bent and the weight loaded on your tricep",
-    "Extend your arm fully — squeeze your tricep hard at full extension",
+    "Extend your arm fully. Squeeze your tricep hard at full extension",
     "Slowly return to the starting position, feeling the stretch in your tricep",
   ];
   if (m.includes('chest') || m.includes('pec')) return [
     "Set up in a stable position with shoulder blades retracted and chest tall",
-    "Lower the weight in a controlled arc — feel the stretch across your chest at the bottom",
+    "Lower the weight in a controlled arc. Feel the stretch across your chest at the bottom",
     "Press or push back to the starting position, squeezing your chest at the top",
-    "Exhale on the effort, inhale as you return — maintain controlled breathing throughout",
+    "Exhale on the effort, inhale as you return. Maintain controlled breathing throughout",
   ];
   if (m.includes('back') || m.includes('lat')) return [
     "Set up and retract your shoulder blades to initiate the movement",
-    "Pull by driving your elbows back toward your hips — not just with your arms",
+    "Pull by driving your elbows back toward your hips, not just with your arms",
     "Squeeze your back muscles hard at the point of full contraction",
-    "Return to the starting position slowly — feel the stretch in your lats",
+    "Return to the starting position slowly. Feel the stretch in your lats",
   ];
   if (m.includes('shoulder') || m.includes('delt')) return [
     "Set up in a stable position with shoulders relaxed and core braced",
-    "Execute the movement in a controlled deliberate arc — quality over weight",
+    "Execute the movement in a controlled deliberate arc: quality over weight",
     "Squeeze your deltoids at the peak of the movement",
     "Return to the starting position slowly, maintaining muscle tension throughout",
   ];
   if (m.includes('quad') || m.includes('hamstring') || m.includes('glute') || m.includes('leg')) return [
-    "Set up with feet in the appropriate position — core braced, neutral spine",
-    "Lower yourself in a controlled manner — knees tracking over your toes",
+    "Set up with feet in the appropriate position, core braced, neutral spine",
+    "Lower yourself in a controlled manner, knees tracking over your toes",
     "Drive through your heels to return to the starting position",
     "Squeeze your glutes and quads at the top of each rep",
   ];
   if (m.includes('calf')) return [
-    "Position the balls of your feet on the platform — heels free to drop",
+    "Position the balls of your feet on the platform, heels free to drop",
     "Lower your heels for a full calf stretch before each rep",
-    "Rise as high as possible onto your toes — squeeze your calves hard at the top",
+    "Rise as high as possible onto your toes. Squeeze your calves hard at the top",
     "Lower slowly over 3 seconds to maximize time under tension",
   ];
   if (m.includes('core') || m.includes('ab')) return [
@@ -2241,7 +2241,7 @@ function getExerciseInstructions(ex) {
     "Engage your core and maintain good posture throughout the movement",
     "Perform the exercise through the full range of motion in a controlled manner",
     "Exhale during the exertion phase and inhale on the return",
-    "Focus on quality contractions — avoid using momentum or swinging",
+    "Focus on quality contractions. Avoid using momentum or swinging",
   ];
 }
 
@@ -2420,7 +2420,7 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
     { icon:"clock", label:"Rest Time", value:"60–90 seconds between sets", color:"#00A3FF" },
     { icon:"target", label:"Focus",     value:"Control the weight on the way down", color:"#22C55E" },
     { icon:"muscle", label:"Tip",       value:"Keep your feet planted for stability", color:"#F97316" },
-    { icon:"lightbulb", label:"Beginner",  value:"Start light — master form before adding weight", color:"#8B5CF6" },
+    { icon:"lightbulb", label:"Beginner",  value:"Start light. Master form before adding weight", color:"#8B5CF6" },
   ];
 
   const progressPct = (completedSets / sets.length) * 100;
@@ -2586,7 +2586,7 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
       ) : (
         <button onClick={()=>{ if(onComplete) onComplete(sets.filter(s=>s.done)); onBack(); }} style={{ width:"100%",padding:"16px 0",borderRadius:50,border:"none",background:"linear-gradient(135deg,#22C55E,#16A34A)",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1,cursor:"pointer",boxShadow:"0 4px 24px rgba(34,197,94,0.5)" }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" style={{display:"inline",marginRight:6,verticalAlign:"middle"}}><polyline points="20 6 9 17 4 12"/></svg>
-          EXERCISE COMPLETE — NEXT
+          EXERCISE COMPLETE: NEXT
         </button>
       )}
     </div>
@@ -2892,7 +2892,7 @@ function AISummaryPage({ energyKey, logId, onBack }) {
 
   // Typewriter for AI summary text
   const recap = summaryData?.recap || {};
-  const aiMainText = summaryData?.summary || "Great effort today! Based on your mood check-in, I adapted your session intensity. Your form held strong through all sets — consistency like this compounds over time.";
+  const aiMainText = summaryData?.summary || "Great effort today! Based on your mood check-in, I adapted your session intensity. Your form held strong through all sets. Consistency like this compounds over time.";
   const aiCoachText = recap.coachingInsights || "";
 
   useEffect(() => {
@@ -3018,7 +3018,7 @@ function AISummaryPage({ energyKey, logId, onBack }) {
                   </div>
                   <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:"#fff",marginBottom:8 }}>Get Per-Workout AI Coaching</div>
                   <div style={{ fontFamily:FONT,fontSize:13,color:"#888",lineHeight:1.6,marginBottom:20 }}>
-                    Upgrade to Pro and get a detailed AI analysis after every single workout — form feedback, intensity score, and personalised next-session recommendations.
+                    Upgrade to Pro and get a detailed AI analysis after every single workout: form feedback, intensity score, and personalised next-session recommendations.
                   </div>
                   <button onClick={()=>openPaymentSheet("monthly")} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:"linear-gradient(135deg,#F59E0B,#D97706)",border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",letterSpacing:1,boxShadow:"0 4px 20px rgba(245,158,11,0.35)" }}>
                     UPGRADE TO PRO
@@ -3035,7 +3035,7 @@ function AISummaryPage({ energyKey, logId, onBack }) {
               <div style={{ fontFamily:FONT,fontWeight:900,fontSize:18,color:"#fff",marginBottom:10 }}>{onboardingPending ? "Preparing Your Analysis" : "No Analysis Yet"}</div>
               <div style={{ fontFamily:FONT,fontSize:13,color:"#888",lineHeight:1.7,marginBottom:24 }}>
                 {onboardingPending
-                  ? "Your personalised VTRX analysis is being generated — this usually takes just a few seconds. Check back shortly."
+                  ? "Your personalised VTRX analysis is being generated: this usually takes just a few seconds. Check back shortly."
                   : "We couldn't generate your personalised analysis yet. Give it another try."}
               </div>
               <button
@@ -3197,7 +3197,7 @@ function AISummaryPage({ energyKey, logId, onBack }) {
                   <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
                 </div>
                 <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:"#fff",marginBottom:8 }}>Unlock Full Analysis</div>
-                <div style={{ fontFamily:FONT,fontSize:13,color:"#888",lineHeight:1.65,marginBottom:6 }}>You're on the <span style={{ color:"#8B5CF6",fontWeight:700 }}>Free Plan</span> — 1 AI summary per week.</div>
+                <div style={{ fontFamily:FONT,fontSize:13,color:"#888",lineHeight:1.65,marginBottom:6 }}>You're on the <span style={{ color:"#8B5CF6",fontWeight:700 }}>Free Plan</span>: 1 AI summary per week.</div>
                 <div style={{ fontFamily:FONT,fontSize:13,color:"#888",lineHeight:1.65,marginBottom:22 }}>Upgrade to <span style={{ color:"#F59E0B",fontWeight:700 }}>Premium</span> for a full AI breakdown after every single workout.</div>
                 <button onClick={()=>openPaymentSheet("monthly")} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:"linear-gradient(135deg,#7C3AED,#4C1D95)",border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",letterSpacing:1,boxShadow:"0 4px 24px rgba(124,58,237,0.45)" }}>
                   UPGRADE TO PREMIUM
@@ -3833,12 +3833,12 @@ function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
         // users straight back to the login screen after a successful login).
         await fetchProfileAndLogin();
       } else if (result.status === 'needs_new_password') {
-        setErrors({ general: "For your security you'll need to set a new password before signing in — use \"Forgot password?\" below." });
+        setErrors({ general: "For your security you'll need to set a new password before signing in. Use \"Forgot password?\" below." });
       } else {
         // needs_second_factor / needs_client_trust / anything else this UI doesn't
         // have a screen for. Retrying won't change the outcome, so say so honestly
         // instead of looping the user through "please try again".
-        setErrors({ general: "We couldn't complete sign-in for this account. If you have two-factor authentication enabled, contact support — it isn't supported here yet." });
+        setErrors({ general: "We couldn't complete sign-in for this account. If you have two-factor authentication enabled, contact support. It isn't supported here yet." });
       }
     } catch (e) {
       console.error(e);
@@ -4037,7 +4037,7 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
       const clerkErr = e?.errors?.[0];
       if (clerkErr?.code === 'form_identifier_exists') {
         setErrors({ general: clerkErr?.meta?.paramName === 'username'
-          ? "We couldn't create your account right now — please try again."
+          ? "We couldn't create your account right now. Please try again."
           : "An account with this email already exists." });
       } else if (clerkErr?.code === 'form_password_pwned' || clerkErr?.code?.includes('password')) {
         setErrors({ general: clerkErr?.longMessage || clerkErr?.message || "Password does not meet requirements." });
@@ -4148,7 +4148,7 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
         await setActive({ session: result.createdSessionId });
         onVerified();
       } else {
-        throw new Error("Verification incomplete — please try again");
+        throw new Error("Verification incomplete. Please try again");
       }
     } catch (e) {
       const clerkErr = e?.errors?.[0];
@@ -4167,7 +4167,7 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
     setResending(true); setError("");
     try {
       await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
-      setError("New code sent — check your inbox (and spam folder).");
+      setError("New code sent. Check your inbox (and spam folder).");
       setCooldown(60);
       setTimeout(() => setError(""), 5000);
     } catch (e) {
@@ -4347,7 +4347,7 @@ function BodyScreen({ onContinue, onBack }) {
 
         {/* Height — single field, auto formats ft */}
         <div style={{ marginBottom:22 }}>
-          <span style={lbl}>HEIGHT{heightUnit==="ft"?" — type feet then inches (e.g. 5'9)":""}</span>
+          <span style={lbl}>HEIGHT{heightUnit==="ft"?": type feet then inches (e.g. 5'9)":""}</span>
           <UnitToggle units={["ft","cm"]} current={heightUnit} onChange={switchHeightUnit}/>
           <input value={height} onChange={e=>handleHeightChange(e.target.value)}
             placeholder={heightUnit==="ft"?"5'9":"178"} inputMode="numeric" style={field}/>
@@ -4492,14 +4492,14 @@ function PricingScreen({ onContinue, onBack }) {
   const [billingAnnual, setBillingAnnual] = useState(true);
 
   const FREE_FEATURES = [
-    "1 training programme — 5 days, fully personalised",
+    "1 training programme: 5 days, fully personalised",
     "Unlimited workout logging",
     "14-day workout history",
     "1 basic AI weekly summary",
     "Daily mood check-in",
     "Browse all recipes (view only)",
     "Save up to 3 recipes",
-    "Meal swap — twice per day",
+    "Meal swap: twice per day",
     "Water intake tracker",
     "Streak tracking",
     "3 personal records tracked",
@@ -4509,7 +4509,7 @@ function PricingScreen({ onContinue, onBack }) {
   const PREMIUM_FEATURES = [
     "Everything in your 1-month free trial",
     "Unlimited programmes + full customisation",
-    "Full workout history — all time",
+    "Full workout history: all time",
     "AI coaching summary after every workout",
     "Weekly AI performance report every Sunday",
     "AI-generated personalised workout plan",
@@ -4521,7 +4521,7 @@ function PricingScreen({ onContinue, onBack }) {
     "Unlimited personal records",
     "Full progress charts & trends",
     "Progress photos & body measurements",
-    "Challenges access — coming soon",
+    "Challenges access: coming soon",
   ];
 
   return (
@@ -4578,8 +4578,8 @@ function PricingScreen({ onContinue, onBack }) {
         <div style={{ background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:14,padding:"12px 16px",display:"flex",alignItems:"center",gap:12,marginBottom:4 }}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
           <div>
-            <div style={{ fontFamily:FONT,fontWeight:800,fontSize:13,color:"#22C55E" }}>1 Month Free Trial — No Card Needed</div>
-            <div style={{ fontFamily:FONT,fontSize:11,color:"#888",marginTop:1 }}>Unlimited AI coaching, meal planning, full history — every feature unlocked.</div>
+            <div style={{ fontFamily:FONT,fontWeight:800,fontSize:13,color:"#22C55E" }}>1 Month Free Trial: No Card Needed</div>
+            <div style={{ fontFamily:FONT,fontSize:11,color:"#888",marginTop:1 }}>Unlimited AI coaching, meal planning, full history: every feature unlocked.</div>
           </div>
         </div>
 
@@ -4626,14 +4626,14 @@ function PricingScreen({ onContinue, onBack }) {
 
           {/* 7-day trial note */}
           <div style={{ marginTop:14,padding:"10px 12px",background:"rgba(34,197,94,0.08)",borderRadius:10,border:"1px solid rgba(34,197,94,0.2)" }}>
-            <div style={{ fontFamily:FONT,fontSize:12,color:"#22C55E",fontWeight:700,textAlign:"center" }}>1 month free trial — cancel anytime</div>
+            <div style={{ fontFamily:FONT,fontSize:12,color:"#22C55E",fontWeight:700,textAlign:"center" }}>1 month free trial, cancel anytime</div>
           </div>
         </div>
 
         {/* CTA Button */}
         <button onClick={()=>{ if(selected==="premium") { openPaymentSheet(billingAnnual?"annual":"monthly"); return; } onContinue(); }}
           style={{ width:"100%",padding:"16px 0",borderRadius:50,background:PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff",cursor:"pointer",boxShadow:`0 4px 24px ${PRIMARY}44`,marginTop:4,letterSpacing:0.5 }}>
-          {selected==="free" ? "Continue with Free" : "Start Free — 1 Month On Us"}
+          {selected==="free" ? "Continue with Free" : "Start Free: 1 Month On Us"}
         </button>
 
         {selected==="premium" && (
@@ -5068,7 +5068,7 @@ function CalendarPage({ onBack }) {
             ) : frozenDaySet.has(selectedDay) ? (
               <div style={{ background:CARD,borderRadius:20,border:`1px solid ${TYPE_COLOR.frozen}44`,padding:"32px 18px",textAlign:"center",marginBottom:12 }}>
                 <div style={{ fontFamily:FONT,fontSize:16,color:TYPE_COLOR.frozen,marginBottom:6 }}>❄ Streak Freeze Active</div>
-                <div style={{ fontFamily:FONT,fontSize:13,color:"#888" }}>No workout needed — this day is protected</div>
+                <div style={{ fontFamily:FONT,fontSize:13,color:"#888" }}>No workout needed: this day is protected</div>
               </div>
             ) : (
               <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"32px 18px",textAlign:"center",marginBottom:12 }}>
@@ -5509,7 +5509,7 @@ function CustomizePage({ onBack }) {
           <button onClick={()=>setEditDay(null)} style={{ width:36,height:36,borderRadius:"50%",background:CARD,border:`1px solid ${BORDER}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#aaa" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
           </button>
-          <div style={{ fontFamily:FONT,fontWeight:900,fontSize:15,color:"#fff",letterSpacing:1.5 }}>{w.day.toUpperCase()} — EDIT</div>
+          <div style={{ fontFamily:FONT,fontWeight:900,fontSize:15,color:"#fff",letterSpacing:1.5 }}>{w.day.toUpperCase()}: EDIT</div>
         </div>
         <div style={{ flex:1,overflowY:"auto",padding:"0 18px 40px" }}>
           {/* Rest day toggle */}
@@ -5819,7 +5819,7 @@ function WeightsHub({ onLogout=null, onNavigate=null, weekPlanSessions=[], onSwa
                   return (
                     <div style={{ background:CARD,borderRadius:20,border:`1px solid ${nc}44`,marginBottom:12,overflow:"hidden" }}>
                       <div style={{ background:`linear-gradient(135deg,${nc}22,${nc}08)`,padding:"16px 16px 12px" }}>
-                        <div style={{ fontFamily:FONT,fontWeight:600,fontSize:10,color:nc,letterSpacing:1.5,marginBottom:3 }}>UP NEXT — {current.workout.dayLabel}</div>
+                        <div style={{ fontFamily:FONT,fontWeight:600,fontSize:10,color:nc,letterSpacing:1.5,marginBottom:3 }}>UP NEXT: {current.workout.dayLabel}</div>
                         <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff",marginBottom:6 }}>{generateWorkoutTitle(exs) || current.workout.name}</div>
                         <div style={{ fontFamily:FONT,fontSize:12,color:"#888" }}>{current.workout.duration} min · {current.workout.calories} cal · {current.workout.target}</div>
                         {current.workout.moodAdapted && (
@@ -6894,7 +6894,7 @@ function PersonalDetailsPage({ onBack }) {
         {/* Height */}
         <div>
           <div style={{ fontFamily:FONT,fontWeight:600,fontSize:11,color:"#888888",marginBottom:6 }}>
-            HEIGHT{heightUnit==="ft" ? " — feet then inches (e.g. 5'9)" : ""}
+            HEIGHT{heightUnit==="ft" ? ": feet then inches (e.g. 5'9)" : ""}
           </div>
           <UnitToggle units={["ft","cm"]} current={heightUnit} onChange={switchHeightUnit}/>
           <div style={{ background:"#1e1e1e",border:`1.5px solid ${BORDER}`,borderRadius:12,padding:"12px 14px",display:"flex",alignItems:"center",gap:8 }}>
@@ -6910,7 +6910,7 @@ function PersonalDetailsPage({ onBack }) {
       <SaveBtn onClick={save} saved={saved} saving={saving}/>
       {saveError && (
         <div style={{ fontFamily:FONT,fontSize:12,color:"#EF4444",textAlign:"center",marginTop:10 }}>
-          Couldn't save — check your connection and try again.
+          Couldn't save. Check your connection and try again.
         </div>
       )}
     </SubShell>
@@ -6940,7 +6940,7 @@ function FitnessGoalPage({ onBack }) {
   const goals = [
     { key:"Lose Weight",                ico:"fire", desc:"Burn fat and reduce body weight" },
     { key:"Build Muscle",               ico:"muscle", desc:"Increase muscle mass and strength" },
-    { key:"Weight Loss & Muscle Gain",  ico:"bolt", desc:"Body recomposition — best of both" },
+    { key:"Weight Loss & Muscle Gain",  ico:"bolt", desc:"Body recomposition: best of both" },
     { key:"Improve Endurance",          ico:"run", desc:"Cardio fitness and stamina" },
     { key:"Stay Active",                ico:"star", desc:"Maintain a healthy active lifestyle" },
     { key:"Get Toned",                  ico:"sparkle", desc:"Lean, defined physique" },
@@ -7004,7 +7004,7 @@ function FitnessGoalPage({ onBack }) {
     }} saved={saved} saving={saving}/>
       {saveError && (
         <div style={{ fontFamily:FONT,fontSize:12,color:"#EF4444",textAlign:"center",marginTop:10 }}>
-          Couldn't save — check your connection and try again.
+          Couldn't save. Check your connection and try again.
         </div>
       )}
     </SubShell>
@@ -7032,7 +7032,7 @@ function ChangeEmailPage({ onBack }) {
         {confirm&&!match&&<div style={{ fontFamily:FONT,fontSize:12,color:"#EF4444",marginBottom:8,marginTop:-8 }}>Emails do not match</div>}
         {match&&<div style={{ fontFamily:FONT,fontSize:12,color:"#22C55E",marginBottom:8,marginTop:-8 }}>Emails match</div>}
       </div>
-      <div style={{ fontFamily:FONT,fontSize:12,color:"#888888",textAlign:"center",padding:"0 8px" }}>Changing your account email isn't available yet — contact support if you need this updated.</div>
+      <div style={{ fontFamily:FONT,fontSize:12,color:"#888888",textAlign:"center",padding:"0 8px" }}>Changing your account email isn't available yet. Contact support if you need this updated.</div>
     </SubShell>
   );
 }
@@ -7493,7 +7493,7 @@ function PaymentSheet({ initialPlan = "monthly", skipPicker = false, onClose }) 
 
               {/* Feature bullets */}
               <div style={{ marginBottom:22 }}>
-                {["Unlimited workout videos & AI coaching","Full analytics, history & weekly AI report","Complete meal plans & grocery list","Apple Pay, Google Pay — saved for renewals","Cancel anytime from Account Settings"].map((f,i)=>(
+                {["Unlimited workout videos & AI coaching","Full analytics, history & weekly AI report","Complete meal plans & grocery list","Apple Pay, Google Pay: saved for renewals","Cancel anytime from Account Settings"].map((f,i)=>(
                   <div key={i} style={{ display:"flex",alignItems:"center",gap:12,marginBottom:i<4?10:0 }}>
                     <div style={{ width:20,height:20,borderRadius:"50%",background:"rgba(0,163,255,0.1)",border:"1px solid rgba(0,163,255,0.3)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
                       <svg width="10" height="8" viewBox="0 0 10 8" fill="none" stroke={PRIMARY} strokeWidth="2.5"><polyline points="1,4 3.5,7 9,1"/></svg>
@@ -8058,7 +8058,7 @@ function FitnessPreferencesPage({ onBack }) {
         </button>
         {saveError && (
           <div style={{ fontFamily:FONT,fontSize:12,color:"#EF4444",textAlign:"center",marginTop:10 }}>
-            Couldn't save — check your connection and try again.
+            Couldn't save. Check your connection and try again.
           </div>
         )}
       </div>
@@ -8133,7 +8133,7 @@ function SupportPage({ onBack }) {
             {q:"How do I log a workout?", a:"Tap the Workouts tab, select your session, and tap Start Workout. Complete your sets and tap the checkmark to finish."},
             {q:"What is Streak Freeze?", a:"Streak Freeze protects your streak if you miss a day. Free users get 1 freeze per month, Premium users get 3. Tap the snowflake icon in the top right of your home screen."},
             {q:"How do I upgrade to Premium?", a:"Go to Profile > Account Settings > Upgrade Plan to view plans and start your 1-month free trial."},
-            {q:"Can I change my workout preferences?", a:"Yes — go to Profile > Fitness Preferences to update your goals, experience level, equipment and days per week."},
+            {q:"Can I change my workout preferences?", a:"Yes, go to Profile > Fitness Preferences to update your goals, experience level, equipment and days per week."},
             {q:"How do I cancel my subscription?", a:"Go to Profile > Account Settings > Cancel Subscription. You will keep access until the end of your billing period."},
           ].map((item,i,arr)=>(
             <div key={i} style={{ borderBottom:i<arr.length-1?"1px solid #f0f0f0":"none" }}>
@@ -8194,7 +8194,7 @@ function ProgressPhotosPage({ onBack }) {
     const weekNum = photos.length + 1;
     const date = new Date();
     date.setDate(date.getDate() + (photos.length * 7));
-    const label = `Week ${weekNum} — ${date.toLocaleDateString('en-US',{month:'short',day:'numeric'})}`;
+    const label = `Week ${weekNum}: ${date.toLocaleDateString('en-US',{month:'short',day:'numeric'})}`;
     setPhotos(p => [...p, { id:Date.now(), date:label, label:"Add note...", img:null }]);
   };
 
@@ -8542,7 +8542,7 @@ function ProfilePage({ onBack, onLogout, onNavigate, streakDay=1, workoutsTotal=
         <ProfileRow label="Account Settings"     sub="Manage your profile and preferences"     onPress={()=>setSubPage("account")}
           icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>}/>
         <ProfileRow label="My Challenges"
-          sub="Coming soon — challenge mode launches next update"
+          sub="Coming soon: challenge mode launches next update"
           onPress={null}
           icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="1.8"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>}
           right={<div style={{ background:"rgba(255,193,7,0.15)",border:"1px solid rgba(255,193,7,0.4)",borderRadius:20,padding:"3px 10px" }}><span style={{ fontFamily:FONT,fontWeight:700,fontSize:9,color:"#FFC107",letterSpacing:1 }}>COMING SOON</span></div>}
@@ -8898,7 +8898,7 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
     try {
       const res = await apiCall('/nutrition/generate-plan', { method: 'POST' });
       if (res?.data?.plan) setAiNutritionPlan(res.data.plan);
-    } catch(err) { setAiPlanError(err?.code === 'AI_UNAVAILABLE' ? 'AI generation is temporarily unavailable — please try again later.' : 'Generation failed — please try again.'); }
+    } catch(err) { setAiPlanError(err?.code === 'AI_UNAVAILABLE' ? 'AI generation is temporarily unavailable. Please try again later.' : 'Generation failed. Please try again.'); }
     setAiPlanGenerating(false);
   };
 
@@ -9265,7 +9265,7 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
                       <div style={{ fontFamily:FONT,fontSize:13,color:"#555",textAlign:"center",padding:"12px 0" }}>
                         {onboardingNutritionLoading
                           ? "Preparing your nutrition analysis…"
-                          : "Still generating your personalised analysis — check back in a few minutes, or we'll notify you when it's ready."}
+                          : "Still generating your personalised analysis. Check back in a few minutes, or we'll notify you when it's ready."}
                       </div>
                     ) : (
                       <>
@@ -9458,7 +9458,7 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
                 {!categorizedLoading && categorized.length === 0 && (
                   <div style={{ textAlign:"center",padding:"40px 16px" }}>
                     <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#fff",marginBottom:8 }}>No recipes available yet</div>
-                    <div style={{ fontFamily:FONT,fontSize:12,color:"#555",lineHeight:1.65 }}>Check back soon — new recipes are added regularly.</div>
+                    <div style={{ fontFamily:FONT,fontSize:12,color:"#555",lineHeight:1.65 }}>Check back soon: new recipes are added regularly.</div>
                   </div>
                 )}
                 {categorized.map(cat => {
@@ -9930,7 +9930,7 @@ function useTypewriter(text, active) {
   return {displayed,done};
 }
 
-const AI_TEXT = {empty:"Your body needed rest today — and that's wisdom, not weakness. Recovery sessions reduce cortisol by up to 26% and accelerate muscle repair.",low:"Light cardio completed. You burned 150 calories and kept your cardiovascular system active on a tough day.",okay:"Solid chest and triceps session. Your pushing muscles are showing clear progressive strength gains. VTRX recommends adding 2.5kg to your bench press next session.",good:"Outstanding full-body session. Your output today was 22% above your weekly average. You're ready to advance your squat weight next week.",peak:"MAX EFFORT achieved. Today's session ranks in your top 10% of all-time performance. Eat your post-workout meal within 45 minutes."};
+const AI_TEXT = {empty:"Your body needed rest today, and that's wisdom, not weakness. Recovery sessions reduce cortisol by up to 26% and accelerate muscle repair.",low:"Light cardio completed. You burned 150 calories and kept your cardiovascular system active on a tough day.",okay:"Solid chest and triceps session. Your pushing muscles are showing clear progressive strength gains. VTRX recommends adding 2.5kg to your bench press next session.",good:"Outstanding full-body session. Your output today was 22% above your weekly average. You're ready to advance your squat weight next week.",peak:"MAX EFFORT achieved. Today's session ranks in your top 10% of all-time performance. Eat your post-workout meal within 45 minutes."};
 
 function StatIcon({ type, color }) {
   const s = { width:13, height:13, viewBox:"0 0 24 24", fill:"none", stroke:color||"currentColor", strokeWidth:"2.5" };
@@ -9972,7 +9972,7 @@ function TrialEndedBanner({ onUpgrade }) {
             <button onClick={onUpgrade}
               style={{ flex:1,padding:"9px 0",borderRadius:50,background:"#00A3FF",border:"none",
                 fontFamily:"Montserrat,sans-serif",fontWeight:800,fontSize:12,color:"#fff",cursor:"pointer",letterSpacing:0.5 }}>
-              KEEP PREMIUM — $9.99/MO
+              KEEP PREMIUM: $9.99/MO
             </button>
             <button onClick={()=>setShow(false)}
               style={{ padding:"9px 14px",borderRadius:50,background:"transparent",
@@ -10046,7 +10046,7 @@ function NutriRegenPage({ onBack, onNavigate }) {
     try {
       await apiCall('/nutrition/generate-plan', { method:'POST' });
       setDone(true);
-    } catch(_) { setError('Generation failed — please try again.'); setGenerating(false); }
+    } catch(_) { setError('Generation failed. Please try again.'); setGenerating(false); }
   };
 
   return (
@@ -10136,7 +10136,7 @@ function MyPlanPage({ onBack, onNavigate, onPlanChanged }) {
     try {
       const res = await apiCall('/workouts/generate-plan', { method: 'POST' });
       if (res?.data?.plan) { applyPlan(res.data); onPlanChanged?.(); }
-    } catch(err) { setError(err?.code === 'AI_UNAVAILABLE' ? 'AI generation is temporarily unavailable — please try again later.' : 'Generation failed — please try again.'); }
+    } catch(err) { setError(err?.code === 'AI_UNAVAILABLE' ? 'AI generation is temporarily unavailable. Please try again later.' : 'Generation failed. Please try again.'); }
     setGenerating(false);
   };
 
@@ -10715,7 +10715,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
           </div>
           {workout.moodAdapted && (
             <div style={{ fontFamily:FONT,fontSize:11,color:lvl?.color||PRIMARY,marginBottom:12 }}>
-              Adjusted for today's check-in — shorter session, fewer sets
+              Adjusted for today's check-in: shorter session, fewer sets
             </div>
           )}
           <div style={{ display:"flex",gap:13,marginBottom:15 }}>
@@ -10787,7 +10787,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
               {freezeStatus?.frozenToday ? (
                 <>
                   <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff",marginBottom:8 }}>Streak Freeze Active</div>
-                  <div style={{ fontFamily:FONT,fontSize:13.5,color:"#888",lineHeight:1.65 }}>Today is already protected — your streak is safe even if you don't train today.</div>
+                  <div style={{ fontFamily:FONT,fontSize:13.5,color:"#888",lineHeight:1.65 }}>Today is already protected: your streak is safe even if you don't train today.</div>
                 </>
               ) : (freezeStatus?.available ?? 0) > 0 ? (
                 <>
@@ -11325,7 +11325,7 @@ function VTRXAppInner({ setPaymentPlan }) {
         {isLast && (
           <div style={{ position:"absolute",bottom:0,left:0,right:0,zIndex:20,padding:"0 28px 44px",background:"linear-gradient(180deg,transparent 0%,rgba(0,0,0,0.7) 30%,rgba(0,0,0,0.92) 100%)",paddingTop:32,display:"flex",flexDirection:"column",gap:12,animation:"fadeUp 0.5s ease 0.5s both" }}>
             <p style={{ fontFamily:FONT,fontSize:12.5,color:"rgba(255,255,255,0.6)",textAlign:"center",lineHeight:1.5,margin:"0 0 2px" }}>
-              Join thousands starting their first real fitness plan — no gym experience required.
+              Join thousands starting their first real fitness plan. No gym experience required.
             </p>
             <button onClick={()=>{ setPhase("preferences"); setScreen(0); }}
               style={{ width:"100%",padding:"17px 0",borderRadius:50,border:"none",background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:2,cursor:"pointer",boxShadow:`0 4px 28px ${PRIMARY}55` }}>
@@ -11746,7 +11746,7 @@ function VTRXAppInner({ setPaymentPlan }) {
             });
             setShowComplete(true);
           } else {
-            alert("Couldn't save your workout — check your connection and try again.");
+            alert("Couldn't save your workout. Check your connection and try again.");
           }
         }
 
