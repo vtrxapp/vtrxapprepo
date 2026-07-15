@@ -4360,7 +4360,7 @@ function BodyScreen({ onContinue, onBack }) {
   const storedHtIsFt = typeof user.height === "string" && user.height.includes("'");
   const [weightUnit, setWeightUnit] = useState(() => getUnitPref("vtrx_weight_unit", "lbs"));
   const [heightUnit, setHeightUnit] = useState(() => storedHtIsFt ? "ft" : getUnitPref("vtrx_height_unit", "ft"));
-  const [weight,  setWeight]  = useState(() => kgToDisplay(user.weight, weightUnit));
+  const [weight,  setWeight]  = useState(() => lbsToDisplay(user.weight, weightUnit));
   const [height,  setHeight]  = useState(() => {  // always stored as display string
     if (storedHtIsFt) return String(user.height);
     const n = parseFloat(user.height);
@@ -4433,7 +4433,7 @@ function BodyScreen({ onContinue, onBack }) {
   };
 
   const handleContinue = () => {
-    const weightKg = toKg(weight, weightUnit);
+    const weightLbs = toLbs(weight, weightUnit);
     const heightCm = toCm(height, heightUnit);
     const ageVal   = calcAgeFromDob(dob);
     const goalWLbs = goalW && !isNaN(parseFloat(goalW))
@@ -4445,7 +4445,7 @@ function BodyScreen({ onContinue, onBack }) {
       localStorage.setItem("vtrx_height_unit", heightUnit);
       if (dob) localStorage.setItem("vtrx_user_dob", dob);
     } catch {}
-    setUser(u=>({...u, weight: weightKg, height: heightCm, dob, age: ageVal, gender, goalWeightLbs: goalWLbs, bodyFatPercentage: bfVal}));
+    setUser(u=>({...u, weight: weightLbs, height: heightCm, dob, age: ageVal, gender, goalWeightLbs: goalWLbs, bodyFatPercentage: bfVal}));
     // Not gated on getAuthToken() — that flag mirrors Clerk's isSignedIn via a
     // useEffect and can still be false in the brief window right after
     // EmailVerifyScreen establishes the session, silently skipping this save
@@ -4453,9 +4453,21 @@ function BodyScreen({ onContinue, onBack }) {
     // once on 401, so just always attempt it.
     if (!DEMO_MODE) {
       apiCall('/users/profile', { method:'PUT', skipAuthRedirect:true, body: JSON.stringify({
-        gender, weight: weightKg, height: heightCm, age: ageVal,
+        gender, weight: weightLbs, height: heightCm, age: ageVal,
         goalWeightLbs: goalWLbs, bodyFatPercentage: bfVal,
-      })}).catch(e => track("profile_save_failed", { screen: "body", message: e?.message }));
+      })})
+        .then(res => {
+          // This is very likely the first authenticated backend call of a fresh
+          // signup, which is what auto-provisions the Prisma user row (see
+          // middleware/auth.js) — the response is the only place this screen can
+          // learn the resulting name/username. Neither is otherwise ever synced
+          // into shared user state during onboarding (SignUpScreen's typed name
+          // only ever reaches Clerk), so without this, Dashboard renders right
+          // after signup with an empty name and falls back to a generic greeting.
+          const u = res?.data?.user;
+          if (u) setUser(prev => ({ ...prev, name: u.name ?? prev.name, username: u.username ?? prev.username }));
+        })
+        .catch(e => track("profile_save_failed", { screen: "body", message: e?.message }));
     }
     onContinue();
   };
@@ -4596,7 +4608,15 @@ function TrainingScreen({ onContinue, onBack }) {
         location: workoutPrefs.location, sessionDuration: time,
         preferredStyles: Array.isArray(style) ? style : [style].filter(Boolean),
         ...nutritionPrefs,
-      })}).catch(e => console.warn('profile_save_failed:training', e?.message));
+      })})
+        .then(res => {
+          // Same gap as BodyScreen.handleContinue — pick up name/username from
+          // the response in case BodyScreen's own save hasn't resolved yet (or
+          // failed) by the time this one completes.
+          const u = res?.data?.user;
+          if (u) setUser(prev => ({ ...prev, name: u.name ?? prev.name, username: u.username ?? prev.username }));
+        })
+        .catch(e => console.warn('profile_save_failed:training', e?.message));
     }
   };
 
@@ -6839,9 +6859,13 @@ function calcAgeFromDob(dob) {
   if (m < 0 || (m === 0 && today.getDate() < d.getDate())) age--;
   return age >= 1 ? age : null;
 }
-function kgToDisplay(kg, unit) {
-  const v = parseFloat(kg); if (!v) return "";
-  return unit === "lbs" ? (v * 2.20462).toFixed(1) : String(v);
+// User.weight is stored in lbs (see prisma/schema.prisma and every backend
+// consumer — nutritionPlanService, workoutController, aiController all read
+// it as lbs). Convert to the display unit from that baseline, not the other
+// way around.
+function lbsToDisplay(lbs, unit) {
+  const v = parseFloat(lbs); if (!v) return "";
+  return unit === "kg" ? (v * 0.453592).toFixed(1) : String(v);
 }
 function cmToDisplay(cm, unit) {
   const v = parseFloat(cm); if (!v) return "";
@@ -6853,20 +6877,27 @@ function cmToDisplay(cm, unit) {
   }
   return String(Math.round(v));
 }
-function toKg(val, unit) {
+// Same baseline as lbsToDisplay above — always resolve to lbs before this
+// reaches the backend, regardless of which unit the user is entering in.
+function toLbs(val, unit) {
   const v = parseFloat(val);
   if (isNaN(v) || v <= 0) return null;
-  return unit === "lbs" ? parseFloat((v * 0.453592).toFixed(1)) : v;
+  return unit === "kg" ? parseFloat((v * 2.20462).toFixed(1)) : v;
 }
 function toCm(val, unit) {
+  // Prisma's height column is String? (schema: e.g. "5'10") — always return a
+  // string (or null), never a bare number. A number here gets rejected by
+  // Prisma's own runtime type validation against a String? field, which
+  // would fail the entire profile update in the same call (name/age/gender/
+  // weight included, since it's one atomic Prisma update).
   if (unit === "ft") {
     const m = String(val).match(/(\d+)[^\d]*(\d*)/);
     if (!m) return null;
     const cm = Math.round((parseInt(m[1]) || 0) * 30.48 + (parseInt(m[2] || 0) || 0) * 2.54);
-    return cm > 0 ? cm : null;
+    return cm > 0 ? String(cm) : null;
   }
   const v = parseFloat(val);
-  return isNaN(v) || v <= 0 ? null : Math.round(v);
+  return isNaN(v) || v <= 0 ? null : String(Math.round(v));
 }
 function getUnitPref(key, fallback) {
   try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
@@ -6882,7 +6913,7 @@ function PersonalDetailsPage({ onBack }) {
   const [gender,     setGender]     = useState(user.gender || "");
   const [weightUnit, setWeightUnit] = useState(initWU);
   const [heightUnit, setHeightUnit] = useState(initHU);
-  const [weight,     setWeight]     = useState(() => kgToDisplay(user.weight, initWU));
+  const [weight,     setWeight]     = useState(() => lbsToDisplay(user.weight, initWU));
   const [height,     setHeight]     = useState(() => {
     if (storedHtIsFt) return String(user.height);
     const n = parseFloat(user.height);
@@ -6934,9 +6965,9 @@ function PersonalDetailsPage({ onBack }) {
   };
 
   const save = async () => {
-    const ageVal   = calcAgeFromDob(dob);
-    const weightKg = toKg(weight, weightUnit);
-    const heightCm = toCm(height, heightUnit);
+    const ageVal    = calcAgeFromDob(dob);
+    const weightLbs = toLbs(weight, weightUnit);
+    const heightCm  = toCm(height, heightUnit);
     try {
       localStorage.setItem("vtrx_weight_unit", weightUnit);
       localStorage.setItem("vtrx_height_unit", heightUnit);
@@ -6948,15 +6979,15 @@ function PersonalDetailsPage({ onBack }) {
     // state) once the backend actually confirms it, instead of assuming success
     // and silently losing the write on failure.
     if (DEMO_MODE) {
-      setUser(u=>({...u, name, dob, age: ageVal, gender, weight: weightKg, height: heightCm}));
+      setUser(u=>({...u, name, dob, age: ageVal, gender, weight: weightLbs, height: heightCm}));
       setSaved(true);
       setTimeout(()=>setSaved(false), 2200);
       return;
     }
     setSaving(true);
     try {
-      await apiCall("/users/profile", { method:"PUT", body:JSON.stringify({ name, age: ageVal, gender, weight: weightKg, height: heightCm }) });
-      setUser(u=>({...u, name, dob, age: ageVal, gender, weight: weightKg, height: heightCm}));
+      await apiCall("/users/profile", { method:"PUT", body:JSON.stringify({ name, age: ageVal, gender, weight: weightLbs, height: heightCm }) });
+      setUser(u=>({...u, name, dob, age: ageVal, gender, weight: weightLbs, height: heightCm}));
       setSaved(true);
       setTimeout(()=>setSaved(false), 2200);
     } catch (e) {
@@ -7957,7 +7988,7 @@ function AccountSettingsPage({ onBack, onLogout }) {
             {(()=>{
               const wu = getUnitPref("vtrx_weight_unit","kg");
               const hu = getUnitPref("vtrx_height_unit","cm");
-              const wDisp = kgToDisplay(user.weight, wu);
+              const wDisp = lbsToDisplay(user.weight, wu);
               // Handle legacy ft-format strings (e.g. "5'7") and corrupt small values
               const hIsLegacyFt = typeof user.height === "string" && user.height.includes("'");
               const hNum = parseFloat(user.height);
