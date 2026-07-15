@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, createContext, useContext, useImperativeHandle, forwardRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, createContext, useContext, useImperativeHandle, forwardRef } from "react";
 import { useAuth as useClerkAuth, useSignUp as useClerkSignUp, useSignIn as useClerkSignIn, useClerk } from '@clerk/clerk-react';
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, PaymentRequestButtonElement, useStripe, useElements } from "@stripe/react-stripe-js";
@@ -6,10 +6,17 @@ import { getNotificationToken, onForegroundMessage, isPushSupported } from "./fi
 import { identifyUser, resetAnalytics, track } from "./analytics";
 import Hls from "hls.js";
 
-// Stripe.js loaded once at module scope — publishable key is safe in client code
-const _stripePromise = import.meta?.env?.VITE_STRIPE_PUBLISHABLE_KEY
-  ? loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY)
-  : null;
+// Stripe.js is loaded lazily on first use (not at module scope) so its iframe
+// isn't fetched on every page load — only once someone actually opens the payment sheet.
+let _stripePromise;
+function getStripePromise() {
+  if (_stripePromise === undefined) {
+    _stripePromise = import.meta?.env?.VITE_STRIPE_PUBLISHABLE_KEY
+      ? loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY)
+      : null;
+  }
+  return _stripePromise;
+}
 
 // ── API Configuration ─────────────────────────────────────────────────────────
 const API_URL = typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL : "";
@@ -660,20 +667,28 @@ function SlideIcon({ type }) {
 
 const ONBOARDING_SLIDES = [
   {
+    // TODO: Replace with warmer, more approachable imagery.
+    // Current image is high-contrast/intimidating (intense athlete straining, dark equipment closeup).
+    // Target: someone who looks like a normal beginner, mid-workout but approachable, warmer lighting, not maximal-effort grimacing.
+    // Suggested free source: Pexels.com — search terms "beginner gym workout," "woman dumbbell smiling," "gym confidence"
     id: 0, bg: "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=800&q=80",
     overlay: "linear-gradient(180deg,rgba(0,0,0,0.3) 0%,rgba(0,0,0,0.5) 45%,rgba(0,0,0,0.88) 100%)",
-    tag: "WELCOME TO VTRX",
-    headline: ["Transform your body.", "Break past limits.", "Become unstoppable."],
-    body: "This isn't just about workouts — it's about redefining what you're capable of. Your goals, your pace, your evolution.",
-    features: [{ icon: "bolt",  text: "AI-powered workout plans" },
-               { icon: "fork",  text: "Macro-based meal planning" },
-               { icon: "chart", text: "Progressive overload tracking" }],
+    tag: "BUILT FOR BEGINNERS",
+    headline: ["Never feel lost at the gym again."],
+    body: "A coach that adapts to you — your experience level, your schedule, your pace. No judgment, no guesswork, just a clear plan every time you walk in.",
+    features: [{ icon: "bolt",  text: "Workouts built for your exact level" },
+               { icon: "fork",  text: "Meals that fit your goals, no guesswork" },
+               { icon: "chart", text: "Watch yourself get stronger every week" }],
   },
   {
+    // TODO: Replace with warmer, more approachable imagery.
+    // Current image is high-contrast/intimidating (intense athlete straining, dark equipment closeup).
+    // Target: someone who looks like a normal beginner, mid-workout but approachable, warmer lighting, not maximal-effort grimacing.
+    // Suggested free source: Pexels.com — search terms "beginner gym workout," "woman dumbbell smiling," "gym confidence"
     id: 4, bg: "https://images.unsplash.com/photo-1550345332-09e3ac987658?w=800&q=80",
     overlay: "linear-gradient(180deg,rgba(0,0,0,0.45) 0%,rgba(0,0,0,0.5) 35%,rgba(0,0,0,0.92) 100%)",
-    tag: "START YOUR JOURNEY",
-    headline: ["Your goals.", "Your plan.", "Your AI coach.", "Let's get to work."],
+    tag: "BUILT FOR BEGINNERS",
+    headline: ["Start where you are.", "Get stronger every week.", "No experience needed."],
     cta: true,
   },
 ];
@@ -3423,9 +3438,9 @@ function OnboardSlide({ slide, isActive }) {
     if (isActive) { const t = setTimeout(() => setRdy(true), 60); return () => clearTimeout(t); }
     else setRdy(false);
   }, [isActive]);
-  // Last slide needs room for GET STARTED + Log In + legal text (~195px)
+  // Last slide needs room for reassurance line + GET STARTED + Log In + legal text (~230px)
   // Other slides just need room for "Swipe" hint (~70px)
-  const bottomPad = slide.cta ? 240 : 70;
+  const bottomPad = slide.cta ? 270 : 70;
   return (
     <div style={{ position: "absolute", inset: 0, opacity: isActive ? 1 : 0, transition: "opacity 0.4s ease", pointerEvents: isActive ? "auto" : "none" }}>
       <img src={slide.bg} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "center top", transform: isActive ? "scale(1)" : "scale(1.04)", transition: "transform 0.6s ease" }} />
@@ -7378,6 +7393,10 @@ function PaymentSheet({ initialPlan = "monthly", skipPicker = false, onClose }) 
   const [fetching,     setFetching]     = useState(false);
   const [err,          setErr]          = useState("");
 
+  // Computed once per clientSecret change (not on every render) so Stripe.js
+  // loading stays a memoized value, not a side effect invoked from JSX.
+  const stripePromise = useMemo(() => (clientSecret ? getStripePromise() : null), [clientSecret]);
+
   const PLANS = {
     monthly: { label:"Monthly",  price:"$9.99",  period:"/month", sub:"Billed monthly" },
     annual:  { label:"Annual",   price:"$69.99", period:"/year",  sub:"Save 41% · $5.83/mo", badge:"BEST VALUE" },
@@ -7493,9 +7512,9 @@ function PaymentSheet({ initialPlan = "monthly", skipPicker = false, onClose }) 
                 🔒 Secured by Stripe · 256-bit SSL encryption
               </div>
             </>
-          ) : _stripePromise ? (
+          ) : stripePromise ? (
             <Elements
-              stripe={_stripePromise}
+              stripe={stripePromise}
               options={{
                 clientSecret,
                 appearance: STRIPE_APPEARANCE,
@@ -11279,6 +11298,9 @@ function VTRXAppInner({ setPaymentPlan }) {
         {/* CTA buttons — last slide only, anchored to bottom with safe area */}
         {isLast && (
           <div style={{ position:"absolute",bottom:0,left:0,right:0,zIndex:20,padding:"0 28px 44px",background:"linear-gradient(180deg,transparent 0%,rgba(0,0,0,0.7) 30%,rgba(0,0,0,0.92) 100%)",paddingTop:32,display:"flex",flexDirection:"column",gap:12,animation:"fadeUp 0.5s ease 0.5s both" }}>
+            <p style={{ fontFamily:FONT,fontSize:12.5,color:"rgba(255,255,255,0.6)",textAlign:"center",lineHeight:1.5,margin:"0 0 2px" }}>
+              Join thousands starting their first real fitness plan — no gym experience required.
+            </p>
             <button onClick={()=>{ setPhase("preferences"); setScreen(0); }}
               style={{ width:"100%",padding:"17px 0",borderRadius:50,border:"none",background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:2,cursor:"pointer",boxShadow:`0 4px 28px ${PRIMARY}55` }}>
               GET STARTED
