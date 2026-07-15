@@ -2295,7 +2295,7 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
         if (hUrl) setResolvedHlsUrl(hUrl);
         if (tUrl) setResolvedThumbnailUrl(tUrl);
         if (vUrl || hUrl || tUrl) _videoUrlCache.set(cacheKey, { videoUrl: vUrl||null, hlsUrl: hUrl||null, thumbnailUrl: tUrl||null, cachedAt: Date.now() });
-        if (!vUrl && !hUrl) console.warn(`[video] No URL for "${ex.name}" — check YMOVE_API_KEY in Railway`);
+        if (!vUrl && !hUrl) console.warn(`[video] No URL for "${ex.name}". Check YMOVE_API_KEY in Railway`);
       })
       .catch(err => { console.error(`[video] fetch failed for "${ex.name}":`, err); setResolvedHlsUrl(null); })
       .finally(()=>{ setVideoLoading(false); });
