@@ -3850,7 +3850,13 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
       if (u.id) setUser(prev => ({...prev, ...u}));
       onLogin(u);
     } catch (_) {
-      onLogin({});
+      // Same fetch failure as the mount effect above (stale token, network blip,
+      // backend hiccup right after a fresh sign-in) — don't call onLogin({}) here
+      // either, or a real returning user gets treated as brand new and routed
+      // into onboarding right after successfully authenticating. Surface an
+      // error instead of failing silently, since unlike the mount effect this
+      // runs after a deliberate user action (submitting the form).
+      setErrors({ general: "Signed in, but we couldn't load your profile. Please try again." });
     }
   };
 
