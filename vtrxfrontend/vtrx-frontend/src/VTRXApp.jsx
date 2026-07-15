@@ -3570,6 +3570,13 @@ function ForgotPasswordPage({ onBack }) {
   const [resendCooldown, setResendCooldown] = useState(0);
   const { signIn, setActive } = useClerkSignIn();
   const submitRef = useRef(false);
+  const infoTimeoutRef = useRef(null);
+  useEffect(() => () => clearTimeout(infoTimeoutRef.current), []);
+  const showInfoBriefly = (msg) => {
+    setInfo(msg);
+    clearTimeout(infoTimeoutRef.current);
+    infoTimeoutRef.current = setTimeout(() => setInfo(""), 5000);
+  };
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
@@ -3591,10 +3598,7 @@ function ForgotPasswordPage({ onBack }) {
       setCode("");
       setStep("code");
       setResendCooldown(30);
-      if (isResend) {
-        setInfo("New code sent. Check your inbox (and spam folder).");
-        setTimeout(() => setInfo(""), 5000);
-      }
+      if (isResend) showInfoBriefly("New code sent. Check your inbox (and spam folder).");
     } catch (e) {
       const clerkErr = e?.errors?.[0];
       if (clerkErr?.code === 'form_identifier_not_found') {
@@ -3602,18 +3606,14 @@ function ForgotPasswordPage({ onBack }) {
         setCode("");
         setStep("code");
         setResendCooldown(30);
-        if (isResend) {
-          setInfo("New code sent. Check your inbox (and spam folder).");
-          setTimeout(() => setInfo(""), 5000);
-        }
+        if (isResend) showInfoBriefly("New code sent. Check your inbox (and spam folder).");
       } else if (clerkErr?.code === 'verification_exists') {
         // A verification is already pending for this identifier — the code is
         // already out there, so this is a success case, not an error.
         setCode("");
         setStep("code");
         setResendCooldown(30);
-        setInfo("A code was already sent. Check your inbox (and spam folder).");
-        setTimeout(() => setInfo(""), 5000);
+        showInfoBriefly("A code was already sent. Check your inbox (and spam folder).");
       } else {
         setErr(clerkErr?.longMessage || clerkErr?.message || e?.message || "Failed to send code.");
       }
@@ -3906,10 +3906,14 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
     } catch (e) {
       console.error(e);
       const clerkErr = e?.errors?.[0];
-      if (clerkErr?.code === 'session_exists' || e?.status === 422) {
+      if (clerkErr?.code === 'session_exists') {
         // Already signed in — fetch the real profile rather than assuming
         // "no profile", which was incorrectly demoting onboarded users back
-        // into the onboarding flow.
+        // into the onboarding flow. Scoped to the actual error code, not a
+        // bare e?.status === 422 — Clerk also returns 422 for unrelated
+        // failures like a wrong password, which would otherwise get routed
+        // into fetchProfileAndLogin() and show a misleading "Signed in,
+        // but..." message to someone who was never signed in at all.
         await fetchProfileAndLogin();
       } else if (clerkErr?.code === 'form_identifier_not_found' || clerkErr?.code === 'form_password_incorrect' || clerkErr?.code === 'not_found') {
         setErrors({ general: "Incorrect email or password." });
@@ -4221,6 +4225,8 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
   const [resending, setResending] = React.useState(false);
   const [cooldown,  setCooldown]  = React.useState(0);
   const submitRef = useRef(false);
+  const infoTimeoutRef = useRef(null);
+  useEffect(() => () => clearTimeout(infoTimeoutRef.current), []);
 
   const verify = async () => {
     if (submitRef.current) return;
@@ -4228,32 +4234,44 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
     setLoading(true); setError(""); setInfo("");
     submitRef.current = true;
     try {
-      const result = await signUp.attemptEmailAddressVerification({ code });
-      if (result.status === 'complete') {
-        await setActive({ session: result.createdSessionId });
-        onVerified();
-      } else {
-        throw new Error("Verification incomplete. Please try again");
+      let result;
+      try {
+        result = await signUp.attemptEmailAddressVerification({ code });
+      } catch (e) {
+        const clerkErr = e?.errors?.[0];
+        // form_code_incorrect: wrong code, but this verification is still alive — retry works.
+        // verification_expired/verification_failed: the verification itself is dead (too old, or
+        // too many wrong attempts already made against it) — no code will ever succeed against it
+        // again, so silently letting the user keep retyping just looks like a hang/timeout. Send
+        // them to Resend instead, and clear any cooldown blocking that.
+        if (clerkErr?.code === 'form_code_incorrect') {
+          setCode("");
+          setError("Incorrect code. Please try again.");
+        } else if (clerkErr?.code === 'verification_expired' || clerkErr?.code === 'verification_failed') {
+          setCode("");
+          setCooldown(0);
+          setError('This code is no longer valid. Tap "Resend code" below to get a new one.');
+        } else if (clerkErr?.code === 'too_many_attempts') {
+          setError("Too many attempts. Please wait a few seconds and try again.");
+        } else {
+          setCode("");
+          setError(clerkErr?.longMessage || clerkErr?.message || e?.message || "Invalid or expired code. Please try again.");
+        }
+        return;
       }
-    } catch (e) {
-      const clerkErr = e?.errors?.[0];
-      // form_code_incorrect: wrong code, but this verification is still alive — retry works.
-      // verification_expired/verification_failed: the verification itself is dead (too old, or
-      // too many wrong attempts already made against it) — no code will ever succeed against it
-      // again, so silently letting the user keep retyping just looks like a hang/timeout. Send
-      // them to Resend instead, and clear any cooldown blocking that.
-      if (clerkErr?.code === 'form_code_incorrect') {
-        setCode("");
-        setError("Incorrect code. Please try again.");
-      } else if (clerkErr?.code === 'verification_expired' || clerkErr?.code === 'verification_failed') {
-        setCode("");
-        setCooldown(0);
-        setError('This code is no longer valid. Tap "Resend code" below to get a new one.');
-      } else if (clerkErr?.code === 'too_many_attempts') {
-        setError("Too many attempts. Please wait a few seconds and try again.");
+      // The email verification itself already succeeded server-side at this
+      // point — keep setActive's own failure out of the catch above so a
+      // transient session-activation hiccup isn't mislabeled as an invalid
+      // code (which would also wrongly clear an already-consumed, unrepeatable code).
+      if (result.status === 'complete') {
+        try {
+          await setActive({ session: result.createdSessionId });
+          onVerified();
+        } catch (e) {
+          setError("Your email was verified, but we couldn't sign you in automatically. Please log in.");
+        }
       } else {
-        setCode("");
-        setError(clerkErr?.longMessage || clerkErr?.message || e?.message || "Invalid or expired code. Please try again.");
+        setError("Verification incomplete. Please try again");
       }
     } finally {
       setLoading(false);
@@ -4279,14 +4297,16 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
       setCode("");
       setInfo("New code sent. Check your inbox (and spam folder).");
       setCooldown(60);
-      setTimeout(() => setInfo(""), 5000);
+      clearTimeout(infoTimeoutRef.current);
+      infoTimeoutRef.current = setTimeout(() => setInfo(""), 5000);
     } catch (e) {
       const clerkErr = e?.errors?.[0];
       if (clerkErr?.code === 'verification_exists') {
         setCode("");
         setInfo("A code was already sent. Check your inbox (and spam folder).");
         setCooldown(60);
-        setTimeout(() => setInfo(""), 5000);
+        clearTimeout(infoTimeoutRef.current);
+        infoTimeoutRef.current = setTimeout(() => setInfo(""), 5000);
       } else {
         setError(clerkErr?.longMessage || clerkErr?.message || e?.message || "Failed to resend code. Please try again.");
       }
@@ -11018,13 +11038,18 @@ function VTRXAppInner({ setPaymentPlan }) {
   };
   const goPrev = () => {
     if (screenTransitionRef.current) return;
-    screenTransitionRef.current = true;
     // goPrev is only ever wired to screens inside the preferences SCREENS array
     // (BodyScreen onward) and the phase==="preferences" hardware-back handler.
     // Screen 0 there is SignUpScreen — reaching screen 1+ always means the user
     // is already authenticated (via signup+verify or via login), so walking
     // back to 0 would drop an already-signed-in user onto a fresh signup form.
-    // Floor at 1, not 0.
+    // Floor at 1, not 0 — and bail out entirely at the floor rather than
+    // setting the transition lock for a no-op setScreen call. React bails out
+    // of re-rendering when the new state is Object.is-equal to the old, so a
+    // no-op here would never fire the [screen]-keyed effect below that resets
+    // the lock, permanently blocking both goPrev and goNext until reload.
+    if (screen <= 1) return;
+    screenTransitionRef.current = true;
     setDir(-1); setScreen(s=>Math.max(1,s-1));
   };
   useEffect(() => { screenTransitionRef.current = false; }, [screen]);
@@ -11306,7 +11331,15 @@ function VTRXAppInner({ setPaymentPlan }) {
           if (s.totalWorkouts)                  setWorkoutsTotal(s.totalWorkouts);
         }
       }).catch(()=>{});
-    }).catch(()=>{ afterSplash("onboarding"); });
+    }).catch(()=>{
+      // fetchProfileWithRetry has already exhausted its retries — this is a
+      // genuinely signed-in Clerk user (isSignedIn was already checked above)
+      // whose profile fetch persistently failed. Route to the login form, not
+      // the marketing/onboarding carousel: OAuth callbacks and refreshes land
+      // here too, and treating an authenticated user as a brand-new visitor
+      // is the same "silently assume new user" bug fixed elsewhere in this file.
+      afterSplash("login");
+    });
   }, [clerkLoaded, isSignedIn]);
 
   // ── Handle Stripe redirect on app load ─────────────────────────────────────
