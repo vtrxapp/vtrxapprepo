@@ -46,8 +46,8 @@ const apiCall = async (endpoint, options = {}) => {
     if (endpoint === "/auth/signup")         return { success:true, data:{ message:"Account created" } };
     if (endpoint === "/auth/confirm-email")  return { success:true, data:{ message:"Verified" } };
     if (endpoint === "/auth/login")          return { success:true, data:{ token:"demo_token", user:{ id:"demo", name:"Demo User", email:"demo@vtrx.app" } } };
-    if (endpoint === "/auth/me")             return { success:true, data:{ user:{ id:"demo", name:"Demo User", email:"demo@vtrx.app", isPremium:false, streakDays:7, goal:"Build Muscle", fitnessLevel:"Intermediate", daysPerWeek:5, weight:"82", height:"180", gender:"Male" } } };
-    if (endpoint === "/users/profile")       return { success:true, data:{ user:{ id:"demo", name:"Demo User", streakDays:7, goal:"Build Muscle", fitnessLevel:"Intermediate", daysPerWeek:5, weight:"82", height:"180", gender:"Male", workoutsTotal:12 } } };
+    if (endpoint === "/auth/me")             return { success:true, data:{ user:{ id:"demo", name:"Demo User", email:"demo@vtrx.app", isPremium:false, streakDays:7, goal:"Build Muscle", fitnessLevel:"Intermediate", daysPerWeek:5, weight:"180.8", height:"180", gender:"Male" } } };
+    if (endpoint === "/users/profile")       return { success:true, data:{ user:{ id:"demo", name:"Demo User", streakDays:7, goal:"Build Muscle", fitnessLevel:"Intermediate", daysPerWeek:5, weight:"180.8", height:"180", gender:"Male", workoutsTotal:12 } } };
     if (endpoint === "/workouts/active-plan") return { success:true, data:{ planId:"demo-plan-1", weekNumber:1, plan:{ weeks:[{ sessions:[
       { sessionName:"Upper Body Strength", durationMins:45, isRestDay:false, exercises:[ {name:"Bench Press",sets:4,reps:"8-10"}, {name:"Bent-Over Row",sets:4,reps:"8-10"}, {name:"Overhead Press",sets:3,reps:"10-12"} ] },
       { sessionName:"Lower Body Power",    durationMins:50, isRestDay:false, exercises:[ {name:"Back Squat",sets:4,reps:"6-8"}, {name:"Romanian Deadlift",sets:3,reps:"8-10"}, {name:"Walking Lunges",sets:3,reps:"12"} ] },
@@ -251,36 +251,6 @@ const openPaymentSheet = (plan = "monthly", opts = {}) => {
   }
 };
 
-// ── Premium gate component ────────────────────────────────────────────────────
-function PremiumGate({ feature, children, mini=false }) {
-  const { isPremium } = useUser();
-  if (isPremium) return children;
-  if (mini) return (
-    <div style={{position:"relative",overflow:"hidden",borderRadius:16 }}>
-      <div style={{ filter:"blur(4px)",pointerEvents:"none",userSelect:"none" }}>{children}</div>
-      <div style={{ position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"rgba(10,10,10,0.75)",backdropFilter:"blur(2px)",borderRadius:16,padding:16 }}>
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00A3FF" strokeWidth="2" style={{marginBottom:8}}><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-        <div style={{ fontFamily:"'Montserrat',sans-serif",fontWeight:800,fontSize:12,color:"#fff",marginBottom:4,textAlign:"center" }}>Premium Feature</div>
-        <button onClick={()=>openPaymentSheet()} style={{ padding:"6px 16px",borderRadius:50,background:"#00A3FF",border:"none",fontFamily:"'Montserrat',sans-serif",fontWeight:700,fontSize:11,color:"#fff",cursor:"pointer" }}>Unlock</button>
-      </div>
-    </div>
-  );
-  return (
-    <div style={{ position:"absolute",inset:0,background:"#0a0a0a",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:32,zIndex:100 }}>
-      <div style={{ width:72,height:72,borderRadius:"50%",background:"rgba(0,163,255,0.12)",border:"2px solid rgba(0,163,255,0.4)",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:20 }}>
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#00A3FF" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-      </div>
-      <div style={{ fontFamily:"'Montserrat',sans-serif",fontWeight:900,fontSize:22,color:"#fff",marginBottom:8,textAlign:"center" }}>Premium Feature</div>
-      <div style={{ fontFamily:"'Montserrat',sans-serif",fontSize:13,color:"#888",marginBottom:6,textAlign:"center",lineHeight:1.6 }}>{feature}</div>
-      <div style={{ fontFamily:"'Montserrat',sans-serif",fontSize:12,color:"#555",marginBottom:28,textAlign:"center" }}>Unlock with VTRX Premium</div>
-      <button onClick={()=>openPaymentSheet()}
-        style={{ width:"100%",maxWidth:280,padding:"15px 0",borderRadius:50,background:"#00A3FF",border:"none",fontFamily:"'Montserrat',sans-serif",fontWeight:800,fontSize:15,color:"#fff",cursor:"pointer",marginBottom:14,boxShadow:"0 4px 24px rgba(0,163,255,0.4)" }}>
-        Upgrade to Premium
-      </button>
-      <div style={{ fontFamily:"'Montserrat',sans-serif",fontSize:11,color:"#444" }}>$5.83/month · Cancel anytime</div>
-    </div>
-  );
-}
 const useTheme = () => ({ dark: true });
 
 // ── useScrollRestore: saves & restores scroll position per page key ───────────
@@ -4360,7 +4330,7 @@ function BodyScreen({ onContinue, onBack }) {
   const storedHtIsFt = typeof user.height === "string" && user.height.includes("'");
   const [weightUnit, setWeightUnit] = useState(() => getUnitPref("vtrx_weight_unit", "lbs"));
   const [heightUnit, setHeightUnit] = useState(() => storedHtIsFt ? "ft" : getUnitPref("vtrx_height_unit", "ft"));
-  const [weight,  setWeight]  = useState(() => kgToDisplay(user.weight, weightUnit));
+  const [weight,  setWeight]  = useState(() => lbsToDisplay(user.weight, weightUnit));
   const [height,  setHeight]  = useState(() => {  // always stored as display string
     if (storedHtIsFt) return String(user.height);
     const n = parseFloat(user.height);
@@ -4433,7 +4403,7 @@ function BodyScreen({ onContinue, onBack }) {
   };
 
   const handleContinue = () => {
-    const weightKg = toKg(weight, weightUnit);
+    const weightLbs = toLbs(weight, weightUnit);
     const heightCm = toCm(height, heightUnit);
     const ageVal   = calcAgeFromDob(dob);
     const goalWLbs = goalW && !isNaN(parseFloat(goalW))
@@ -4445,7 +4415,12 @@ function BodyScreen({ onContinue, onBack }) {
       localStorage.setItem("vtrx_height_unit", heightUnit);
       if (dob) localStorage.setItem("vtrx_user_dob", dob);
     } catch {}
-    setUser(u=>({...u, weight: weightKg, height: heightCm, dob, age: ageVal, gender, goalWeightLbs: goalWLbs, bodyFatPercentage: bfVal}));
+    // toLbs/toCm return null for blank/invalid input — fall back to whatever
+    // was already there locally, and omit the key from the PUT body below,
+    // rather than writing/sending an explicit null. The backend already
+    // no-ops on a null weight, but height had no such guard and would
+    // overwrite a previously-saved value with nothing.
+    setUser(u=>({...u, weight: weightLbs ?? u.weight, height: heightCm ?? u.height, dob, age: ageVal, gender, goalWeightLbs: goalWLbs, bodyFatPercentage: bfVal}));
     // Not gated on getAuthToken() — that flag mirrors Clerk's isSignedIn via a
     // useEffect and can still be false in the brief window right after
     // EmailVerifyScreen establishes the session, silently skipping this save
@@ -4453,9 +4428,23 @@ function BodyScreen({ onContinue, onBack }) {
     // once on 401, so just always attempt it.
     if (!DEMO_MODE) {
       apiCall('/users/profile', { method:'PUT', skipAuthRedirect:true, body: JSON.stringify({
-        gender, weight: weightKg, height: heightCm, age: ageVal,
+        gender, age: ageVal,
         goalWeightLbs: goalWLbs, bodyFatPercentage: bfVal,
-      })}).catch(e => track("profile_save_failed", { screen: "body", message: e?.message }));
+        ...(weightLbs != null && { weight: weightLbs }),
+        ...(heightCm  != null && { height: heightCm }),
+      })})
+        .then(res => {
+          // This is very likely the first authenticated backend call of a fresh
+          // signup, which is what auto-provisions the Prisma user row (see
+          // middleware/auth.js) — the response is the only place this screen can
+          // learn the resulting name/username. Neither is otherwise ever synced
+          // into shared user state during onboarding (SignUpScreen's typed name
+          // only ever reaches Clerk), so without this, Dashboard renders right
+          // after signup with an empty name and falls back to a generic greeting.
+          const u = res?.data?.user;
+          if (u) setUser(prev => ({ ...prev, name: u.name ?? prev.name, username: u.username ?? prev.username }));
+        })
+        .catch(e => track("profile_save_failed", { screen: "body", message: e?.message }));
     }
     onContinue();
   };
@@ -4565,7 +4554,7 @@ function TrainingScreen({ onContinue, onBack }) {
   const DIET_MAP  = {"Vegan":"vegan","Vegetarian":"vegetarian","Gluten Free":"gluten_free","Dairy-Free":"dairy_free","No Peanuts":"no_peanuts","Other?":"other"};
   const MEALS_MAP = {"2 meals":"2","3 meals":"3","4+ meals":"4_plus","It varies":"varies"};
   const revMap = (map, val) => Object.keys(map).find(k => map[k] === val) || "";
-  const[want,setWant]=useState(user.wantsMealSuggestions===true?"Yes":user.wantsMealSuggestions===false?"No":"");const[nutGoal,setNutGoal]=useState(revMap(GOAL_MAP,user.nutritionGoal));const[track,setTrack]=useState(revMap(TRACK_MAP,user.trackingPreference));const[diet,setDiet]=useState((user.dietaryRestrictions||[]).map(d=>revMap(DIET_MAP,d)||d));const[meals,setMeals]=useState(revMap(MEALS_MAP,user.mealsPerDay));
+  const[want,setWant]=useState(user.wantsMealSuggestions===true?"Yes":user.wantsMealSuggestions===false?"No":"");const[nutGoal,setNutGoal]=useState(revMap(GOAL_MAP,user.nutritionGoal));const[trackPref,setTrackPref]=useState(revMap(TRACK_MAP,user.trackingPreference));const[diet,setDiet]=useState((user.dietaryRestrictions||[]).map(d=>revMap(DIET_MAP,d)||d));const[meals,setMeals]=useState(revMap(MEALS_MAP,user.mealsPerDay));
 
   const save = (overrides = {}) => {
     const g  = overrides.goal  ?? (goal  || user.goal);
@@ -4580,15 +4569,13 @@ function TrainingScreen({ onContinue, onBack }) {
     const nutritionPrefs = {
       wantsMealSuggestions: want === "Yes",
       nutritionGoal: GOAL_MAP[nutGoal] || nutGoal || "maintain",
-      trackingPreference: TRACK_MAP[track] || track || "no_not_interested",
+      trackingPreference: TRACK_MAP[trackPref] || trackPref || "no_not_interested",
       dietaryRestrictions: diet.map(d => DIET_MAP[d] || d.toLowerCase().replace(/\s+/g, "_")),
       mealsPerDay: MEALS_MAP[meals] || meals || "3",
     };
     setUser(u => ({ ...u, ...workoutPrefs, ...nutritionPrefs }));
     // Not gated on getAuthToken() — see BodyScreen's handleContinue for why that
     // check can race right after onboarding establishes the session.
-    // NOTE: this component has a local `track` state var (tracking preference),
-    // so use console.warn here rather than the analytics track() import.
     if (!DEMO_MODE) {
       apiCall('/users/profile', { method:'PUT', skipAuthRedirect:true, body: JSON.stringify({
         goal: workoutPrefs.goal, fitnessLevel: workoutPrefs.fitnessLevel,
@@ -4596,7 +4583,15 @@ function TrainingScreen({ onContinue, onBack }) {
         location: workoutPrefs.location, sessionDuration: time,
         preferredStyles: Array.isArray(style) ? style : [style].filter(Boolean),
         ...nutritionPrefs,
-      })}).catch(e => console.warn('profile_save_failed:training', e?.message));
+      })})
+        .then(res => {
+          // Same gap as BodyScreen.handleContinue — pick up name/username from
+          // the response in case BodyScreen's own save hasn't resolved yet (or
+          // failed) by the time this one completes.
+          const u = res?.data?.user;
+          if (u) setUser(prev => ({ ...prev, name: u.name ?? prev.name, username: u.username ?? prev.username }));
+        })
+        .catch(e => track("profile_save_failed", { screen: "training", message: e?.message }));
     }
   };
 
@@ -4616,7 +4611,7 @@ function TrainingScreen({ onContinue, onBack }) {
     <div style={{ fontFamily:FONT,fontWeight:800,fontSize:12,color:PRIMARY,letterSpacing:2,marginTop:30,marginBottom:14,paddingTop:22,borderTop:"1px solid rgba(255,255,255,0.12)" }}>YOUR NUTRITION</div>
     <Q n="8" text="Would you like meal suggestions based on your goals?"/><ChipGroup options={["Yes","No"]} value={want} onChange={setWant}/>
     <Q n="9" text="What's your main nutrition goal?"/><ChipGroup options={["Lose Fat","Build Muscle","Maintain","Eat clean","Improve Energy"]} value={nutGoal} onChange={setNutGoal}/>
-    <Q n="10" text="Do you track your calories or macros?"/><ChipGroup options={["Yes, both","Only Calories","No, but I'd like to","No, not interested"]} value={track} onChange={setTrack}/>
+    <Q n="10" text="Do you track your calories or macros?"/><ChipGroup options={["Yes, both","Only Calories","No, but I'd like to","No, not interested"]} value={trackPref} onChange={setTrackPref}/>
     <Q n="11" text="Do you have any dietary preferences or restrictions?"/><ChipGroup options={["Vegan","Vegetarian","Gluten Free","Dairy-Free","No Peanuts","Other?"]} value={diet} onChange={setDiet} multi/>
     <Q n="12" text="How many meals do you eat daily?"/><ChipGroup options={["2 meals","3 meals","4+ meals","It varies"]} value={meals} onChange={setMeals}/>
 
@@ -6340,17 +6335,6 @@ function NotifIcon({ type }) {
   if (type==="water")     return <svg width={p.width} height={p.height} viewBox={p.viewBox} fill={p.fill} stroke={p.stroke} strokeWidth={p.strokeWidth}><path d="M12 2.69l5.66 5.66a8 8 0 11-11.31 0z"/></svg>;
   return <svg width={p.width} height={p.height} viewBox={p.viewBox} fill={p.fill} stroke={p.stroke} strokeWidth={p.strokeWidth}><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/></svg>;
 }
-const NOTIF_DATA = [
-  { id:1, iconKey:"workout",  iconBg:PRIMARY,   title:"Workout Reminder",  time:"2m ago",    unread:true,  body:"Time for your evening strength training session. 30 minute strength workout." },
-  { id:2, iconKey:"goal",     iconBg:PRIMARY,   title:"Goal Achieved!",    time:"15m ago",   unread:true,  body:"Congratulations! You've completed your weekly cardio goal of 150 minutes." },
-  { id:3, iconKey:"streak",   iconBg:PRIMARY,   title:"Streak Alert",      time:"1h ago",    unread:true,  body:"You're on a 7-day workout streak! Keep it going to reach your 10-day milestone." },
-  { id:4, iconKey:"nutrition",iconBg:"#374151", title:"Nutrition Tip",     time:"3h ago",    unread:false, body:"Don't forget to fuel your body. Try adding protein at least 30g within 30 minutes post-workout." },
-  { id:5, iconKey:"steps",    iconBg:"#374151", title:"Daily Steps",       time:"5h ago",    unread:false, body:"Great job! You've walked 8,247 steps today. Only 1,753 more to reach your daily goal." },
-  { id:6, iconKey:"sleep",    iconBg:"#374151", title:"Sleep Reminder",    time:"Yesterday", unread:false, body:"Time to wind down. Getting 7-8 hours of sleep helps with muscle recovery and performance." },
-  { id:7, iconKey:"water",    iconBg:"#374151", title:"Hydration Check",   time:"Yesterday", unread:false, body:"You've logged 6 glasses of water today. Remember to stay hydrated throughout your workout." },
-  { id:8, iconKey:"rest",     iconBg:"#374151", title:"Rest Day Scheduled",time:"2 days ago",unread:false, body:"Tomorrow is your scheduled rest day. Use this time for light stretching or meditation." },
-];
-
 // ── NOTIFICATION SETTINGS PAGE ────────────────────────────────────────────────
 
 function NotifSectionIcon({ type }) {
@@ -6839,9 +6823,13 @@ function calcAgeFromDob(dob) {
   if (m < 0 || (m === 0 && today.getDate() < d.getDate())) age--;
   return age >= 1 ? age : null;
 }
-function kgToDisplay(kg, unit) {
-  const v = parseFloat(kg); if (!v) return "";
-  return unit === "lbs" ? (v * 2.20462).toFixed(1) : String(v);
+// User.weight is stored in lbs (see prisma/schema.prisma and every backend
+// consumer — nutritionPlanService, workoutController, aiController all read
+// it as lbs). Convert to the display unit from that baseline, not the other
+// way around.
+function lbsToDisplay(lbs, unit) {
+  const v = parseFloat(lbs); if (!v) return "";
+  return unit === "kg" ? (v * 0.453592).toFixed(1) : String(v);
 }
 function cmToDisplay(cm, unit) {
   const v = parseFloat(cm); if (!v) return "";
@@ -6853,20 +6841,27 @@ function cmToDisplay(cm, unit) {
   }
   return String(Math.round(v));
 }
-function toKg(val, unit) {
+// Same baseline as lbsToDisplay above — always resolve to lbs before this
+// reaches the backend, regardless of which unit the user is entering in.
+function toLbs(val, unit) {
   const v = parseFloat(val);
   if (isNaN(v) || v <= 0) return null;
-  return unit === "lbs" ? parseFloat((v * 0.453592).toFixed(1)) : v;
+  return unit === "kg" ? parseFloat((v * 2.20462).toFixed(1)) : v;
 }
 function toCm(val, unit) {
+  // Prisma's height column is String? (schema: e.g. "5'10") — always return a
+  // string (or null), never a bare number. A number here gets rejected by
+  // Prisma's own runtime type validation against a String? field, which
+  // would fail the entire profile update in the same call (name/age/gender/
+  // weight included, since it's one atomic Prisma update).
   if (unit === "ft") {
     const m = String(val).match(/(\d+)[^\d]*(\d*)/);
     if (!m) return null;
     const cm = Math.round((parseInt(m[1]) || 0) * 30.48 + (parseInt(m[2] || 0) || 0) * 2.54);
-    return cm > 0 ? cm : null;
+    return cm > 0 ? String(cm) : null;
   }
   const v = parseFloat(val);
-  return isNaN(v) || v <= 0 ? null : Math.round(v);
+  return isNaN(v) || v <= 0 ? null : String(Math.round(v));
 }
 function getUnitPref(key, fallback) {
   try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
@@ -6882,7 +6877,7 @@ function PersonalDetailsPage({ onBack }) {
   const [gender,     setGender]     = useState(user.gender || "");
   const [weightUnit, setWeightUnit] = useState(initWU);
   const [heightUnit, setHeightUnit] = useState(initHU);
-  const [weight,     setWeight]     = useState(() => kgToDisplay(user.weight, initWU));
+  const [weight,     setWeight]     = useState(() => lbsToDisplay(user.weight, initWU));
   const [height,     setHeight]     = useState(() => {
     if (storedHtIsFt) return String(user.height);
     const n = parseFloat(user.height);
@@ -6934,29 +6929,38 @@ function PersonalDetailsPage({ onBack }) {
   };
 
   const save = async () => {
-    const ageVal   = calcAgeFromDob(dob);
-    const weightKg = toKg(weight, weightUnit);
-    const heightCm = toCm(height, heightUnit);
+    const ageVal    = calcAgeFromDob(dob);
+    const weightLbs = toLbs(weight, weightUnit);
+    const heightCm  = toCm(height, heightUnit);
     try {
       localStorage.setItem("vtrx_weight_unit", weightUnit);
       localStorage.setItem("vtrx_height_unit", heightUnit);
       if (dob) localStorage.setItem("vtrx_user_dob", dob);
     } catch {}
     setSaveError(false);
+    // toLbs/toCm return null for blank/invalid input — fall back to whatever
+    // was already there locally, and omit the key from the PUT body below,
+    // rather than writing/sending an explicit null. The backend already
+    // no-ops on a null weight, but height had no such guard and would
+    // overwrite a previously-saved value with nothing.
     // DEMO_MODE has no real backend to confirm against — keep the old optimistic
     // behavior there. Otherwise only show "Saved!" (and update the shared user
     // state) once the backend actually confirms it, instead of assuming success
     // and silently losing the write on failure.
     if (DEMO_MODE) {
-      setUser(u=>({...u, name, dob, age: ageVal, gender, weight: weightKg, height: heightCm}));
+      setUser(u=>({...u, name, dob, age: ageVal, gender, weight: weightLbs ?? u.weight, height: heightCm ?? u.height}));
       setSaved(true);
       setTimeout(()=>setSaved(false), 2200);
       return;
     }
     setSaving(true);
     try {
-      await apiCall("/users/profile", { method:"PUT", body:JSON.stringify({ name, age: ageVal, gender, weight: weightKg, height: heightCm }) });
-      setUser(u=>({...u, name, dob, age: ageVal, gender, weight: weightKg, height: heightCm}));
+      await apiCall("/users/profile", { method:"PUT", body:JSON.stringify({
+        name, age: ageVal, gender,
+        ...(weightLbs != null && { weight: weightLbs }),
+        ...(heightCm  != null && { height: heightCm }),
+      }) });
+      setUser(u=>({...u, name, dob, age: ageVal, gender, weight: weightLbs ?? u.weight, height: heightCm ?? u.height}));
       setSaved(true);
       setTimeout(()=>setSaved(false), 2200);
     } catch (e) {
@@ -7057,99 +7061,6 @@ function PersonalDetailsPage({ onBack }) {
   );
 }
 
-
-function GoalIcon({ type }) {
-  const s = { width:22, height:22, viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:"2" };
-  if (type==="fire")    return <svg {...s}><path d="M12 2c0 6-6 8-6 14a6 6 0 0012 0c0-6-6-8-6-14z"/></svg>;
-  if (type==="muscle")  return <svg {...s}><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>;
-  if (type==="bolt")    return <svg {...s}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>;
-  if (type==="run")     return <svg {...s}><circle cx="12" cy="5" r="2"/><path d="M10 22v-6l-2-3 4-4 2 3h4"/><path d="M10 13l-4 2"/></svg>;
-  if (type==="star")    return <svg {...s}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>;
-  if (type==="sparkle") return <svg {...s}><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"/></svg>;
-  return <svg {...s}><circle cx="12" cy="12" r="10"/></svg>;
-}
-function FitnessGoalPage({ onBack }) {
-  const { user, setUser } = useUser();
-  const [goal, setGoal]   = useState(user.goal);
-  const [level, setLevel] = useState(user.fitnessLevel || user.level || "");
-  const [days, setDays]   = useState(Number(user.daysPerWeek || user.days) || 5);
-  const [saved, setSaved] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState(false);
-
-  const goals = [
-    { key:"Lose Weight",                ico:"fire", desc:"Burn fat and reduce body weight" },
-    { key:"Build Muscle",               ico:"muscle", desc:"Increase muscle mass and strength" },
-    { key:"Weight Loss & Muscle Gain",  ico:"bolt", desc:"Body recomposition: best of both" },
-    { key:"Improve Endurance",          ico:"run", desc:"Cardio fitness and stamina" },
-    { key:"Stay Active",                ico:"star", desc:"Maintain a healthy active lifestyle" },
-    { key:"Get Toned",                  ico:"sparkle", desc:"Lean, defined physique" },
-  ];
-
-  return (
-    <SubShell title="FITNESS GOAL" onBack={onBack}>
-      <div style={{ fontFamily:FONT,fontSize:13,color:"#888888",marginBottom:18 }}>Choose your primary fitness goal. This shapes your entire workout plan.</div>
-
-      <div style={{ display:"flex",flexDirection:"column",gap:10,marginBottom:16 }}>
-        {goals.map(g=>(
-          <button key={g.key} onClick={()=>setGoal(g.key)} style={{ display:"flex",alignItems:"center",gap:14,padding:"14px 18px",borderRadius:18,border:`2px solid ${goal===g.key?PRIMARY:BORDER}`,background:goal===g.key?`${PRIMARY}12`:CARD,cursor:"pointer",textAlign:"left",transition:"all 0.2s" }}>
-            <div style={{ width:44,height:44,borderRadius:14,background:goal===g.key?`${PRIMARY}25`:"#1a1a1a",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"background 0.18s" }}><GoalIcon type={g.ico}/></div>
-            <div style={{ flex:1 }}>
-              <div style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:goal===g.key?PRIMARY:"#fff" }}>{g.key}</div>
-              <div style={{ fontFamily:FONT,fontSize:12,color:"#888888",marginTop:2 }}>{g.desc}</div>
-            </div>
-            {goal===g.key&&<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>}
-          </button>
-        ))}
-      </div>
-
-      <div style={{ background:"#ffffff",borderRadius:20,border:"1px solid #e8e8e8",padding:"18px",marginBottom:16 }}>
-        <div style={{ fontFamily:FONT,fontWeight:700,fontSize:12,color:"#888888",letterSpacing:1,marginBottom:14 }}>EXPERIENCE LEVEL</div>
-        <div style={{ display:"flex",gap:8 }}>
-          {["Beginner","Intermediate","Advanced"].map(l=>(
-            <button key={l} onClick={()=>setLevel(l)} style={{ flex:1,padding:"12px 0",borderRadius:12,border:`1.5px solid ${level===l?PRIMARY:BORDER}`,background:level===l?`${PRIMARY}18`:"transparent",fontFamily:FONT,fontWeight:600,fontSize:12,color:level===l?PRIMARY:"#555",cursor:"pointer",transition:"all 0.2s" }}>{l}</button>
-          ))}
-        </div>
-      </div>
-
-      <div style={{ background:"#ffffff",borderRadius:20,border:"1px solid #e8e8e8",padding:"18px",marginBottom:16 }}>
-        <div style={{ fontFamily:FONT,fontWeight:700,fontSize:12,color:"#888888",letterSpacing:1,marginBottom:14 }}>DAYS PER WEEK</div>
-        <div style={{ display:"flex",gap:8 }}>
-          {[2,3,4,5].map(d=>(
-            <button key={d} onClick={()=>setDays(d)} style={{ flex:1,padding:"14px 0",borderRadius:14,border:`2px solid ${days===d?PRIMARY:BORDER}`,background:days===d?PRIMARY:"transparent",fontFamily:FONT,fontWeight:600,fontSize:16,color:days===d?"#fff":"#555",cursor:"pointer",transition:"all 0.2s" }}>{d}</button>
-          ))}
-        </div>
-      </div>
-
-      <SaveBtn onClick={async ()=>{
-      if (DEMO_MODE) {
-        setUser(u=>({...u,goal,level,days,fitnessLevel:level,daysPerWeek:parseInt(days)||5}));
-        setSaved(true);
-        setTimeout(()=>setSaved(false),2200);
-        return;
-      }
-      setSaving(true);
-      setSaveError(false);
-      try {
-        await apiCall('/users/profile',{ method:'PUT', body:JSON.stringify({ goal, fitnessLevel:level, daysPerWeek:parseInt(days)||5 }) });
-        setUser(u=>({...u,goal,level,days,fitnessLevel:level,daysPerWeek:parseInt(days)||5}));
-        setSaved(true);
-        setTimeout(()=>setSaved(false),2200);
-      } catch (e) {
-        track("profile_save_failed", { screen: "fitness_goal", message: e?.message });
-        setSaveError(true);
-      } finally {
-        setSaving(false);
-      }
-    }} saved={saved} saving={saving}/>
-      {saveError && (
-        <div style={{ fontFamily:FONT,fontSize:12,color:"#EF4444",textAlign:"center",marginTop:10 }}>
-          Couldn't save. Check your connection and try again.
-        </div>
-      )}
-    </SubShell>
-  );
-}
 
 // ─ Change Email ───────────────────────────────────────────────────────────────
 // Email is Clerk's identity for the account (login, notifications), not a
@@ -7957,7 +7868,7 @@ function AccountSettingsPage({ onBack, onLogout }) {
             {(()=>{
               const wu = getUnitPref("vtrx_weight_unit","kg");
               const hu = getUnitPref("vtrx_height_unit","cm");
-              const wDisp = kgToDisplay(user.weight, wu);
+              const wDisp = lbsToDisplay(user.weight, wu);
               // Handle legacy ft-format strings (e.g. "5'7") and corrupt small values
               const hIsLegacyFt = typeof user.height === "string" && user.height.includes("'");
               const hNum = parseFloat(user.height);
@@ -8093,7 +8004,6 @@ function AccountSettingsPage({ onBack, onLogout }) {
       )}
       {/* Sub-page overlays — AccountSettingsPage stays mounted preserving scroll */}
       {subPage==="personal"  && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><PersonalDetailsPage    onBack={()=>setSubPage(null)}/></div>}
-      {subPage==="goal"      && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><FitnessGoalPage         onBack={()=>setSubPage(null)}/></div>}
       {subPage==="email"     && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><ChangeEmailPage         onBack={()=>setSubPage(null)}/></div>}
       {subPage==="password"  && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><ChangePasswordPage      onBack={()=>setSubPage(null)}/></div>}
       {subPage==="payment"   && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><PaymentMethodPage       onBack={()=>setSubPage(null)}/></div>}
@@ -8481,25 +8391,6 @@ function ProgressPhotosPage({ onBack }) {
 
 
 
-const TIERS = [
-  { name:"Bronze",   min:0,    max:999,  color:"#CD7F32", icon:"Br", gradient:"linear-gradient(135deg,#8B4513,#CD7F32)" },
-  { name:"Silver",   min:1000, max:2199, color:"#A8A8A8", icon:"Si", gradient:"linear-gradient(135deg,#707070,#C0C0C0)" },
-  { name:"Gold",     min:2200, max:3999, color:"#FFD700", icon:"Go", gradient:"linear-gradient(135deg,#B8860B,#FFD700)" },
-  { name:"Platinum", min:4000, max:6999, color:"#E5E4E2", icon:"Pt", gradient:"linear-gradient(135deg,#8E9EAB,#E5E4E2)" },
-  { name:"Diamond",  min:7000, max:10999,color:"#B9F2FF", icon:"Di", gradient:"linear-gradient(135deg,#00B4DB,#B9F2FF)" },
-  { name:"Elite",    min:11000,max:999999,color:"#FFB700",icon:"El",gradient:"linear-gradient(135deg,#F7971E,#FFD200)" },
-];
-
-function getTier(pts) {
-  return TIERS.find(t=>pts>=t.min&&pts<=t.max) || TIERS[0];
-}
-
-function getNextTier(pts) {
-  const idx = TIERS.findIndex(t=>pts>=t.min&&pts<=t.max);
-  return idx < TIERS.length-1 ? TIERS[idx+1] : null;
-}
-
-
 // ─────────────────────────────────────────────────────────────────────────────
 // ── ACHIEVEMENTS ─────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
@@ -8541,24 +8432,6 @@ function getProgress(req, stats) {
     default: return 0;
   }
 }
-
-function useAchievements(stats) {
-  const [seenIds, setSeenIds] = React.useState(() => {
-    try { return JSON.parse(localStorage.getItem("vtrx_seen_achievements")||"[]"); } catch(_e){ return []; }
-  });
-
-  const earned = ACHIEVEMENTS.filter(a => getProgress(a.req, stats) >= a.req.n);
-  const newlyEarned = earned.filter(a => !seenIds.includes(a.id));
-
-  const markSeen = () => {
-    const allIds = earned.map(a=>a.id);
-    setSeenIds(allIds);
-    try { localStorage.setItem("vtrx_seen_achievements", JSON.stringify(allIds)); } catch(_e){}
-  };
-
-  return { earned, newlyEarned, markSeen, getProgress };
-}
-
 
 function ProfilePage({ onBack, onLogout, onNavigate, streakDay=1, workoutsTotal=0 }) {
   const profileScrollRef = useScrollPos("profile-page");
@@ -10127,9 +10000,6 @@ function TrialEndedBanner({ onUpgrade }) {
 }
 
 
-      {/* Freeze confirmation sheet — shows status if already frozen, else activation */}
-
-
 // ── Personalise workout plan from user profile ────────────────────────────────
 function getTailoredWorkout(user, energyKey) {
   const level = (user?.fitnessLevel || user?.level || "intermediate").toLowerCase();
@@ -10574,7 +10444,6 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
   const [showNotifs, setShowNotifs]   = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const hasUnread = notifCount > 0;
-  const [workoutDone,      setWorkoutDone]      = useState(false);
   const [freezeStatus, setFreezeStatus] = useState(null); // { available, cap, refillsOn, frozenToday, frozenDates }
   const [showFreezeSheet, setShowFreezeSheet] = useState(false);
   const [freezeActivating, setFreezeActivating] = useState(false);
@@ -10586,21 +10455,6 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
       .then(d=>{ if (d?.data?.streakFreeze) setFreezeStatus(d.data.streakFreeze); })
       .catch(()=>{});
   }, []);
-
-  // Check for newly earned achievements (notification badging handled by notifCount from API)
-  useEffect(()=>{
-    const stats = {
-      streakDays: streakDay, workoutsTotal: 0, earlyWorkouts:0,
-      mealStreakDays:0, savedRecipes:0, challengesJoined:0,
-      challengesDone:0, profileComplete:!!(user?.name), freezeUsed:false,
-    };
-    try {
-      const seen = JSON.parse(localStorage.getItem("vtrx_seen_achievements")||"[]");
-      const earned = ACHIEVEMENTS.filter(a=>getProgress(a.req,stats)>=a.req.n);
-      const newOnes = earned.filter(a=>!seen.includes(a.id));
-      // Could surface achievement unlocks here in future
-    } catch(_e){}
-  }, [streakDay]);
 
   const activateFreeze = async () => {
     setFreezeActivating(true);
@@ -10897,20 +10751,10 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
               );
             })}
           </div>
-          {!workoutDone?(
-            <button onClick={()=>onNavigate("workoutDetail", workout)} style={{ width:"100%",padding:"15px 0",borderRadius:50,border:"none",background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,fontFamily:FONT,fontWeight:800,fontSize:13.5,color:"#fff",letterSpacing:2,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,boxShadow:`0 4px 28px ${PRIMARY}55` }}>
-              <svg width="13" height="13" viewBox="0 0 13 13" fill="white"><polygon points="0,0 13,6.5 0,13"/></svg>
-              START WORKOUT
-            </button>
-          ):(
-            <div onClick={()=>onNavigate("aiSummary")} style={{ background:"#0c1c0c",border:"1px solid #1a3a1a",borderRadius:14,padding:"13px 16px",display:"flex",alignItems:"center",gap:12,cursor:"pointer" }}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-              <div>
-                <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13.5,color:"#22C55E" }}>Workout Complete!</div>
-                <div style={{ fontFamily:FONT,fontSize:11.5,color:"#1a4a1a" }}>Tap to view AI analysis</div>
-              </div>
-            </div>
-          )}
+          <button onClick={()=>onNavigate("workoutDetail", workout)} style={{ width:"100%",padding:"15px 0",borderRadius:50,border:"none",background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,fontFamily:FONT,fontWeight:800,fontSize:13.5,color:"#fff",letterSpacing:2,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,boxShadow:`0 4px 28px ${PRIMARY}55` }}>
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="white"><polygon points="0,0 13,6.5 0,13"/></svg>
+            START WORKOUT
+          </button>
         </div>
         )}
       </div>
@@ -11271,18 +11115,35 @@ function VTRXAppInner({ setPaymentPlan }) {
     // onboarding on failure below — a transient 401 here shouldn't force an
     // actual Clerk sign-out for a user who is genuinely still signed in.
     // A genuinely signed-in user whose profile fetch fails must not be silently
-    // treated as "never onboarded" — retry a few more times (on top of apiCall's
-    // own internal retry) before falling back.
-    const fetchProfileWithRetry = async (attemptsLeft = 3) => {
+    // treated as "never onboarded" — retry once more (on top of apiCall's own
+    // internal retry) before falling back.
+    // `cancelled` is flipped once the outer timeout below has already given up
+    // — Promise.race doesn't abort apiCall()'s in-flight fetch (that would
+    // need an AbortSignal threaded through apiCall itself, which every other
+    // call site in the app also uses), but this at least stops this retry
+    // loop from starting another attempt once nobody is waiting on it.
+    let cancelled = false;
+    const fetchProfileWithRetry = async (attemptsLeft = 2) => {
       try {
         return await apiCall("/users/profile", { skipAuthRedirect: true });
       } catch (err) {
-        if (attemptsLeft <= 1) throw err;
+        if (attemptsLeft <= 1 || cancelled) throw err;
         await new Promise(r => setTimeout(r, 1500));
         return fetchProfileWithRetry(attemptsLeft - 1);
       }
     };
-    fetchProfileWithRetry().then(res=>{
+    // Hard ceiling on top of the retries above: apiCall() already retries
+    // internally too, so a genuinely hung backend can otherwise stack up to
+    // roughly two minutes of nested retries before the splash screen gives
+    // up. Cap the user-visible wait regardless of how those retries play
+    // out — a timed-out fetch falls through to the same "login" fallback a
+    // real failure would.
+    const PROFILE_FETCH_TIMEOUT_MS = 8000;
+    const withTimeout = (promise, ms) => Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => { cancelled = true; reject(Object.assign(new Error("Profile fetch timed out"), { code: "SPLASH_TIMEOUT" })); }, ms)),
+    ]);
+    withTimeout(fetchProfileWithRetry(), PROFILE_FETCH_TIMEOUT_MS).then(res=>{
       if (res?.data?.user) {
         const u = res.data.user;
         setUser(prev=>({...prev,
@@ -11724,8 +11585,6 @@ function VTRXAppInner({ setPaymentPlan }) {
   if (innerPage==="aiSummary")     return <AISummaryPage energyKey={energyKey} workoutDone={workoutDone} logId={lastWorkoutLogId} onBack={goBack}/>;
   if (innerPage==="nutrition")     { const _mealPool = getMealPool(user); return <NutritionPage meal={_mealPool[mealIdx % _mealPool.length]} onBack={goBack}/>; }
   if (innerPage==="fitnessStats")  return <FitnessStatsPage onBack={goBack} loggedWorkouts={loggedWorkouts}/>;
-  if (innerPage==="notifications") return <NotificationsPage onBack={goBack}/>;
-  if (innerPage==="profile") return <ProfilePage onBack={goBack} onLogout={handleLogout} onNavigate={navigate} streakDay={streakDay} workoutsTotal={workoutsTotal}/>;
   if (innerPage==="workoutDetail") {
     const fallbackW = WEEKLY_WORKOUTS[TODAY_IDX % WEEKLY_WORKOUTS.length];
     const activeW   = selectedScheduleWorkout || apiWorkout || fallbackW;

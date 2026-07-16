@@ -52,7 +52,7 @@ const updateProfile = async (req, res) => {
         ...(gender               !== undefined && { gender }),
         ...(age !== undefined && age !== null && !isNaN(parseInt(age))         && { age: parseInt(age) }),
         ...(weight !== undefined && weight !== null && !isNaN(parseFloat(weight)) && { weight: parseFloat(weight) }),
-        ...(height               !== undefined && { height }),
+        ...(height !== undefined && height !== null && { height }),
         ...(goal                 !== undefined && { goal }),
         ...(fitnessLevel         !== undefined && { fitnessLevel }),
         ...(daysPerWeek          !== undefined && { daysPerWeek: parseInt(daysPerWeek) }),
@@ -173,38 +173,6 @@ const logProgress = async (req, res) => {
   }
 };
 
-// ── GET /api/users/notifications ─────────────────────────────────────────────
-const getNotifications = async (req, res) => {
-  try {
-    const notifications = await prisma.notification.findMany({
-      where:   { userId: req.user.id },
-      orderBy: { createdAt: 'desc' },
-      take:    20,
-    });
-
-    const unreadCount = notifications.filter(n => !n.read).length;
-
-    res.json({ success: true, data: { notifications, unreadCount } });
-  } catch (error) {
-    logger.error('getNotifications error:', error);
-    res.status(500).json({ success: false, message: 'Failed to fetch notifications' });
-  }
-};
-
-// ── PATCH /api/users/notifications/read — Mark all as read ───────────────────
-const markNotificationsRead = async (req, res) => {
-  try {
-    await prisma.notification.updateMany({
-      where: { userId: req.user.id, read: false },
-      data:  { read: true },
-    });
-    res.json({ success: true });
-  } catch (error) {
-    logger.error('markNotificationsRead error:', error);
-    res.status(500).json({ success: false, message: 'Failed to update notifications' });
-  }
-};
-
 // ── GET /api/users/personal-records ──────────────────────────────────────────
 const getPersonalRecords = async (req, res) => {
   try {
@@ -276,8 +244,6 @@ module.exports = {
   logMood,
   getProgressLogs,
   logProgress,
-  getNotifications,
-  markNotificationsRead,
   getPersonalRecords,
   getTodayWater,
   logWater,
