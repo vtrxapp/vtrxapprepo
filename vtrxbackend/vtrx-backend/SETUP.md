@@ -85,6 +85,11 @@ database. **This means `DATABASE_URL` and `DIRECT_URL` must already be set
 before you run this** — do Step 3 and Step 4 first, then come back and run
 `npm install`. It creates a `node_modules` folder (never commit this to git).
 
+⚠️ `postinstall` runs `prisma db push --accept-data-loss`, which can drop or
+rewrite columns/tables to match `schema.prisma` without prompting. Double
+check `DATABASE_URL`/`DIRECT_URL` point at the database you actually mean to
+touch — not a shared or production one — before running this.
+
 ---
 
 ## STEP 3 — Create your .env file
@@ -97,8 +102,10 @@ one is for and which are required vs. optional. **Never commit `.env`** —
 it's already in `.gitignore`.
 
 The ones you can't skip: `DATABASE_URL` and `DIRECT_URL` (Step 4), and
-`CLERK_SECRET_KEY` (Step 5). Everything else degrades gracefully or gates a
-specific feature (e.g. no `FIREBASE_SERVICE_ACCOUNT_BASE64` just disables
+`CLERK_SECRET_KEY` (Step 5). `FRONTEND_URL` is also required once this is
+running in production — without it, every browser request fails CORS (see
+`server.js`'s boot-time check). Everything else degrades gracefully or gates
+a specific feature (e.g. no `FIREBASE_SERVICE_ACCOUNT_BASE64` just disables
 push notifications).
 
 ---
