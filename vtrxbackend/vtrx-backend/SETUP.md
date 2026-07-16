@@ -81,7 +81,9 @@ npm install
 ```
 This downloads all the packages listed in package.json, and (via
 `postinstall`) generates the Prisma client and pushes the schema to your
-database. It creates a `node_modules` folder (never commit this to git).
+database — **which means `DATABASE_URL` must already be set before you run
+this.** Do Step 3 and Step 4 first, then come back and run `npm install`. It
+creates a `node_modules` folder (never commit this to git).
 
 ⚠️ `postinstall` runs `prisma db push --accept-data-loss`, which can drop or
 rewrite columns/tables to match `schema.prisma` without prompting. Double
@@ -118,6 +120,12 @@ into `DATABASE_URL`:
 ```
 postgresql://user:password@host:5432/dbname
 ```
+
+On Supabase specifically: use the **Session pooler** connection string, not
+Direct connection or Transaction pooler. Session pooler is confirmed to work
+for both the running app and `prisma db push`. The true direct connection is
+IPv6-only (unreachable from some hosts, including Render's build
+environment), and the Transaction pooler is known to hang on `db push`.
 
 ---
 
