@@ -3804,6 +3804,28 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
   const [errors, setErrors] = useState({});
   const [submitted, setSubmitted] = useState(false);
 
+  // Client Trust (Clerk treats sign-ins from a device it doesn't recognize as
+  // needing extra verification) and real account-level MFA both surface via
+  // the same second-factor API — 'needs_client_trust' / 'needs_second_factor'
+  // respectively. Only email_code is enabled on this Clerk instance, so that's
+  // the only strategy handled here. This stays inside LoginScreen (rather than
+  // becoming its own top-level phase) because it needs the SAME in-progress
+  // `signIn` resource the credential step already created.
+  const [step, setStep] = useState("credentials"); // "credentials" | "verifyDevice"
+  const [deviceCode, setDeviceCode] = useState("");
+  const [deviceLoading, setDeviceLoading] = useState(false);
+  const [deviceError, setDeviceError] = useState("");
+  const [deviceInfo, setDeviceInfo] = useState("");
+  const [deviceCooldown, setDeviceCooldown] = useState(0);
+  const deviceSubmitRef = useRef(false);
+  const deviceInfoTimeoutRef = useRef(null);
+  useEffect(() => () => clearTimeout(deviceInfoTimeoutRef.current), []);
+  useEffect(() => {
+    if (deviceCooldown <= 0) return;
+    const t = setInterval(() => setDeviceCooldown(c => Math.max(0, c - 1)), 1000);
+    return () => clearInterval(t);
+  }, [deviceCooldown]);
+
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   const validateField = (field, value) => {
@@ -3879,14 +3901,31 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
         await fetchProfileAndLogin();
       } else if (result.status === 'needs_new_password') {
         setErrors({ general: "For your security you'll need to set a new password before signing in. Use \"Forgot password?\" below." });
+      } else if (result.status === 'needs_client_trust' || result.status === 'needs_second_factor') {
+        // Client Trust (unrecognized device) and real account-level MFA both
+        // funnel through the same second-factor API — only email_code is
+        // enabled on this Clerk instance, so that's the only one handled.
+        const emailFactor = result.supportedSecondFactors?.find(f => f.strategy === 'email_code');
+        if (!emailFactor) {
+          setErrors({ general: "We couldn't complete sign-in for this account. If you have two-factor authentication enabled, contact support. It isn't supported here yet." });
+          return;
+        }
+        try {
+          await signIn.prepareSecondFactor({ strategy: 'email_code', emailAddressId: emailFactor.emailAddressId });
+          setStep("verifyDevice");
+          setDeviceCooldown(30);
+        } catch (e) {
+          const clerkErr = e?.errors?.[0];
+          setErrors({ general: clerkErr?.longMessage || clerkErr?.message || "Couldn't send a verification code. Please try again." });
+        }
       } else {
-        // needs_second_factor / needs_client_trust / anything else this UI doesn't
-        // have a screen for. Retrying won't change the outcome, so say so honestly
-        // instead of looping the user through "please try again".
-        // TEMP DEBUG: pinpointing exactly which non-complete status this is in
-        // production — remove once diagnosed.
+        // Anything else this UI doesn't have a screen for (e.g. needs_first_factor
+        // via a strategy other than password). Retrying won't change the outcome,
+        // so say so honestly instead of looping the user through "please try again".
+        // TEMP DEBUG: pinpointing exactly which status this is in production —
+        // remove once confirmed this doesn't happen in practice.
         console.error('[VTRX DEBUG] signIn.create() did not complete:', { status: result?.status, result });
-        setErrors({ general: "We couldn't complete sign-in for this account. If you have two-factor authentication enabled, contact support. It isn't supported here yet." });
+        setErrors({ general: "We couldn't complete sign-in for this account. Please contact support." });
       }
     } catch (e) {
       console.error(e);
@@ -3919,6 +3958,114 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
       submitRef.current = false;
     }
   };
+
+  const verifyDevice = async () => {
+    if (deviceSubmitRef.current) return;
+    if (deviceCode.length !== 6) { setDeviceError("Please enter the full 6-digit code"); return; }
+    setDeviceLoading(true); setDeviceError(""); setDeviceInfo("");
+    deviceSubmitRef.current = true;
+    try {
+      let result;
+      try {
+        result = await signIn.attemptSecondFactor({ strategy: 'email_code', code: deviceCode });
+      } catch (e) {
+        const clerkErr = e?.errors?.[0];
+        if (clerkErr?.code === 'form_code_incorrect') {
+          setDeviceCode("");
+          setDeviceError("Incorrect code. Please try again.");
+        } else if (clerkErr?.code === 'verification_expired' || clerkErr?.code === 'verification_failed') {
+          setDeviceCode("");
+          setDeviceCooldown(0);
+          setDeviceError('This code is no longer valid. Tap "Resend code" below to get a new one.');
+        } else if (clerkErr?.code === 'too_many_attempts') {
+          setDeviceError("Too many attempts. Please wait a few seconds and try again.");
+        } else {
+          setDeviceCode("");
+          setDeviceError(clerkErr?.longMessage || clerkErr?.message || e?.message || "Invalid or expired code. Please try again.");
+        }
+        return;
+      }
+      // The device/second-factor verification itself already succeeded
+      // server-side at this point — keep setActive's own failure out of the
+      // catch above so a transient session-activation hiccup isn't mislabeled
+      // as an invalid code (which would wrongly clear an already-consumed,
+      // unrepeatable code).
+      if (result.status === 'complete') {
+        try {
+          await setActive({ session: result.createdSessionId });
+          await fetchProfileAndLogin();
+        } catch (e) {
+          setDeviceError("Verified, but we couldn't sign you in automatically. Please try logging in again.");
+        }
+      } else {
+        setDeviceError("Verification incomplete. Please try again.");
+      }
+    } finally {
+      setDeviceLoading(false);
+      deviceSubmitRef.current = false;
+    }
+  };
+
+  const resendDeviceCode = async () => {
+    if (deviceSubmitRef.current || deviceCooldown > 0 || deviceLoading) return;
+    deviceSubmitRef.current = true;
+    setDeviceLoading(true); setDeviceError(""); setDeviceInfo("");
+    try {
+      const emailFactor = signIn.supportedSecondFactors?.find(f => f.strategy === 'email_code');
+      await signIn.prepareSecondFactor({ strategy: 'email_code', emailAddressId: emailFactor?.emailAddressId });
+      setDeviceCode("");
+      setDeviceInfo("New code sent. Check your inbox (and spam folder).");
+      setDeviceCooldown(30);
+      clearTimeout(deviceInfoTimeoutRef.current);
+      deviceInfoTimeoutRef.current = setTimeout(() => setDeviceInfo(""), 5000);
+    } catch (e) {
+      const clerkErr = e?.errors?.[0];
+      setDeviceError(clerkErr?.longMessage || clerkErr?.message || e?.message || "Failed to resend code. Please try again.");
+    } finally {
+      setDeviceLoading(false);
+      deviceSubmitRef.current = false;
+    }
+  };
+
+  if (step === "verifyDevice") {
+    return (
+      <div style={{ position:"absolute",inset:0,background:"#0a0a0a",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"0 32px" }}>
+        <VTRXLogo size={28}/>
+        <div style={{ fontFamily:FONT,fontWeight:900,fontSize:22,color:"#fff",marginTop:20,marginBottom:8,textAlign:"center" }}>Verify it's you</div>
+        <div style={{ fontFamily:FONT,fontSize:14,color:"#666",textAlign:"center",lineHeight:1.6,marginBottom:32 }}>
+          This looks like a new device. We sent a 6-digit code to<br/>
+          <span style={{ color:PRIMARY,fontWeight:700 }}>{email}</span>
+        </div>
+
+        <input
+          value={deviceCode}
+          onChange={e=>setDeviceCode(e.target.value.replace(/[^0-9]/g,"").slice(0,6))}
+          placeholder="000000"
+          inputMode="numeric"
+          style={{ width:"100%",background:"rgba(255,255,255,0.06)",border:`2px solid ${deviceCode.length===6?PRIMARY:BORDER}`,borderRadius:16,padding:"18px 0",fontFamily:FONT,fontWeight:800,fontSize:28,color:"#fff",outline:"none",textAlign:"center",letterSpacing:12,marginBottom:8,boxSizing:"border-box",transition:"border-color 0.2s" }}
+        />
+
+        {deviceError && <div style={{ fontFamily:FONT,fontSize:13,color:"#EF4444",marginBottom:16,textAlign:"center",fontWeight:600 }}>{deviceError}</div>}
+        {deviceInfo && <div style={{ fontFamily:FONT,fontSize:13,color:PRIMARY,marginBottom:16,textAlign:"center",fontWeight:600 }}>{deviceInfo}</div>}
+
+        <button
+          onClick={verifyDevice}
+          disabled={deviceLoading || deviceCode.length !== 6}
+          style={{ width:"100%",padding:"16px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1.5,cursor:deviceLoading?"not-allowed":"pointer",opacity:deviceLoading||deviceCode.length!==6?0.7:1,marginBottom:16,boxShadow:`0 4px 24px ${PRIMARY}44` }}
+        >
+          {deviceLoading ? "VERIFYING..." : "VERIFY"}
+        </button>
+
+        <button onClick={resendDeviceCode} disabled={deviceCooldown > 0 || deviceLoading}
+          style={{ background:"none",border:"none",fontFamily:FONT,fontSize:13,color:deviceCooldown>0?"#555":PRIMARY,cursor:deviceCooldown>0||deviceLoading?"default":"pointer",marginBottom:12,opacity:deviceCooldown>0||deviceLoading?0.6:1 }}>
+          {deviceCooldown > 0 ? `Resend in ${deviceCooldown}s` : "Resend code"}
+        </button>
+        <button onClick={()=>{ setStep("credentials"); setDeviceCode(""); setDeviceError(""); setDeviceInfo(""); }} style={{ background:"none",border:"none",fontFamily:FONT,fontSize:13,color:"#555",cursor:"pointer" }}>
+          Back to Sign In
+        </button>
+      </div>
+    );
+  }
 
   return (
     <Shell
