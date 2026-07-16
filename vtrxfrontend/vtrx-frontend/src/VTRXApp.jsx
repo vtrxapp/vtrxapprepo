@@ -8356,7 +8356,23 @@ function SupportPage({ onBack }) {
   const { dark } = useTheme();
   const T = dark ? DARK : LIGHT;
   const [msg, setMsg] = useState(""); const [sent, setSent] = useState(false); const [openFaq, setOpenFaq] = useState(null);
+  const [sending, setSending] = useState(false); const [err, setErr] = useState("");
   const suppScrollRef = useScrollPos("support-page");
+
+  const sendMessage = async () => {
+    const trimmed = msg.trim();
+    if (!trimmed || sending) return;
+    setSending(true); setErr("");
+    try {
+      await apiCall('/support/message', { method: 'POST', body: JSON.stringify({ message: trimmed }) });
+      setSent(true); setMsg("");
+      setTimeout(() => setSent(false), 3000);
+    } catch (e) {
+      setErr("Couldn't send your message. Please try again.");
+    } finally {
+      setSending(false);
+    }
+  };
   return (
     <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column" }}>
       <div style={{ padding:"50px 18px 16px",display:"flex",alignItems:"center",gap:16,flexShrink:0 }}>
@@ -8396,11 +8412,12 @@ function SupportPage({ onBack }) {
         {/* Contact Us */}
         <div style={{ background:"#ffffff",borderRadius:20,border:"1px solid #e8e8e8",padding:"18px" }}>
           <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888888",letterSpacing:1,marginBottom:14 }}>CONTACT US</div>
-          <textarea value={msg} onChange={e=>setMsg(e.target.value)} placeholder="Describe your issue..." rows={4}
+          <textarea value={msg} onChange={e=>setMsg(e.target.value)} placeholder="Describe your issue..." rows={4} maxLength={2000} disabled={sending}
             style={{ width:"100%",background:"#ffffff",border:"1px solid #e0e0e0",borderRadius:12,padding:"12px 14px",fontFamily:FONT,fontSize:13,color:"#111",resize:"none",outline:"none",boxSizing:"border-box" }}/>
-          <button onClick={()=>{ if(msg.trim()){ setSent(true); setMsg(""); setTimeout(()=>setSent(false),3000); } }}
-            style={{ width:"100%",marginTop:12,padding:"13px 0",borderRadius:50,background:sent?"#22C55E":PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:13,color:"#fff",letterSpacing:1.5,cursor:"pointer",transition:"background 0.3s" }}>
-            {sent?"MESSAGE SENT!":"SEND MESSAGE"}
+          {err && <div style={{ fontFamily:FONT,fontSize:12,color:"#EF4444",marginTop:8,textAlign:"center" }}>{err}</div>}
+          <button onClick={sendMessage} disabled={!msg.trim()||sending}
+            style={{ width:"100%",marginTop:12,padding:"13px 0",borderRadius:50,background:sent?"#22C55E":PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:13,color:"#fff",letterSpacing:1.5,cursor:(!msg.trim()||sending)?"not-allowed":"pointer",opacity:(!msg.trim()||sending)?0.7:1,transition:"background 0.3s" }}>
+            {sent?"MESSAGE SENT!":sending?"SENDING...":"SEND MESSAGE"}
           </button>
         </div>
 
