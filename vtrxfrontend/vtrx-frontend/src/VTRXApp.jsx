@@ -11099,9 +11099,9 @@ function VTRXAppInner({ setPaymentPlan }) {
     // onboarding on failure below — a transient 401 here shouldn't force an
     // actual Clerk sign-out for a user who is genuinely still signed in.
     // A genuinely signed-in user whose profile fetch fails must not be silently
-    // treated as "never onboarded" — retry a few more times (on top of apiCall's
-    // own internal retry) before falling back.
-    const fetchProfileWithRetry = async (attemptsLeft = 3) => {
+    // treated as "never onboarded" — retry once more (on top of apiCall's own
+    // internal retry) before falling back.
+    const fetchProfileWithRetry = async (attemptsLeft = 2) => {
       try {
         return await apiCall("/users/profile", { skipAuthRedirect: true });
       } catch (err) {
@@ -11110,7 +11110,18 @@ function VTRXAppInner({ setPaymentPlan }) {
         return fetchProfileWithRetry(attemptsLeft - 1);
       }
     };
-    fetchProfileWithRetry().then(res=>{
+    // Hard ceiling on top of the retries above: apiCall() already retries
+    // internally too, so a genuinely hung backend can otherwise stack up to
+    // roughly two minutes of nested retries before the splash screen gives
+    // up. Cap the user-visible wait regardless of how those retries play
+    // out — a timed-out fetch falls through to the same "login" fallback a
+    // real failure would.
+    const PROFILE_FETCH_TIMEOUT_MS = 8000;
+    const withTimeout = (promise, ms) => Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(Object.assign(new Error("Profile fetch timed out"), { code: "SPLASH_TIMEOUT" })), ms)),
+    ]);
+    withTimeout(fetchProfileWithRetry(), PROFILE_FETCH_TIMEOUT_MS).then(res=>{
       if (res?.data?.user) {
         const u = res.data.user;
         setUser(prev=>({...prev,
