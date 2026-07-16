@@ -3859,7 +3859,7 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
       // TEMP DEBUG: pinpointing why this fetch fails in production — remove
       // once diagnosed. status 0 = never got a response at all (network/CORS/
       // DNS); any other status means the backend was reached and responded.
-      console.error('[VTRX DEBUG] /users/profile fetch failed:', { status: e?.status, code: e?.code, message: e?.message, raw: e });
+      console.error('[VTRX DEBUG] /users/profile fetch failed:', { status: e?.status, code: e?.code, message: e?.message });
       setErrors({ general: "Signed in, but we couldn't load your profile. Please try again." });
     }
   };
@@ -3924,7 +3924,7 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
         // so say so honestly instead of looping the user through "please try again".
         // TEMP DEBUG: pinpointing exactly which status this is in production —
         // remove once confirmed this doesn't happen in practice.
-        console.error('[VTRX DEBUG] signIn.create() did not complete:', { status: result?.status, result });
+        console.error('[VTRX DEBUG] signIn.create() did not complete, status:', result?.status);
         setErrors({ general: "We couldn't complete sign-in for this account. Please contact support." });
       }
     } catch (e) {
@@ -11374,7 +11374,7 @@ function VTRXAppInner({ setPaymentPlan }) {
       // TEMP DEBUG: pinpointing why this fetch fails in production — remove
       // once diagnosed. status 0 / code SPLASH_TIMEOUT = never got a response
       // in time; any other status means the backend was reached and responded.
-      console.error('[VTRX DEBUG] splash /users/profile fetch failed:', { status: e?.status, code: e?.code, message: e?.message, raw: e });
+      console.error('[VTRX DEBUG] splash /users/profile fetch failed:', { status: e?.status, code: e?.code, message: e?.message });
       afterSplash("login");
     });
   }, [clerkLoaded, isSignedIn]);
