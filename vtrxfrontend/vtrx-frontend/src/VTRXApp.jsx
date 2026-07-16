@@ -3692,6 +3692,10 @@ function ForgotPasswordPage({ onBack }) {
               style={{ background:"none",border:"none",padding:0,marginBottom:8,fontFamily:FONT,fontSize:13,fontWeight:700,color:resendCooldown>0?"#666":PRIMARY,cursor:resendCooldown>0?"default":"pointer" }}>
               {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : "Resend code"}
             </button>
+            {/* Same signIn.create() call as the initial send above (sendCode is
+                shared) — needs its own mount point in this branch too, or a
+                challenge required specifically on resend has nowhere to render. */}
+            <div id="clerk-captcha"/>
             {info && <div style={{ fontFamily:FONT,fontSize:13,color:PRIMARY,marginBottom:12,fontWeight:600 }}>{info}</div>}
             <div style={{ fontFamily:FONT,fontSize:11,fontWeight:700,color:"#888",letterSpacing:1,marginBottom:6 }}>VERIFICATION CODE</div>
             <input value={code} onChange={e=>setCode(e.target.value.replace(/[^0-9]/g,"").slice(0,6))} placeholder="6-digit code"
