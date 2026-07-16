@@ -28,6 +28,12 @@ services:
         value: https://exercise-api.ymove.app/api/v2
       - key: DATABASE_URL
         sync: false
+      # Direct (non-pooled) connection, used only by prisma generate/db push
+      # during the build so deploys don't compete with the live app for a slot
+      # in the pooler's connection cap. Must be set before this deploys, or
+      # every build fails immediately (see prisma/schema.prisma's directUrl).
+      - key: DIRECT_URL
+        sync: false
       - key: FRONTEND_URL
         sync: false
       - key: ALLOWED_VERCEL_ORIGINS
