@@ -3827,13 +3827,17 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
       const u = profileRes?.data?.user || {};
       if (u.id) setUser(prev => ({...prev, ...u}));
       onLogin(u);
-    } catch (_) {
+    } catch (e) {
       // Same fetch failure as the mount effect above (stale token, network blip,
       // backend hiccup right after a fresh sign-in) — don't call onLogin({}) here
       // either, or a real returning user gets treated as brand new and routed
       // into onboarding right after successfully authenticating. Surface an
       // error instead of failing silently, since unlike the mount effect this
       // runs after a deliberate user action (submitting the form).
+      // TEMP DEBUG: pinpointing why this fetch fails in production — remove
+      // once diagnosed. status 0 = never got a response at all (network/CORS/
+      // DNS); any other status means the backend was reached and responded.
+      console.error('[VTRX DEBUG] /users/profile fetch failed:', { status: e?.status, code: e?.code, message: e?.message, raw: e });
       setErrors({ general: "Signed in, but we couldn't load your profile. Please try again." });
     }
   };
@@ -3879,6 +3883,9 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
         // needs_second_factor / needs_client_trust / anything else this UI doesn't
         // have a screen for. Retrying won't change the outcome, so say so honestly
         // instead of looping the user through "please try again".
+        // TEMP DEBUG: pinpointing exactly which non-complete status this is in
+        // production — remove once diagnosed.
+        console.error('[VTRX DEBUG] signIn.create() did not complete:', { status: result?.status, result });
         setErrors({ general: "We couldn't complete sign-in for this account. If you have two-factor authentication enabled, contact support. It isn't supported here yet." });
       }
     } catch (e) {
@@ -11210,13 +11217,17 @@ function VTRXAppInner({ setPaymentPlan }) {
           if (s.totalWorkouts)                  setWorkoutsTotal(s.totalWorkouts);
         }
       }).catch(()=>{});
-    }).catch(()=>{
+    }).catch((e)=>{
       // fetchProfileWithRetry has already exhausted its retries — this is a
       // genuinely signed-in Clerk user (isSignedIn was already checked above)
       // whose profile fetch persistently failed. Route to the login form, not
       // the marketing/onboarding carousel: OAuth callbacks and refreshes land
       // here too, and treating an authenticated user as a brand-new visitor
       // is the same "silently assume new user" bug fixed elsewhere in this file.
+      // TEMP DEBUG: pinpointing why this fetch fails in production — remove
+      // once diagnosed. status 0 / code SPLASH_TIMEOUT = never got a response
+      // in time; any other status means the backend was reached and responded.
+      console.error('[VTRX DEBUG] splash /users/profile fetch failed:', { status: e?.status, code: e?.code, message: e?.message, raw: e });
       afterSplash("login");
     });
   }, [clerkLoaded, isSignedIn]);
