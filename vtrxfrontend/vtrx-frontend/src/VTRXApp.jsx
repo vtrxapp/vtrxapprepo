@@ -287,6 +287,32 @@ const QUOTES = [
   { text: "The only bad workout is the one that didn't happen.", author: "Unknown" },
   { text: "Don't stop when you're tired. Stop when you're done.", author: "David Goggins" },
   { text: "Take care of your body. It's the only place you have to live.", author: "Jim Rohn" },
+  { text: "The only place success comes before work is in the dictionary.", author: "Vince Lombardi" },
+  { text: "Motivation is what gets you started. Habit is what keeps you going.", author: "Jim Ryun" },
+  { text: "If it doesn't challenge you, it doesn't change you.", author: "Fred DeVito" },
+  { text: "Fitness is not about being better than someone else. It's about being better than you used to be.", author: "Khloé Kardashian" },
+  { text: "It's the repetition of affirmations that leads to belief. And once that belief becomes a deep conviction, things begin to happen.", author: "Muhammad Ali" },
+  { text: "I fear not the man who has practiced 10,000 kicks once, but I fear the man who has practiced one kick 10,000 times.", author: "Bruce Lee" },
+  { text: "Champions keep playing until they get it right.", author: "Billie Jean King" },
+  { text: "It's what you learn after you know it all that counts.", author: "John Wooden" },
+  { text: "Never let the fear of striking out keep you from playing the game.", author: "Babe Ruth" },
+  { text: "It's going to be a journey. It's not a sprint to get in shape.", author: "Kerri Walsh Jennings" },
+  { text: "I've failed over and over and over again in my life. And that is why I succeed.", author: "Michael Jordan" },
+  { text: "You miss 100% of the shots you don't take.", author: "Wayne Gretzky" },
+  { text: "You don't have to be extreme, just consistent.", author: "Unknown" },
+  { text: "A one-hour workout is 4% of your day. No excuses.", author: "Unknown" },
+  { text: "What seems impossible today will one day become your warm-up.", author: "Unknown" },
+  { text: "The difference between the impossible and the possible lies in a person's determination.", author: "Tommy Lasorda" },
+  { text: "The clock is ticking. Are you becoming the person you want to be?", author: "Greg Plitt" },
+  { text: "Today I will do what others won't, so tomorrow I can accomplish what others can't.", author: "Jerry Rice" },
+  { text: "I don't focus on what I'm up against. I focus on my goals and I try to ignore the rest.", author: "Venus Williams" },
+  { text: "I really think a champion is defined not by their wins but by how they can recover when they fall.", author: "Serena Williams" },
+  { text: "It does not matter how slowly you go as long as you do not stop.", author: "Confucius" },
+  { text: "Sore today, strong tomorrow.", author: "Unknown" },
+  { text: "Your body can stand almost anything. It's your mind you have to convince.", author: "Unknown" },
+  { text: "A year from now you may wish you had started today.", author: "Karen Lamb" },
+  { text: "When you want to succeed as bad as you want to breathe, then you'll be successful.", author: "Eric Thomas" },
+  { text: "Doubt kills more dreams than failure ever will.", author: "Rikki Rogers" },
 ];
 
 const MEALS = [
@@ -304,7 +330,12 @@ const MEALS = [
 // another let mealIdx point at two different recipes for the same number.
 function getMealPool(user) {
   const restrictions = user?.dietaryRestrictions || [];
-  const goal         = user?.nutritionGoal || '';
+  // Was user?.nutritionGoal || '' — silently skipped tailoring for anyone
+  // who set a primary fitness goal but never separately answered the
+  // nutrition-specific onboarding question (the common case), always
+  // falling through to the unsorted default below. resolveNutritionGoal()
+  // already exists precisely to fall back onto that primary goal.
+  const goal = resolveNutritionGoal(user);
   const eligible = MEALS.filter(m => {
     const text = ((m.name || '') + ' ' + (m.ingredients || []).join(' ')).toLowerCase();
     if (restrictions.includes('vegan')       && /chicken|beef|pork|fish|egg|dairy|milk|cheese/i.test(text)) return false;
@@ -493,7 +524,6 @@ const AI_SUGGESTIONS = {
   low:   { title:"Light Day Fueling",        tip:"Easy movement today: keep meals light but protein-rich. Anti-inflammatory foods like salmon help.",                 rec:[0,6,11] },
   okay:  { title:"Steady Day Nutrition",     tip:"Balanced macros support steady energy. Aim for even distribution across 3–4 meals throughout the day.",              rec:[1,2,3]  },
   good:  { title:"Performance Nutrition",    tip:"You're training hard, so fuel accordingly. High protein post-workout and complex carbs to sustain energy.",             rec:[0,1,9]  },
-  peak:  { title:"Max Effort Nutrition",     tip:"Carb-loading the night before helps. Post-workout window is critical: eat within 30 min for optimal recovery.",     rec:[0,9,10] },
 };
 
 // Rotates daily (Mon–Sun). Each entry drives the VTRX Smart Nutrition banner.
@@ -576,7 +606,6 @@ const WORKOUTS = {
   low:   { name: "Light Cardio",    type: "CARDIO",    target: "Cardiovascular System, Core",         mins: 20, cal: 150, exercises: 5  },
   okay:  { name: "Chest & Triceps", type: "STRENGTH",  target: "Pectorals, Triceps, Anterior Deltoids", mins: 30, cal: 300, exercises: 8  },
   good:  { name: "Full Body Power", type: "STRENGTH",  target: "Full Body, Compound Movements",       mins: 40, cal: 380, exercises: 9  },
-  peak:  { name: "Max Effort Day",  type: "STRENGTH",  target: "All Major Muscle Groups",             mins: 55, cal: 480, exercises: 10 },
 };
 
 // SVG face icons for energy levels — no emojis
@@ -595,12 +624,11 @@ const ENERGY_LEVELS = [
   { key: "low",   faceType: "low",   label: "Getting Through It", sub: "A light push: you can do this",        color: "#F97316", bg: "rgba(249,115,22,0.1)" },
   { key: "okay",  faceType: "okay",  label: "Feeling Okay",       sub: "Standard session ready for you",        color: "#EAB308", bg: "rgba(234,179,8,0.1)"  },
   { key: "good",  faceType: "good",  label: "Feeling Good",       sub: "Let's push a little harder today",      color: "#22C55E", bg: "rgba(34,197,94,0.1)"  },
-  { key: "peak",  faceType: "peak",  label: "Let's Go Hard",      sub: "Maximum effort: this is your day",     color: PRIMARY,   bg: "rgba(0,163,255,0.1)"  },
 ];
 
 // How today's mood check-in scales an AI-generated plan session for display —
-// one-directional (only ever trims, never adds to, what's programmed). "okay",
-// "good" and "peak" (or no mood set yet) render the session exactly as planned;
+// one-directional (only ever trims, never adds to, what's programmed). "okay"
+// and "good" (or no mood set yet) render the session exactly as planned;
 // the 4-week plan itself, its progressive-overload sets-per-week logic, and
 // session ordering are never touched, only what's shown/logged for today.
 const MOOD_SESSION_ADAPTATION = {
@@ -4982,11 +5010,23 @@ function ReadyScreen({ onFinish }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // ── MOOD SHEET ───────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
-function MoodSheet({ visible, onSelect }) {
+function MoodSheet({ visible, onSelect, workoutPreviews }) {
   const[step,setStep]=useState(0);const[picked,setPicked]=useState(null);
   const choose=(key)=>{setPicked(key);setStep(1);};
   const lvl=picked?ENERGY_LEVELS.find(l=>l.key===picked):null;
-  const w=picked?WORKOUTS[picked]:null;
+  // workoutPreviews carries today's *actual* plan session, mood-adapted per
+  // option — falls back to the static table only if a caller ever renders
+  // this without it. The two possible shapes (a real plan session's
+  // duration/calories/exercises-array vs. the static table's mins/cal/
+  // exercises-count) are normalised the same way Dashboard's own workout
+  // card already does, just below.
+  const rawW = picked ? (workoutPreviews?.[picked] || WORKOUTS[picked]) : null;
+  const w = rawW ? {
+    ...rawW,
+    mins: rawW.duration ?? rawW.mins ?? 0,
+    cal:  rawW.calories ?? rawW.cal  ?? 0,
+    exercises: Array.isArray(rawW.exercises) ? rawW.exercises.length : (rawW.exercises || 0),
+  } : null;
   const hr=new Date().getHours();const greet=hr<12?"morning":hr<17?"afternoon":"evening";
   return (
     <>
@@ -5045,36 +5085,6 @@ function MoodSheet({ visible, onSelect }) {
 
 // ── TYPE COLORS ──────────────────────────────────────────────────────────────
 const TYPE_LABEL = { strength: "Strength", cardio: "Cardio", hiit: "HIIT", rest: "Rest" };
-
-// ── CALENDAR DATA ────────────────────────────────────────────────────────────
-// Workout types keyed by day of month (Dec 2024)
-const CAL_DATA = {
-  2:"strength", 4:"cardio", 5:"strength", 7:"strength",
-  9:"cardio", 10:"strength", 12:"strength", 14:"hiit",
-  16:"cardio", 17:"strength", 19:"strength", 21:"hiit",
-  22:"strength", 23:"hiit", 24:"cardio", 26:"strength", 28:"strength", 31:"strength"
-};
-
-const DAY_STATS = {
-  2:  { name:"Chest & Triceps",  type:"strength", duration:45, vol:"2,100kg", exercises:6, cal:320 },
-  4:  { name:"HIIT Cardio",      type:"cardio",   duration:25, vol:"—",        exercises:5, cal:380 },
-  5:  { name:"Back & Biceps",    type:"strength", duration:50, vol:"2,400kg", exercises:7, cal:340 },
-  7:  { name:"Leg Day",          type:"strength", duration:55, vol:"3,200kg", exercises:6, cal:420 },
-  9:  { name:"Steady State Run", type:"cardio",   duration:30, vol:"—",        exercises:1, cal:290 },
-  10: { name:"Shoulder & Core",  type:"strength", duration:40, vol:"1,800kg", exercises:6, cal:300 },
-  12: { name:"Full Body",        type:"strength", duration:60, vol:"2,800kg", exercises:8, cal:460 },
-  14: { name:"HIIT Circuit",     type:"hiit",     duration:30, vol:"—",        exercises:6, cal:400 },
-  16: { name:"Cycling",          type:"cardio",   duration:40, vol:"—",        exercises:1, cal:330 },
-  17: { name:"Push Day",         type:"strength", duration:45, vol:"2,200kg", exercises:7, cal:350 },
-  19: { name:"Pull Day",         type:"strength", duration:45, vol:"2,500kg", exercises:7, cal:360 },
-  21: { name:"Tabata HIIT",      type:"hiit",     duration:25, vol:"—",        exercises:8, cal:420 },
-  22: { name:"Upper Body",       type:"strength", duration:50, vol:"2,600kg", exercises:8, cal:382 },
-  23: { name:"HIIT Intervals",   type:"hiit",     duration:30, vol:"—",        exercises:5, cal:390 },
-  24: { name:"Rowing",           type:"cardio",   duration:35, vol:"—",        exercises:1, cal:310 },
-  26: { name:"Lower Body",       type:"strength", duration:55, vol:"3,100kg", exercises:6, cal:440 },
-  28: { name:"Chest & Shoulders",type:"strength", duration:45, vol:"2,300kg", exercises:7, cal:360 },
-  31: { name:"New Year Strength",type:"strength", duration:60, vol:"2,900kg", exercises:8, cal:480 },
-};
 
 // ── EXERCISE LIBRARY ─────────────────────────────────────────────────────────
 const EXERCISE_LIBRARY = {
@@ -10123,8 +10133,6 @@ function useTypewriter(text, active) {
   return {displayed,done};
 }
 
-const AI_TEXT = {empty:"Your body needed rest today, and that's wisdom, not weakness. Recovery sessions reduce cortisol by up to 26% and accelerate muscle repair.",low:"Light cardio completed. You burned 150 calories and kept your cardiovascular system active on a tough day.",okay:"Solid chest and triceps session. Your pushing muscles are showing clear progressive strength gains. VTRX recommends adding 2.5kg to your bench press next session.",good:"Outstanding full-body session. Your output today was 22% above your weekly average. You're ready to advance your squat weight next week.",peak:"MAX EFFORT achieved. Today's session ranks in your top 10% of all-time performance. Eat your post-workout meal within 45 minutes."};
-
 function StatIcon({ type, color }) {
   const s = { width:13, height:13, viewBox:"0 0 24 24", fill:"none", stroke:color||"currentColor", strokeWidth:"2.5" };
   if (type==="clock")   return <svg {...s}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
@@ -10204,23 +10212,6 @@ function getTailoredWorkout(user, energyKey) {
     return { ...base, name:"Advanced Power",    target:"All Major Muscle Groups",         mins:60, cal:480, exercises:10 };
   }
   return base;
-}
-
-// ── Tailor meal plan based on user goal ───────────────────────────────────────
-function getTailoredMealOptions(user) {
-  const goal = (user?.goal || "").toLowerCase();
-  if (goal.includes("weight") || goal.includes("fat") || goal.includes("loss")) {
-    return {
-      breakfast: MEAL_OPTIONS.breakfast.filter((_,i)=>i!==0), // skip highest cal
-      lunch:     MEAL_OPTIONS.lunch,
-      snack:     MEAL_OPTIONS.snack,
-      dinner:    MEAL_OPTIONS.dinner.filter((_,i)=>i!==3),    // skip beef
-    };
-  }
-  if (goal.includes("muscle") || goal.includes("bulk") || goal.includes("gain")) {
-    return MEAL_OPTIONS; // all options fine for muscle gain
-  }
-  return MEAL_OPTIONS;
 }
 
 
@@ -10547,6 +10538,11 @@ function WaterTrackerCard() {
   const [saving,  setSaving]  = useState(false);
   const [err,     setErr]     = useState("");
   const [unit,    setUnit]    = useState(() => getUnitPref("vtrx_water_unit", "oz"));
+  const [showHistory, setShowHistory]   = useState(false);
+  const [history,     setHistory]       = useState(null); // null = not yet loaded
+  const [historyErr,  setHistoryErr]    = useState("");
+  const historyTriggerRef = useRef(null);
+  const historyPanelRef   = useRef(null);
 
   useEffect(() => {
     apiCall('/users/water')
@@ -10554,6 +10550,55 @@ function WaterTrackerCard() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  // Dialog semantics for the history sheet: move focus in on open, trap Tab
+  // navigation inside it, close on Escape, and give focus back to whatever
+  // opened it — without these, keyboard/screen-reader users could keep
+  // interacting with the dashboard hidden behind the backdrop.
+  useEffect(() => {
+    if (!showHistory) return;
+    const panel = historyPanelRef.current;
+    panel?.focus();
+
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowHistory(false);
+        return;
+      }
+      if (e.key !== 'Tab' || !panel) return;
+      const focusables = panel.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      if (!focusables.length) return;
+      const first = focusables[0];
+      const last  = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      historyTriggerRef.current?.focus();
+    };
+  }, [showHistory]);
+
+  const openHistory = () => {
+    // Refetch on every open rather than caching after the first load — a
+    // failed attempt previously left history as [] (not null), which is
+    // indistinguishable from "loaded, no data" and silently blocked any
+    // retry; a successful load also went stale once today's own entry
+    // changed via the +/- steppers below.
+    setShowHistory(true);
+    setHistory(null);
+    setHistoryErr("");
+    apiCall('/users/water/history?days=14')
+      .then(d => setHistory(Array.isArray(d?.data?.logs) ? d.data.logs : []))
+      .catch(() => { setHistoryErr("Couldn't load your history. Try again."); setHistory([]); });
+  };
 
   const setLevel = async (level) => {
     // Clamp to the backend's actual valid range, not the daily goal — if the
@@ -10586,16 +10631,16 @@ function WaterTrackerCard() {
   return (
     <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"12px 16px",marginBottom:13,animation:"fadeUp 0.4s ease 0.12s both" }}>
       <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",gap:10 }}>
-        <div style={{ display:"flex",alignItems:"center",gap:9,minWidth:0 }}>
+        <button ref={historyTriggerRef} onClick={openHistory} disabled={loading} aria-label="View past water intake"
+          style={{ display:"flex",alignItems:"center",gap:9,minWidth:0,background:"none",border:"none",padding:0,textAlign:"left",cursor:loading?"default":"pointer" }}>
           <WaterDroplet filled={glasses>0}/>
           <div style={{ minWidth:0 }}>
             <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff" }}>Water Intake</div>
-            <button onClick={toggleUnit} disabled={loading}
-              style={{ background:"none",border:"none",padding:0,cursor:loading?"default":"pointer",fontFamily:FONT,fontWeight:600,fontSize:11,color:"#888" }}>
-              {loading ? "…" : `${waterAmountLabel(glasses, unit)} of ${waterAmountLabel(WATER_GOAL, unit)} · tap to switch ${unit === "oz" ? "L" : "oz"}`}
-            </button>
+            <div style={{ fontFamily:FONT,fontWeight:600,fontSize:11,color:"#888" }}>
+              {loading ? "…" : `${waterAmountLabel(glasses, unit)} of ${waterAmountLabel(WATER_GOAL, unit)} · tap to view history`}
+            </div>
           </div>
-        </div>
+        </button>
         <div style={{ display:"flex",alignItems:"center",gap:8,flexShrink:0 }}>
           <button aria-label="Remove a glass" disabled={atMin} onClick={() => setLevel(glasses - 1)}
             style={{ width:26,height:26,borderRadius:"50%",border:`1px solid ${BORDER}`,background:"none",color:atMin?"#444":"#fff",fontFamily:FONT,fontWeight:700,fontSize:15,cursor:atMin?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,padding:0 }}>−</button>
@@ -10607,12 +10652,50 @@ function WaterTrackerCard() {
       <div style={{ height:4,background:"rgba(255,255,255,0.08)",borderRadius:2,marginTop:10,overflow:"hidden" }}>
         <div style={{ width:`${pct}%`,height:"100%",background:PRIMARY,borderRadius:2,transition:"width 0.25s ease" }}/>
       </div>
+      <button onClick={toggleUnit} disabled={loading}
+        style={{ background:"none",border:"none",padding:0,marginTop:8,cursor:loading?"default":"pointer",fontFamily:FONT,fontWeight:600,fontSize:10.5,color:"#555" }}>
+        {loading ? "" : `Switch to ${unit === "oz" ? "L" : "oz"}`}
+      </button>
       {err && <div style={{ fontFamily:FONT,fontSize:11,color:"#EF4444",marginTop:8,textAlign:"center" }}>{err}</div>}
+
+      {showHistory && (
+        <>
+          <div onClick={()=>setShowHistory(false)} style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.82)",zIndex:200 }}/>
+          <div ref={historyPanelRef} role="dialog" aria-modal="true" aria-labelledby="water-history-heading" tabIndex={-1}
+            style={{ position:"fixed",bottom:0,left:0,right:0,maxWidth:430,margin:"0 auto",background:"#131313",borderRadius:"24px 24px 0 0",padding:"14px 22px 40px",zIndex:201,border:`1px solid ${BORDER}`,borderBottom:"none",maxHeight:"70vh",display:"flex",flexDirection:"column",outline:"none" }}>
+            <div style={{ display:"flex",justifyContent:"center",marginBottom:14,flexShrink:0 }}><div style={{ width:40,height:4,borderRadius:2,background:"#2a2a2a" }}/></div>
+            <div id="water-history-heading" style={{ fontFamily:FONT,fontWeight:900,fontSize:18,color:"#fff",marginBottom:2,flexShrink:0 }}>Water Intake History</div>
+            <div style={{ fontFamily:FONT,fontSize:12.5,color:"#666",marginBottom:16,flexShrink:0 }}>Last 14 days · goal is {WATER_GOAL} glasses a day</div>
+            <div style={{ overflowY:"auto",flex:1 }}>
+              {history === null ? (
+                <div style={{ fontFamily:FONT,fontSize:13,color:"#666",textAlign:"center",padding:"20px 0" }}>Loading…</div>
+              ) : historyErr ? (
+                <div style={{ fontFamily:FONT,fontSize:13,color:"#EF4444",textAlign:"center",padding:"20px 0" }}>{historyErr}</div>
+              ) : history.length === 0 ? (
+                <div style={{ fontFamily:FONT,fontSize:13,color:"#666",textAlign:"center",padding:"20px 0" }}>No water logged yet in the last 14 days.</div>
+              ) : history.map(day => {
+                const dayPct = Math.min(100, Math.round((day.glasses / WATER_GOAL) * 100));
+                const label = new Date(day.date+'T00:00:00Z').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',timeZone:'UTC'});
+                return (
+                  <div key={day.date} style={{ display:"flex",alignItems:"center",gap:12,padding:"9px 0",borderBottom:`1px solid ${BORDER}` }}>
+                    <div style={{ width:92,flexShrink:0,fontFamily:FONT,fontWeight:600,fontSize:12.5,color:"#ccc" }}>{label}</div>
+                    <div style={{ flex:1,height:6,background:"rgba(255,255,255,0.08)",borderRadius:3,overflow:"hidden" }}>
+                      <div style={{ width:`${dayPct}%`,height:"100%",background:day.glasses>=WATER_GOAL?"#22C55E":PRIMARY,borderRadius:3 }}/>
+                    </div>
+                    <div style={{ width:56,flexShrink:0,textAlign:"right",fontFamily:FONT,fontWeight:700,fontSize:12.5,color:day.glasses>=WATER_GOAL?"#22C55E":"#fff" }}>{waterAmountLabel(day.glasses, unit)}</div>
+                  </div>
+                );
+              })}
+            </div>
+            <button onClick={()=>setShowHistory(false)} style={{ width:"100%",padding:"13px 0",borderRadius:50,background:"transparent",border:`1px solid ${BORDER}`,fontFamily:FONT,fontWeight:600,fontSize:13,color:"#888",cursor:"pointer",marginTop:16,flexShrink:0 }}>Close</button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
 
-function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, streakDay=1, energyKey, onMoodSelect, weeklyWorkoutDays=0, weeklyAvgCal=null, weeklyAvgMin=null, apiWorkout=null, notifCount=0, onNotifReset, onLogout }) {
+function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, streakDay=1, energyKey, onMoodSelect, weeklyWorkoutDays=0, weeklyAvgCal=null, weeklyAvgMin=null, apiWorkout=null, moodWorkoutPreviews=null, notifCount=0, onNotifReset, onLogout }) {
   const { dark } = useTheme();
   const { user, profileImg, isPremium } = useUser();
   const [trialEndedDismissed, setTrialEndedDismissed] = useState(false);
@@ -10698,7 +10781,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
 
   return (
     <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column" }}>
-      <MoodSheet visible={!energyKey||showMood} onSelect={(k)=>{ onMoodSelect&&onMoodSelect(k); setShowMood(false); }}/>
+      <MoodSheet visible={!energyKey||showMood} onSelect={(k)=>{ onMoodSelect&&onMoodSelect(k); setShowMood(false); }} workoutPreviews={moodWorkoutPreviews}/>
 
       {showNotifs&&(
         <div style={{ position:"absolute",inset:0,zIndex:80,animation:"slideR 0.36s ease both" }}>
@@ -10721,14 +10804,14 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
           </div>
         </div>
         <div style={{ display:"flex",gap:9 }}>
-          <button onClick={()=>setShowNotifs(true)} style={{ width:38,height:38,borderRadius:"50%",background:hasUnread?PRIMARY:CARD,border:`1px solid ${hasUnread?PRIMARY:BORDER}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",position:"relative",transition:"all 0.25s" }}>
+          <button aria-label="Notifications" onClick={()=>setShowNotifs(true)} style={{ width:38,height:38,borderRadius:"50%",background:hasUnread?PRIMARY:CARD,border:`1px solid ${hasUnread?PRIMARY:BORDER}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",position:"relative",transition:"all 0.25s" }}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={hasUnread?"#fff":"#888"} strokeWidth="1.8">
               <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/>
               <path d="M13.73 21a2 2 0 01-3.46 0"/>
             </svg>
             {hasUnread&&<div style={{ position:"absolute",top:4,right:4,width:8,height:8,borderRadius:"50%",background:"#fff",border:`1.5px solid ${PRIMARY}` }}/>}
           </button>
-          <button onClick={()=>setShowFreezeSheet(p=>!p)} style={{ width:38,height:38,borderRadius:"50%",background:freezeStatus?.frozenToday?"#0a1f0a":showFreezeSheet?PRIMARY+"22":CARD,border:"1px solid "+(freezeStatus?.frozenToday?"#22C55E55":showFreezeSheet?PRIMARY:BORDER),display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.25s" }}>
+          <button aria-label="Streak Freeze" onClick={()=>setShowFreezeSheet(p=>!p)} style={{ width:38,height:38,borderRadius:"50%",background:freezeStatus?.frozenToday?"#0a1f0a":showFreezeSheet?PRIMARY+"22":CARD,border:"1px solid "+(freezeStatus?.frozenToday?"#22C55E55":showFreezeSheet?PRIMARY:BORDER),display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.25s" }}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={freezeStatus?.frozenToday?"#22C55E":showFreezeSheet?PRIMARY:"#888"} strokeWidth="1.8">
               <line x1="12" y1="2" x2="12" y2="22"/>
               <path d="M17 7l-5-5-5 5"/>
@@ -10738,7 +10821,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
               <path d="M17 7l5 5-5 5"/>
             </svg>
           </button>
-          <button onClick={()=>setShowProfile(true)} style={{ width:38,height:38,borderRadius:"50%",background:CARD,border:`1px solid ${BORDER}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}>
+          <button aria-label="Profile" onClick={()=>setShowProfile(true)} style={{ width:38,height:38,borderRadius:"50%",background:CARD,border:`1px solid ${BORDER}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="1.8"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
           </button>
         </div>
@@ -10967,10 +11050,22 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
                   <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff",marginBottom:8 }}>No Freezes Left</div>
                   <div style={{ fontFamily:FONT,fontSize:13.5,color:"#888",lineHeight:1.65 }}>
                     You've used all {freezeStatus?.cap ?? 1} of your Streak Freezes this month.
-                    {freezeStatus?.refillsOn ? ` More on ${new Date(freezeStatus.refillsOn).toLocaleDateString('en-US',{month:'short',day:'numeric'})}.` : ''}
                     {!isPremium ? ' Premium gets 3 a month instead of 1.' : ''}
                   </div>
                 </>
+              )}
+              {/* Always visible regardless of which state above is showing —
+                  "last used" and "resets on" are useful context either way,
+                  not just when freezes have run out. */}
+              {(freezeStatus?.frozenDates?.length > 0 || freezeStatus?.refillsOn) && (
+                <div style={{ fontFamily:FONT,fontSize:11.5,color:"#555",marginTop:10,lineHeight:1.6 }}>
+                  {freezeStatus?.frozenDates?.length > 0 && (
+                    <div>Last used {new Date(freezeStatus.frozenDates[0]+'T00:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'})}</div>
+                  )}
+                  {freezeStatus?.refillsOn && (
+                    <div>Resets {new Date(freezeStatus.refillsOn).toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'})}</div>
+                  )}
+                </div>
               )}
               {freezeError && <div style={{ fontFamily:FONT,fontSize:12,color:"#EF4444",marginTop:10 }}>{freezeError}</div>}
             </div>
@@ -11168,7 +11263,12 @@ function VTRXAppInner({ setPaymentPlan }) {
     try {
       const saved = JSON.parse(localStorage.getItem("vtrx_mood")||"{}");
       const today = new Date().toLocaleDateString('en-CA');
-      return saved.date===today ? saved.key : null; // null = show MoodSheet
+      if (saved.date !== today) return null; // null = show MoodSheet
+      // A key saved before an energy level was retired (e.g. the old "peak"
+      // option) would otherwise stick around in a signed-in user's
+      // localStorage indefinitely — fall back to re-prompting instead of
+      // carrying a mood the picker no longer offers.
+      return ENERGY_LEVELS.some(l => l.key === saved.key) ? saved.key : null;
     } catch(_e){ return null; }
   });
   const [notifCount,    setNotifCount]    = useState(0);
@@ -11700,9 +11800,14 @@ function VTRXAppInner({ setPaymentPlan }) {
 
   if (phase !== "dashboard") return null;
 
-  const buildSessionWorkout = (session, pos, total, applyMood=false) => {
+  // moodKey: which ENERGY_LEVELS key's adaptation factors to apply, or null/
+  // undefined for the session exactly as programmed. Takes an explicit key
+  // (rather than closing over the committed energyKey) so callers can also
+  // preview a *hypothetical* mood — e.g. "what would today look like if I
+  // picked Feeling Good" — without actually committing to it.
+  const buildSessionWorkout = (session, pos, total, moodKey=null) => {
     const muscleGroups = [...new Set((session.exercises||[]).map(e=>e.muscleGroup).filter(Boolean))];
-    const adaptation = applyMood ? (MOOD_SESSION_ADAPTATION[energyKey] || null) : null;
+    const adaptation = moodKey ? (MOOD_SESSION_ADAPTATION[moodKey] || null) : null;
     const rawExercises = session.exercises || [];
     // Trim trailing (accessory) exercises first, then scale sets on what's left —
     // never drop below 1 exercise regardless of how low energy is today.
@@ -11724,11 +11829,14 @@ function VTRXAppInner({ setPaymentPlan }) {
       exercises,
       dayLabel: `Day ${pos + 1}`, fromPlan: true,
       planSessionIdx: pos, totalSessions: total,
-      moodAdapted: adaptation ? energyKey : null,
+      moodAdapted: adaptation ? moodKey : null,
     };
   };
 
-  const planWorkout = (() => {
+  // Today's raw plan session (pre-mood-adaptation), shared by planWorkout
+  // below and by the mood-picker's per-option previews so both derive today's
+  // actual workout from the same source instead of a static lookup table.
+  const todaySessionInfo = (() => {
     if (!activePlan?.plan) return null;
     const week = activePlan.plan.weeks?.[activePlan.weekNumber - 1];
     const trainingSessions = (week?.sessions || []).filter(s => !s.isRestDay);
@@ -11737,8 +11845,24 @@ function VTRXAppInner({ setPaymentPlan }) {
     const origIdx = sessionOrder[pos] ?? pos;
     const session = trainingSessions[origIdx];
     if (!session) return null;
-    return buildSessionWorkout(session, pos, trainingSessions.length, true);
+    return { session, pos, total: trainingSessions.length };
   })();
+
+  const planWorkout = todaySessionInfo
+    ? buildSessionWorkout(todaySessionInfo.session, todaySessionInfo.pos, todaySessionInfo.total, energyKey)
+    : null;
+
+  // What today would actually look like under each selectable mood — shown
+  // in the mood picker before the user commits to one. Derived from the same
+  // real plan session as planWorkout (via buildSessionWorkout) whenever one
+  // exists; only falls back to the goal/level-tailored estimate used
+  // elsewhere on the dashboard when there's no active plan to preview from.
+  const moodWorkoutPreviews = Object.fromEntries(ENERGY_LEVELS.map(l => [
+    l.key,
+    todaySessionInfo
+      ? buildSessionWorkout(todaySessionInfo.session, todaySessionInfo.pos, todaySessionInfo.total, l.key)
+      : getTailoredWorkout(user, l.key),
+  ]));
 
   // Full week in the user's current order, for the Workouts page — shows
   // every session (done/current/upcoming) so the user can reorder what's
@@ -11756,7 +11880,7 @@ function VTRXAppInner({ setPaymentPlan }) {
         position:  pos,
         // Mood only ever adapts today's session — done sessions already
         // happened, and upcoming ones will get their own day's check-in.
-        workout:   buildSessionWorkout(session, pos, trainingSessions.length, pos === currentPos),
+        workout:   buildSessionWorkout(session, pos, trainingSessions.length, pos === currentPos ? energyKey : null),
         isDone:    pos < currentPos,
         isCurrent: pos === currentPos,
       };
@@ -12008,6 +12132,7 @@ function VTRXAppInner({ setPaymentPlan }) {
             weeklyAvgCal={weeklyAvgCal}
             weeklyAvgMin={weeklyAvgMin}
             apiWorkout={planWorkout || apiWorkout}
+            moodWorkoutPreviews={moodWorkoutPreviews}
             scrollRef={dashScrollRef}
             mealIdx={mealIdx}
             setMealIdx={setMealIdx}
