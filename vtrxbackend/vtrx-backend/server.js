@@ -108,6 +108,24 @@ const aiLimiter = rateLimit({
   message: { success: false, message: 'AI request limit reached. Try again in an hour.' },
 });
 
+// Render's own request-forwarding layer strips a leading "/api" from every
+// incoming request before it reaches this process — confirmed via this
+// server's own request log (morgan below logs "/users/profile" for a request
+// the browser's Network tab confirms was sent as "/api/users/profile", and
+// this file has no other rewriting logic that could account for it). Every
+// route in this app is mounted under /api/*, so without this, none of them
+// would ever match on the deployed service. Restoring the prefix here is a
+// no-op for any request that already has it (nothing double-prefixes), so
+// this is safe regardless of whether the stripping is happening for every
+// request or only some. /health is Render's own health-check path and is
+// requested bare on both ends — left untouched.
+app.use((req, res, next) => {
+  if (req.path !== '/health' && !req.path.startsWith('/api/') && req.path !== '/api') {
+    req.url = '/api' + req.url;
+  }
+  next();
+});
+
 app.use('/api/', limiter);
 app.use('/api/ai/',         aiLimiter);
 app.use('/api/auth/',       authLimiter);
