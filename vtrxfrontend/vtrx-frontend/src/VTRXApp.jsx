@@ -11321,7 +11321,7 @@ function VTRXAppInner({ setPaymentPlan }) {
     const PROFILE_FETCH_TIMEOUT_MS = 8000;
     const withTimeout = (promise, ms) => Promise.race([
       promise,
-      new Promise((_, reject) => setTimeout(() => { cancelled = true; reject(Object.assign(new Error("Profile fetch timed out"), { code: "SPLASH_TIMEOUT" })); }, ms)),
+      new Promise((_, reject) => setTimeout(() => { cancelled = true; reject(Object.assign(new Error("Profile fetch timed out"), { code: "SPLASH_TIMEOUT", status: 0 })); }, ms)),
     ]);
     withTimeout(fetchProfileWithRetry(), PROFILE_FETCH_TIMEOUT_MS).then(res=>{
       if (res?.data?.user) {
