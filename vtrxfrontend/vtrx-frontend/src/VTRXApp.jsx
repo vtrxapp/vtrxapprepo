@@ -3676,6 +3676,10 @@ function ForgotPasswordPage({ onBack }) {
             <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email address" type="email"
               style={{ width:"100%",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:14,padding:"15px 18px",fontFamily:FONT,fontSize:16,color:"#fff",outline:"none",boxSizing:"border-box",marginBottom:16 }}/>
             {err && <div style={{ fontFamily:FONT,fontSize:13,color:"#EF4444",marginBottom:12,textAlign:"center" }}>{err}</div>}
+            {/* Clerk Bot Protection renders its challenge into this element
+                when enabled — required for custom flows, or signIn.create()
+                below never reaches 'complete'. */}
+            <div id="clerk-captcha"/>
             <button onClick={sendCode} disabled={loading} style={{ width:"100%",padding:"16px 0",borderRadius:50,background:loading?"#555":PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff",cursor:loading?"not-allowed":"pointer",letterSpacing:1,opacity:loading?0.7:1 }}>
               {loading ? "SENDING..." : "SEND CODE"}
             </button>
@@ -3688,6 +3692,10 @@ function ForgotPasswordPage({ onBack }) {
               style={{ background:"none",border:"none",padding:0,marginBottom:8,fontFamily:FONT,fontSize:13,fontWeight:700,color:resendCooldown>0?"#666":PRIMARY,cursor:resendCooldown>0?"default":"pointer" }}>
               {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : "Resend code"}
             </button>
+            {/* Same signIn.create() call as the initial send above (sendCode is
+                shared) — needs its own mount point in this branch too, or a
+                challenge required specifically on resend has nowhere to render. */}
+            <div id="clerk-captcha"/>
             {info && <div style={{ fontFamily:FONT,fontSize:13,color:PRIMARY,marginBottom:12,fontWeight:600 }}>{info}</div>}
             <div style={{ fontFamily:FONT,fontSize:11,fontWeight:700,color:"#888",letterSpacing:1,marginBottom:6 }}>VERIFICATION CODE</div>
             <input value={code} onChange={e=>setCode(e.target.value.replace(/[^0-9]/g,"").slice(0,6))} placeholder="6-digit code"
@@ -3975,6 +3983,11 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
           </button>
         </div>
 
+        {/* Clerk Bot Protection renders its challenge into this element when
+            enabled — required for custom (non-prebuilt-component) sign-in
+            flows like this one, or signIn.create() never reaches 'complete'. */}
+        <div id="clerk-captcha"/>
+
         {/* Sign in button */}
         <div style={{ marginTop:4 }}>
           <CTA label={loading ? "SIGNING IN..." : "SIGN IN"} onClick={handle} disabled={loading}/>
@@ -4159,6 +4172,11 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
           <div key={k} style={{ fontFamily:FONT, fontSize:12, color:"#EF4444", marginBottom:4, paddingLeft:8 }}>⚠ {v}</div>
         ))}
         {errors.general && <div style={{ fontFamily:FONT, fontSize:13, color:"#EF4444", textAlign:"center", padding:"10px 16px", background:"rgba(239,68,68,0.1)", borderRadius:12, border:"1px solid rgba(239,68,68,0.3)", marginBottom:8 }}>{errors.general}</div>}
+
+        {/* Clerk Bot Protection renders its challenge into this element when
+            enabled — required for custom (non-prebuilt-component) sign-up
+            flows like this one, or signUp.create() never reaches 'complete'. */}
+        <div id="clerk-captcha"/>
 
         {/* Sign up button */}
         <div style={{ marginTop:4 }}>
