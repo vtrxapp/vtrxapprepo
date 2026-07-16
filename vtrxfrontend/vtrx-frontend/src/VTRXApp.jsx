@@ -3843,12 +3843,16 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
 
   // Shared by the happy path and the "already signed in" error branch below —
   // always route off the real profile, never assume an empty one means "new user".
+  // Returns whether the profile actually loaded — callers on a screen other
+  // than the main credentials form (e.g. the device-verification step below)
+  // can't rely on `errors.general` alone, since that's only rendered there.
   const fetchProfileAndLogin = async () => {
     try {
       const profileRes = await apiCall("/users/profile", { skipAuthRedirect: true });
       const u = profileRes?.data?.user || {};
       if (u.id) setUser(prev => ({...prev, ...u}));
       onLogin(u);
+      return true;
     } catch (e) {
       // Same fetch failure as the mount effect above (stale token, network blip,
       // backend hiccup right after a fresh sign-in) — don't call onLogin({}) here
@@ -3861,6 +3865,7 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
       // DNS); any other status means the backend was reached and responded.
       console.error('[VTRX DEBUG] /users/profile fetch failed:', { status: e?.status, code: e?.code, message: e?.message });
       setErrors({ general: "Signed in, but we couldn't load your profile. Please try again." });
+      return false;
     }
   };
 
@@ -3993,7 +3998,10 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
       if (result.status === 'complete') {
         try {
           await setActive({ session: result.createdSessionId });
-          await fetchProfileAndLogin();
+          const profileLoaded = await fetchProfileAndLogin();
+          if (!profileLoaded) {
+            setDeviceError("Verified, but we couldn't load your profile. Please try again.");
+          }
         } catch (e) {
           setDeviceError("Verified, but we couldn't sign you in automatically. Please try logging in again.");
         }
@@ -4033,7 +4041,7 @@ function LoginScreen({ onLogin, onSignUp, onForgot }) {
         <VTRXLogo size={28}/>
         <div style={{ fontFamily:FONT,fontWeight:900,fontSize:22,color:"#fff",marginTop:20,marginBottom:8,textAlign:"center" }}>Verify it's you</div>
         <div style={{ fontFamily:FONT,fontSize:14,color:"#666",textAlign:"center",lineHeight:1.6,marginBottom:32 }}>
-          This looks like a new device. We sent a 6-digit code to<br/>
+          For your security, we sent a 6-digit code to<br/>
           <span style={{ color:PRIMARY,fontWeight:700 }}>{email}</span>
         </div>
 
