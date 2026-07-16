@@ -211,6 +211,28 @@ const getTodayWater = async (req, res) => {
   }
 };
 
+// ── GET /api/users/water/history — Past daily water intake ────────────────────
+const getWaterHistory = async (req, res) => {
+  const requestedDays = parseInt(req.query.days, 10);
+  const days = Number.isInteger(requestedDays) ? Math.min(Math.max(requestedDays, 1), 90) : 14;
+  try {
+    const since = toDateOnly(new Date());
+    since.setUTCDate(since.getUTCDate() - (days - 1));
+    const logs = await prisma.waterLog.findMany({
+      where:   { userId: req.user.id, loggedAt: { gte: since } },
+      select:  { glasses: true, loggedAt: true },
+      orderBy: { loggedAt: 'desc' },
+    });
+    res.json({
+      success: true,
+      data: { logs: logs.map(l => ({ date: l.loggedAt.toISOString().slice(0, 10), glasses: l.glasses })) },
+    });
+  } catch (err) {
+    logger.error('getWaterHistory error:', err);
+    res.status(500).json({ success: false, message: 'Failed to fetch water intake history' });
+  }
+};
+
 // ── POST /api/users/water — Log water intake ──────────────────────────────────
 const logWater = async (req, res) => {
   const { glasses } = req.body;
@@ -246,5 +268,6 @@ module.exports = {
   logProgress,
   getPersonalRecords,
   getTodayWater,
+  getWaterHistory,
   logWater,
 };

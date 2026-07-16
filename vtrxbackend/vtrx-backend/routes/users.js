@@ -12,6 +12,7 @@ router.get('/progress',                      user.getProgressLogs);
 router.post('/progress',                     user.logProgress);
 router.get('/personal-records',              user.getPersonalRecords);
 router.get('/water',                         user.getTodayWater);
+router.get('/water/history',                 user.getWaterHistory);
 router.post('/water',                        user.logWater);
 
 module.exports = router;
