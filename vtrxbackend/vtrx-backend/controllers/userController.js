@@ -52,7 +52,7 @@ const updateProfile = async (req, res) => {
         ...(gender               !== undefined && { gender }),
         ...(age !== undefined && age !== null && !isNaN(parseInt(age))         && { age: parseInt(age) }),
         ...(weight !== undefined && weight !== null && !isNaN(parseFloat(weight)) && { weight: parseFloat(weight) }),
-        ...(height               !== undefined && { height }),
+        ...(height !== undefined && height !== null && { height }),
         ...(goal                 !== undefined && { goal }),
         ...(fitnessLevel         !== undefined && { fitnessLevel }),
         ...(daysPerWeek          !== undefined && { daysPerWeek: parseInt(daysPerWeek) }),

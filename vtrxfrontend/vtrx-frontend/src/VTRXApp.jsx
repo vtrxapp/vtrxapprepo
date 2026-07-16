@@ -4415,7 +4415,12 @@ function BodyScreen({ onContinue, onBack }) {
       localStorage.setItem("vtrx_height_unit", heightUnit);
       if (dob) localStorage.setItem("vtrx_user_dob", dob);
     } catch {}
-    setUser(u=>({...u, weight: weightLbs, height: heightCm, dob, age: ageVal, gender, goalWeightLbs: goalWLbs, bodyFatPercentage: bfVal}));
+    // toLbs/toCm return null for blank/invalid input — fall back to whatever
+    // was already there locally, and omit the key from the PUT body below,
+    // rather than writing/sending an explicit null. The backend already
+    // no-ops on a null weight, but height had no such guard and would
+    // overwrite a previously-saved value with nothing.
+    setUser(u=>({...u, weight: weightLbs ?? u.weight, height: heightCm ?? u.height, dob, age: ageVal, gender, goalWeightLbs: goalWLbs, bodyFatPercentage: bfVal}));
     // Not gated on getAuthToken() — that flag mirrors Clerk's isSignedIn via a
     // useEffect and can still be false in the brief window right after
     // EmailVerifyScreen establishes the session, silently skipping this save
@@ -4423,8 +4428,10 @@ function BodyScreen({ onContinue, onBack }) {
     // once on 401, so just always attempt it.
     if (!DEMO_MODE) {
       apiCall('/users/profile', { method:'PUT', skipAuthRedirect:true, body: JSON.stringify({
-        gender, weight: weightLbs, height: heightCm, age: ageVal,
+        gender, age: ageVal,
         goalWeightLbs: goalWLbs, bodyFatPercentage: bfVal,
+        ...(weightLbs != null && { weight: weightLbs }),
+        ...(heightCm  != null && { height: heightCm }),
       })})
         .then(res => {
           // This is very likely the first authenticated backend call of a fresh
@@ -6931,20 +6938,29 @@ function PersonalDetailsPage({ onBack }) {
       if (dob) localStorage.setItem("vtrx_user_dob", dob);
     } catch {}
     setSaveError(false);
+    // toLbs/toCm return null for blank/invalid input — fall back to whatever
+    // was already there locally, and omit the key from the PUT body below,
+    // rather than writing/sending an explicit null. The backend already
+    // no-ops on a null weight, but height had no such guard and would
+    // overwrite a previously-saved value with nothing.
     // DEMO_MODE has no real backend to confirm against — keep the old optimistic
     // behavior there. Otherwise only show "Saved!" (and update the shared user
     // state) once the backend actually confirms it, instead of assuming success
     // and silently losing the write on failure.
     if (DEMO_MODE) {
-      setUser(u=>({...u, name, dob, age: ageVal, gender, weight: weightLbs, height: heightCm}));
+      setUser(u=>({...u, name, dob, age: ageVal, gender, weight: weightLbs ?? u.weight, height: heightCm ?? u.height}));
       setSaved(true);
       setTimeout(()=>setSaved(false), 2200);
       return;
     }
     setSaving(true);
     try {
-      await apiCall("/users/profile", { method:"PUT", body:JSON.stringify({ name, age: ageVal, gender, weight: weightLbs, height: heightCm }) });
-      setUser(u=>({...u, name, dob, age: ageVal, gender, weight: weightLbs, height: heightCm}));
+      await apiCall("/users/profile", { method:"PUT", body:JSON.stringify({
+        name, age: ageVal, gender,
+        ...(weightLbs != null && { weight: weightLbs }),
+        ...(heightCm  != null && { height: heightCm }),
+      }) });
+      setUser(u=>({...u, name, dob, age: ageVal, gender, weight: weightLbs ?? u.weight, height: heightCm ?? u.height}));
       setSaved(true);
       setTimeout(()=>setSaved(false), 2200);
     } catch (e) {
@@ -11101,11 +11117,17 @@ function VTRXAppInner({ setPaymentPlan }) {
     // A genuinely signed-in user whose profile fetch fails must not be silently
     // treated as "never onboarded" — retry once more (on top of apiCall's own
     // internal retry) before falling back.
+    // `cancelled` is flipped once the outer timeout below has already given up
+    // — Promise.race doesn't abort apiCall()'s in-flight fetch (that would
+    // need an AbortSignal threaded through apiCall itself, which every other
+    // call site in the app also uses), but this at least stops this retry
+    // loop from starting another attempt once nobody is waiting on it.
+    let cancelled = false;
     const fetchProfileWithRetry = async (attemptsLeft = 2) => {
       try {
         return await apiCall("/users/profile", { skipAuthRedirect: true });
       } catch (err) {
-        if (attemptsLeft <= 1) throw err;
+        if (attemptsLeft <= 1 || cancelled) throw err;
         await new Promise(r => setTimeout(r, 1500));
         return fetchProfileWithRetry(attemptsLeft - 1);
       }
@@ -11119,7 +11141,7 @@ function VTRXAppInner({ setPaymentPlan }) {
     const PROFILE_FETCH_TIMEOUT_MS = 8000;
     const withTimeout = (promise, ms) => Promise.race([
       promise,
-      new Promise((_, reject) => setTimeout(() => reject(Object.assign(new Error("Profile fetch timed out"), { code: "SPLASH_TIMEOUT" })), ms)),
+      new Promise((_, reject) => setTimeout(() => { cancelled = true; reject(Object.assign(new Error("Profile fetch timed out"), { code: "SPLASH_TIMEOUT" })); }, ms)),
     ]);
     withTimeout(fetchProfileWithRetry(), PROFILE_FETCH_TIMEOUT_MS).then(res=>{
       if (res?.data?.user) {
