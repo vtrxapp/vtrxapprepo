@@ -10541,6 +10541,8 @@ function WaterTrackerCard() {
   const [showHistory, setShowHistory]   = useState(false);
   const [history,     setHistory]       = useState(null); // null = not yet loaded
   const [historyErr,  setHistoryErr]    = useState("");
+  const historyTriggerRef = useRef(null);
+  const historyPanelRef   = useRef(null);
 
   useEffect(() => {
     apiCall('/users/water')
@@ -10549,9 +10551,49 @@ function WaterTrackerCard() {
       .finally(() => setLoading(false));
   }, []);
 
+  // Dialog semantics for the history sheet: move focus in on open, trap Tab
+  // navigation inside it, close on Escape, and give focus back to whatever
+  // opened it — without these, keyboard/screen-reader users could keep
+  // interacting with the dashboard hidden behind the backdrop.
+  useEffect(() => {
+    if (!showHistory) return;
+    const panel = historyPanelRef.current;
+    panel?.focus();
+
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowHistory(false);
+        return;
+      }
+      if (e.key !== 'Tab' || !panel) return;
+      const focusables = panel.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      if (!focusables.length) return;
+      const first = focusables[0];
+      const last  = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      historyTriggerRef.current?.focus();
+    };
+  }, [showHistory]);
+
   const openHistory = () => {
+    // Refetch on every open rather than caching after the first load — a
+    // failed attempt previously left history as [] (not null), which is
+    // indistinguishable from "loaded, no data" and silently blocked any
+    // retry; a successful load also went stale once today's own entry
+    // changed via the +/- steppers below.
     setShowHistory(true);
-    if (history !== null) return; // already loaded this mount — don't re-fetch every tap
+    setHistory(null);
     setHistoryErr("");
     apiCall('/users/water/history?days=14')
       .then(d => setHistory(Array.isArray(d?.data?.logs) ? d.data.logs : []))
@@ -10589,7 +10631,7 @@ function WaterTrackerCard() {
   return (
     <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"12px 16px",marginBottom:13,animation:"fadeUp 0.4s ease 0.12s both" }}>
       <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",gap:10 }}>
-        <button onClick={openHistory} disabled={loading} aria-label="View past water intake"
+        <button ref={historyTriggerRef} onClick={openHistory} disabled={loading} aria-label="View past water intake"
           style={{ display:"flex",alignItems:"center",gap:9,minWidth:0,background:"none",border:"none",padding:0,textAlign:"left",cursor:loading?"default":"pointer" }}>
           <WaterDroplet filled={glasses>0}/>
           <div style={{ minWidth:0 }}>
@@ -10619,9 +10661,10 @@ function WaterTrackerCard() {
       {showHistory && (
         <>
           <div onClick={()=>setShowHistory(false)} style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.82)",zIndex:200 }}/>
-          <div style={{ position:"fixed",bottom:0,left:0,right:0,maxWidth:430,margin:"0 auto",background:"#131313",borderRadius:"24px 24px 0 0",padding:"14px 22px 40px",zIndex:201,border:`1px solid ${BORDER}`,borderBottom:"none",maxHeight:"70vh",display:"flex",flexDirection:"column" }}>
+          <div ref={historyPanelRef} role="dialog" aria-modal="true" aria-labelledby="water-history-heading" tabIndex={-1}
+            style={{ position:"fixed",bottom:0,left:0,right:0,maxWidth:430,margin:"0 auto",background:"#131313",borderRadius:"24px 24px 0 0",padding:"14px 22px 40px",zIndex:201,border:`1px solid ${BORDER}`,borderBottom:"none",maxHeight:"70vh",display:"flex",flexDirection:"column",outline:"none" }}>
             <div style={{ display:"flex",justifyContent:"center",marginBottom:14,flexShrink:0 }}><div style={{ width:40,height:4,borderRadius:2,background:"#2a2a2a" }}/></div>
-            <div style={{ fontFamily:FONT,fontWeight:900,fontSize:18,color:"#fff",marginBottom:2,flexShrink:0 }}>Water Intake History</div>
+            <div id="water-history-heading" style={{ fontFamily:FONT,fontWeight:900,fontSize:18,color:"#fff",marginBottom:2,flexShrink:0 }}>Water Intake History</div>
             <div style={{ fontFamily:FONT,fontSize:12.5,color:"#666",marginBottom:16,flexShrink:0 }}>Last 14 days · goal is {WATER_GOAL} glasses a day</div>
             <div style={{ overflowY:"auto",flex:1 }}>
               {history === null ? (
