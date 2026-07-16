@@ -739,9 +739,10 @@ function Shell({ bg, overlay, children }) {
 // Real week data — current date: April 29, 2026 (Wednesday)
 const WEEKS_DATA = [
   // 0 = current (Apr 27 – May 3), higher index = older
-  { label:"Apr 27 – May 3", days:[{day:"Mon",cal:380,type:"strength"},{day:"Tue",cal:320,type:"hiit"},{day:"Wed",cal:410,type:"strength"},{day:"Thu",cal:0,type:"rest"},{day:"Fri",cal:0,type:"rest"},{day:"Sat",cal:0,type:"rest"},{day:"Sun",cal:0,type:"rest"}], bestDays:[{day:"Thursday",type:"Strength",cal:410},{day:"Monday",type:"Strength",cal:380}], improvement:"N/A" },
-  { label:"Apr 20 – 26",    days:[{day:"Mon",cal:350,type:"strength"},{day:"Tue",cal:0,type:"rest"},{day:"Wed",cal:450,type:"hiit"},{day:"Thu",cal:320,type:"hiit"},{day:"Fri",cal:400,type:"strength"},{day:"Sat",cal:0,type:"rest"},{day:"Sun",cal:380,type:"cardio"}], bestDays:[{day:"Wednesday",type:"HIIT",cal:450},{day:"Friday",type:"Strength",cal:400}], improvement:"12%" },
-  { label:"Apr 13 – 19",    days:[{day:"Mon",cal:380,type:"strength"},{day:"Tue",cal:290,type:"cardio"},{day:"Wed",cal:0,type:"rest"},{day:"Thu",cal:410,type:"strength"},{day:"Fri",cal:350,type:"hiit"},{day:"Sat",cal:300,type:"cardio"},{day:"Sun",cal:0,type:"rest"}], bestDays:[{day:"Thursday",type:"Strength",cal:410},{day:"Monday",type:"Strength",cal:380}], improvement:"8%" },
+  // Index 0 intentionally omitted — allWeeks below always substitutes the
+  // live week for position 0, so a WEEKS_DATA[0] entry would never be read.
+  { label:"Apr 20 – 26",    days:[{day:"Mon",cal:350,type:"strength"},{day:"Tue",cal:0,type:"rest"},{day:"Wed",cal:450,type:"hiit"},{day:"Thu",cal:320,type:"hiit"},{day:"Fri",cal:400,type:"strength"},{day:"Sat",cal:0,type:"rest"},{day:"Sun",cal:380,type:"cardio"}], improvement:"12%" },
+  { label:"Apr 13 – 19",    days:[{day:"Mon",cal:380,type:"strength"},{day:"Tue",cal:290,type:"cardio"},{day:"Wed",cal:0,type:"rest"},{day:"Thu",cal:410,type:"strength"},{day:"Fri",cal:350,type:"hiit"},{day:"Sat",cal:300,type:"cardio"},{day:"Sun",cal:0,type:"rest"}], improvement:"8%" },
 ];
 
 function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
@@ -789,11 +790,11 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
     return merged;
   };
   // Always built from real data (backend dailyBreakdown, falling back to an honest
-  // all-zero week) — never the static WEEKS_DATA[0] placeholder, which showed fake
-  // non-zero calories that got replaced by the real (usually much lower) numbers as
-  // soon as /workouts/stats resolved, reading as bars appearing then disappearing.
-  const liveWeek  = { label: getWeekLabel(), days: buildLiveDays(), bestDays: [], improvement: "Live" };
-  const allWeeks  = [liveWeek, ...WEEKS_DATA.slice(1)];
+  // all-zero week) — never a static placeholder, which would show fake non-zero
+  // calories that got replaced by the real (usually much lower) numbers as soon
+  // as /workouts/stats resolved, reading as bars appearing then disappearing.
+  const liveWeek  = { label: getWeekLabel(), days: buildLiveDays(), improvement: "Live" };
+  const allWeeks  = [liveWeek, ...WEEKS_DATA];
   const MAX_WEEK  = allWeeks.length - 1;
 
   const goTo = (next) => {
@@ -818,6 +819,14 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
   const minCal   = calDays.length ? Math.min(...calDays.map(d => d.cal)) : 0;
   const totalCal = calDays.reduce((s,d) => s + d.cal, 0);
   const avgCal   = calDays.length ? Math.round(totalCal / calDays.length) : 0;
+  // Derived fresh from calDays for every week (live or static) rather than
+  // read from w.bestDays — the live week never had real best-days data (it
+  // was hardcoded to []), and this keeps the static weeks' display driven by
+  // the same logic instead of separately hand-authored values.
+  const DAY_FULL_NAME = { Mon:"Monday", Tue:"Tuesday", Wed:"Wednesday", Thu:"Thursday", Fri:"Friday", Sat:"Saturday", Sun:"Sunday" };
+  const typeLabel = (t) => t === "hiit" ? "HIIT" : (t ? t.charAt(0).toUpperCase() + t.slice(1) : "Workout");
+  const bestDays = [...calDays].sort((a,b) => b.cal - a.cal).slice(0, 2)
+    .map(d => ({ day: DAY_FULL_NAME[d.day] || d.day, type: typeLabel(d.type), cal: d.cal }));
 
   const barH = (cal) => {
     if (!cal) return 0;
@@ -873,9 +882,16 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
         onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
 
         {week===0 && statsLoading ? (
-          <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"48px 16px",textAlign:"center" }}>
-            <div style={{ fontFamily:FONT,fontSize:13,color:"#888888" }}>Loading your week…</div>
-          </div>
+          <>
+            <style>{`@keyframes statsSkeletonPulse{0%,100%{opacity:0.4}50%{opacity:0.8}}`}</style>
+            <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"18px 16px",marginBottom:14,height:180,animation:"statsSkeletonPulse 1.4s ease-in-out infinite" }}/>
+            <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12 }}>
+              {[0,1,2,3].map(i => (
+                <div key={i} style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"24px 16px",height:118,animation:"statsSkeletonPulse 1.4s ease-in-out infinite",animationDelay:`${i*0.1}s` }}/>
+              ))}
+            </div>
+            <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"16px 18px",height:100,animation:"statsSkeletonPulse 1.4s ease-in-out infinite",animationDelay:"0.4s" }}/>
+          </>
         ) : (<>
         {/* Bar chart */}
         {(()=>{
@@ -955,8 +971,10 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
         {/* Best days */}
         <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"16px 18px" }}>
           <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#888888",marginBottom:12,letterSpacing:1 }}>THIS WEEK'S BEST DAYS</div>
-          {w.bestDays.map((r,i)=>(
-            <div key={i} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",paddingBottom:i===0&&w.bestDays.length>1?14:0,borderBottom:i===0&&w.bestDays.length>1?`1px solid ${BORDER}`:0,marginBottom:i===0&&w.bestDays.length>1?14:0 }}>
+          {bestDays.length === 0 ? (
+            <div style={{ fontFamily:FONT,fontSize:13,color:"#666666" }}>Log a workout to see your best days here.</div>
+          ) : bestDays.map((r,i)=>(
+            <div key={i} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",paddingBottom:i===0&&bestDays.length>1?14:0,borderBottom:i===0&&bestDays.length>1?`1px solid ${BORDER}`:0,marginBottom:i===0&&bestDays.length>1?14:0 }}>
               <div>
                 <div style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:"#fff" }}>{r.day}</div>
                 <div style={{ fontFamily:FONT,fontSize:12,color:"#888888",marginTop:2 }}>{r.type}</div>
@@ -6868,7 +6886,18 @@ function NotificationsPage({ onBack, onMarkAllRead }) {
 
       <div style={{ flex:1, overflowY:"auto", padding:"0 16px 32px" }}>
         {displayList === null && (
-          <div style={{ textAlign:"center", padding:"40px 0", fontFamily:FONT, fontSize:13, color:"#555" }}>Loading...</div>
+          <>
+            <style>{`@keyframes notifSkeletonPulse{0%,100%{opacity:0.4}50%{opacity:0.8}}`}</style>
+            {[0,1,2,3].map(i => (
+              <div key={i} style={{ background:CARD, borderRadius:18, padding:"16px 18px", marginBottom:10, display:"flex", gap:14, alignItems:"center", animation:"notifSkeletonPulse 1.4s ease-in-out infinite", animationDelay:`${i*0.12}s` }}>
+                <div style={{ width:44, height:44, borderRadius:"50%", background:"#2a2a2a", flexShrink:0 }}/>
+                <div style={{ flex:1 }}>
+                  <div style={{ width:"55%", height:13, borderRadius:4, background:"#2a2a2a", marginBottom:8 }}/>
+                  <div style={{ width:"80%", height:11, borderRadius:4, background:"#232323" }}/>
+                </div>
+              </div>
+            ))}
+          </>
         )}
         {displayList !== null && displayList.length === 0 && (
           <div style={{ textAlign:"center", padding:"60px 20px", fontFamily:FONT, fontSize:14, color:"#555" }}>
