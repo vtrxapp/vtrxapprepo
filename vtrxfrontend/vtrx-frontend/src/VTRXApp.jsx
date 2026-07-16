@@ -941,7 +941,7 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
           {[
             { iconBg:"#DC2626", label:"Average Calories",   val:avgCal,         svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> },
             { iconBg:"#6366F1", label:"Workouts This Week", val:calDays.length, svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg> },
-            { iconBg:"#16A34A", label:"Avg Minutes",        val:60,             svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> },
+            { iconBg:"#16A34A", label:"Avg Minutes",        val:week===0 ? (apiStats?.avgMinutes ?? 0) : 0, svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> },
             { iconBg:"#9333EA", label:"Weekly Improvement", val:w.improvement,  svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg> },
           ].map((s,i)=>(
             <div key={i} style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"24px 16px",display:"flex",flexDirection:"column",alignItems:"center",gap:12 }}>
@@ -6736,17 +6736,28 @@ function NotifSettingsPage({ onBack }) {
 // ── NOTIFICATIONS PAGE ────────────────────────────────────────────────────────
 // Map backend notification types to icon keys for rendering
 const NOTIF_ICON_MAP = {
-  welcome:          'logo',
-  workout_reminder: 'workout',
-  ai_summary:       'goal',
-  ai_ready:         'goal',
-  streak_alert:     'streak',
-  streak_broken:    'streak',
-  weekly_summary:   'goal',
-  meal_reminder:    'meal',
-  hydration:        'water',
-  payment_failed:   'premium',
-  test:             'workout',
+  welcome:              'logo',
+  workout_reminder:     'workout',
+  ai_summary:           'goal',
+  ai_ready:             'goal',
+  streak_alert:         'streak',
+  streak_broken:        'streak',
+  weekly_summary:       'goal',
+  weekly_recap:         'goal',
+  meal_reminder:        'meal',
+  hydration:            'water',
+  payment_failed:       'premium',
+  // The rest of these are produced by services/notificationScheduler.js's
+  // cron-driven jobs (reminders, recaps, milestones, re-engagement, onboarding)
+  // — the notifications a real user actually accumulates over time. Without
+  // entries here they all fell through to the 'workout' default below.
+  reengagement:         'rest',
+  comeback:             'workout',
+  trial_expiry_24h:     'premium',
+  trial_expiry_3d:      'premium',
+  onboarding_workout:   'workout',
+  onboarding_nutrition: 'nutrition',
+  test:                 'workout',
 };
 
 function NotificationsPage({ onBack, onMarkAllRead }) {
@@ -6821,7 +6832,7 @@ function NotificationsPage({ onBack, onMarkAllRead }) {
           title:   n.title,
           body:    n.body,
           time:    new Date(n.createdAt).toLocaleDateString('en-GB', { day:'numeric', month:'short' }),
-          iconKey: NOTIF_ICON_MAP[n.type] || 'workout',
+          iconKey: n.type?.startsWith('milestone_') ? 'challenge' : (NOTIF_ICON_MAP[n.type] || 'workout'),
           type:    n.type,
           read:    n.read,
         }))
@@ -6834,7 +6845,7 @@ function NotificationsPage({ onBack, onMarkAllRead }) {
       {/* Header */}
       <div style={{ padding:"50px 18px 16px", display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0, background:BG }}>
         <button onClick={onBack} style={{ width:36,height:36,borderRadius:"50%",background:CARD,border:`1px solid ${BORDER}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={"#888888"} strokeWidth="2.5"><polyline points="19 12 5 12"/><polyline points="12 5 5 12 12 19"/></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={"#888888"} strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
         <div style={{ fontFamily:FONT, fontWeight:900, fontSize:15, color:"#ffffff", letterSpacing:2 }}>NOTIFICATIONS</div>
         <button onClick={() => setShowSettings(true)} style={{ width:38, height:38, borderRadius:"50%", background:PRIMARY, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", border:"none" }}>
