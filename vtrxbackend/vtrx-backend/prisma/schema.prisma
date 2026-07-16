@@ -14,12 +14,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  // Migrations (this file's own `db push`/`migrate`) use a separate, non-pooled
-  // connection so a deploy never has to fight the already-running app for a
-  // slot in Supabase's small session-mode pool (see DIRECT_URL in .env.example).
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 // ── USERS ─────────────────────────────────────────────────────────────────────
