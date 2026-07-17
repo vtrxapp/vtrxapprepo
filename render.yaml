@@ -1,0 +1,80 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+# In the Render dashboard: New → Blueprint → point at this repo. Render reads
+# this file and pre-fills the service; you'll be prompted to paste in every
+# envVar marked `sync: false` before the first deploy.
+#
+# Plan is set to "starter" (not free) on purpose: this service runs an
+# in-process notification scheduler (node-cron) and boot-time sync jobs.
+# Render's free tier spins the service down after ~15 minutes idle — a
+# spun-down instance can't run a cron schedule or serve requests without a
+# slow cold-start first, which would mean missed/late push notifications and
+# a bad first-request experience for real users. Change this in the
+# dashboard before deploying if you want to start on free tier anyway.
+services:
+  - type: web
+    name: vtrx-backend
+    runtime: node
+    plan: starter
+    rootDir: vtrxbackend/vtrx-backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      - key: YMOVE_API_URL
+        value: https://exercise-api.ymove.app/api/v2
+      - key: DATABASE_URL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: ALLOWED_VERCEL_ORIGINS
+        sync: false
+      - key: CLERK_SECRET_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_MONTHLY_PRICE_ID
+        sync: false
+      - key: STRIPE_ANNUAL_PRICE_ID
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: PINECONE_API_KEY
+        sync: false
+      - key: YMOVE_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT_BASE64
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM_EMAIL
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: N8N_WEBHOOK_SECRET
+        sync: false
+      - key: LINEAR_WEBHOOK_SECRET
+        sync: false
+      - key: MAKE_WEBHOOK_USER_SIGNUP
+        sync: false
+      - key: MAKE_WEBHOOK_SUBSCRIPTION
+        sync: false
+      - key: MAKE_WEBHOOK_WORKOUT_COMPLETE
+        sync: false
+      - key: MAKE_WEBHOOK_SENTRY
+        sync: false
+      - key: ADMIN_USER_IDS
+        sync: false
+      - key: ADMIN_SECRET
+        sync: false

@@ -2,9 +2,9 @@
 // server.js — VTRX Backend API Server v2.0
 // ─────────────────────────────────────────────────────────────────────────────
 
+require('dotenv').config();
 // Sentry MUST be initialised before any other require so it can instrument them
 require('./instrument');
-require('dotenv').config();
 
 const express     = require('express');
 const cors        = require('cors');
@@ -27,6 +27,7 @@ const aiRoutes            = require('./routes/ai');
 const uploadRoutes        = require('./routes/upload');
 const n8nRoutes           = require('./routes/n8n');
 const linearRoutes        = require('./routes/linear');
+const supportRoutes       = require('./routes/support');
 
 const app  = express();
 app.set('trust proxy', 1);
@@ -41,18 +42,31 @@ const allowedOrigins = [
 ].filter(Boolean);
 
 // ALLOWED_VERCEL_ORIGINS (optional, comma-separated list of exact Vercel origin URLs,
-// e.g. "https://vtrx-app.vercel.app,https://vtrx-staging.vercel.app").
-// When set, ONLY those specific Vercel origins are allowed — the *.vercel.app wildcard
-// is disabled. If not set, ANY *.vercel.app subdomain is allowed (legacy behaviour).
+// e.g. "https://vtrx-app.vercel.app,https://vtrx-staging.vercel.app"). Only origins
+// in this list (plus FRONTEND_URL/localhost above) are allowed — there is no
+// *.vercel.app wildcard, since combined with credentials:true that would let any
+// attacker-controlled vercel.app deployment make authenticated requests against
+// this API.
 const allowedVercelOrigins = process.env.ALLOWED_VERCEL_ORIGINS
   ? process.env.ALLOWED_VERCEL_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
-  : null;
+  : [];
 
-if (!allowedVercelOrigins) {
+if (allowedVercelOrigins.length === 0) {
   logger.warn(
-    '[CORS] ALLOWED_VERCEL_ORIGINS is not set — falling back to allowing ANY *.vercel.app ' +
-    'origin with credentials. Anyone can deploy a project to a vercel.app subdomain. ' +
-    'Set ALLOWED_VERCEL_ORIGINS to your exact production frontend URL(s) to close this.'
+    '[CORS] ALLOWED_VERCEL_ORIGINS is not set — no *.vercel.app origins are allowed. ' +
+    'Set it to your exact production frontend URL(s) if the frontend is hosted on Vercel.'
+  );
+}
+
+// Loud, hard-to-miss check for the specific misconfiguration that silently
+// breaks every browser API call: production, with no allowlisted origin at
+// all. A plain warn() above is easy to miss in production logs during a
+// deploy — this failure mode looks like "the API is down" to users even
+// though the server itself is healthy.
+if (process.env.NODE_ENV === 'production' && !process.env.FRONTEND_URL && allowedVercelOrigins.length === 0) {
+  logger.error(
+    '[CORS] Running in production with neither FRONTEND_URL nor ALLOWED_VERCEL_ORIGINS set — ' +
+    'no browser origin will be allowed. Every frontend API call will fail CORS.'
   );
 }
 
@@ -62,14 +76,11 @@ app.use(cors({
     if (!origin) return callback(null, true);
     // Check static allowed origins (FRONTEND_URL, localhost)
     if (allowedOrigins.includes(origin)) return callback(null, true);
-    // Vercel origin check — restricted to specific list when ALLOWED_VERCEL_ORIGINS is set
-    if (allowedVercelOrigins) {
-      if (allowedVercelOrigins.includes(origin)) return callback(null, true);
-    } else if (origin.endsWith('.vercel.app')) {
-      // Fallback: allow any *.vercel.app when the env var is not configured
-      return callback(null, true);
-    }
-    callback(new Error('Not allowed by CORS'));
+    // Exact-match only — no wildcard subdomain matching
+    if (allowedVercelOrigins.includes(origin)) return callback(null, true);
+    const err = new Error('Not allowed by CORS');
+    err.statusCode = 403;
+    callback(err);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -98,6 +109,24 @@ const aiLimiter = rateLimit({
   message: { success: false, message: 'AI request limit reached. Try again in an hour.' },
 });
 
+// Render's own request-forwarding layer strips a leading "/api" from every
+// incoming request before it reaches this process — confirmed via this
+// server's own request log (morgan below logs "/users/profile" for a request
+// the browser's Network tab confirms was sent as "/api/users/profile", and
+// this file has no other rewriting logic that could account for it). Every
+// route in this app is mounted under /api/*, so without this, none of them
+// would ever match on the deployed service. Restoring the prefix here is a
+// no-op for any request that already has it (nothing double-prefixes), so
+// this is safe regardless of whether the stripping is happening for every
+// request or only some. /health is Render's own health-check path and is
+// requested bare on both ends — left untouched.
+app.use((req, res, next) => {
+  if (req.path !== '/health' && !req.path.startsWith('/api/') && req.path !== '/api') {
+    req.url = '/api' + req.url;
+  }
+  next();
+});
+
 app.use('/api/', limiter);
 app.use('/api/ai/',         aiLimiter);
 app.use('/api/auth/',       authLimiter);
@@ -113,7 +142,16 @@ app.use('/api/payments/webhook',
 );
 
 // ── Body parsing ─────────────────────────────────────────────────────────────
-app.use(express.json({ limit: '10mb' }));
+// Captures the raw bytes alongside the parsed body for every JSON request, so
+// webhook handlers that need to verify an HMAC signature over the exact raw
+// payload (e.g. Linear) can use req.rawBody without a route-specific parser.
+// Routes that already installed their own raw-body middleware (Stripe, above)
+// are unaffected — body-parser skips re-parsing (and this verify callback)
+// once a request's body has already been parsed.
+app.use(express.json({
+  limit:  '10mb',
+  verify: (req, res, buf) => { req.rawBody = buf; },
+}));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(compression());
 app.use(morgan(
@@ -142,6 +180,7 @@ app.use('/api/ai',            aiRoutes);
 app.use('/api/upload',        uploadRoutes);
 app.use('/api/n8n',           n8nRoutes);
 app.use('/api/linear',        linearRoutes);
+app.use('/api/support',       supportRoutes);
 
 // ── 404 ───────────────────────────────────────────────────────────────────────
 app.use('*', (req, res) => {
@@ -168,9 +207,14 @@ const server = app.listen(PORT, () => {
 
 process.on('SIGTERM', () => {
   logger.info('SIGTERM — shutting down gracefully');
-  server.close(() => {
-    require('./config/database').$disconnect();
-    process.exit(0);
+  server.close(async () => {
+    try {
+      await require('./config/database').$disconnect();
+    } catch (err) {
+      logger.error(`Error disconnecting Prisma during shutdown: ${err.message}`);
+    } finally {
+      process.exit(0);
+    }
   });
 });
 

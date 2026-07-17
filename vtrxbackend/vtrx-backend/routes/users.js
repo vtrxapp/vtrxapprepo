@@ -10,9 +10,9 @@ router.put('/profile',                       user.updateProfile);
 router.post('/mood',                         user.logMood);
 router.get('/progress',                      user.getProgressLogs);
 router.post('/progress',                     user.logProgress);
-router.get('/notifications',                 user.getNotifications);
-router.patch('/notifications/read',          user.markNotificationsRead);
 router.get('/personal-records',              user.getPersonalRecords);
+router.get('/water',                         user.getTodayWater);
+router.get('/water/history',                 user.getWaterHistory);
 router.post('/water',                        user.logWater);
 
 module.exports = router;

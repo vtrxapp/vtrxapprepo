@@ -77,10 +77,10 @@ const webhook = async (req, res) => {
   }
 
   try {
-    const result = await stripe.handleWebhookEvent(req.body, signature);
+    const result = await stripe.handleWebhookEvent(req.rawBody, signature);
     res.json(result);
   } catch (err) {
-    logger.error('Webhook error:', err.message);
+    logger.error(`Webhook error: ${err.message}`);
     res.status(400).json({ error: err.message });
   }
 };
@@ -99,6 +99,14 @@ const verifySession = async (req, res) => {
     const Stripe  = require('stripe');
     const stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
     const session = await stripeClient.checkout.sessions.retrieve(sessionId);
+
+    // The session must belong to the authenticated user — without this check,
+    // any authenticated caller could pass any Stripe session id (their own from
+    // a cancelled plan, a leaked one, or another user's) and self-activate Premium.
+    if (session.metadata?.userId !== req.user.id) {
+      logger.warn(`verifySession ownership mismatch: session ${sessionId} not owned by ${req.user.id}`);
+      return res.status(403).json({ success: false, message: 'Session does not belong to this user' });
+    }
 
     const isPaid  = session.payment_status === 'paid' || session.status === 'complete';
 

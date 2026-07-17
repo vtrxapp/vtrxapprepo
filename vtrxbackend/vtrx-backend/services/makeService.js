@@ -1,7 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // services/makeService.js — Make.com (formerly Integromat) webhook dispatcher
 // ─────────────────────────────────────────────────────────────────────────────
-// Each Make.com scenario exposes its own webhook URL. Store these in Railway:
+// Each Make.com scenario exposes its own webhook URL. Set these as env vars
+// on whatever host runs this server:
 //
 //   MAKE_WEBHOOK_USER_SIGNUP      → Clerk/user signup  → Mailchimp + welcome flow
 //   MAKE_WEBHOOK_SUBSCRIPTION     → Stripe payment      → Slack + CRM tag

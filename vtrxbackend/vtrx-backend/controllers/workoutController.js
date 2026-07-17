@@ -353,18 +353,25 @@ const updateStreak = async (userId) => {
   let isBroken     = false;
 
   if (lastActive) {
-    const hoursSinceLastActive = (now - lastActive) / (1000 * 60 * 60);
+    // Compare UTC calendar days (consistent with streakFreeze.toDateOnly), not
+    // elapsed hours — otherwise a next-day workout just under 24h away fails to
+    // extend the streak, and a missed calendar day just under 48h away wrongly
+    // extends it instead of going through wasGapFrozen.
+    const dayMs   = 24 * 60 * 60 * 1000;
+    const lastDay = streakFreeze.toDateOnly(lastActive).getTime();
+    const nowDay  = streakFreeze.toDateOnly(now).getTime();
+    const dayDiff = Math.round((nowDay - lastDay) / dayMs);
 
-    if (hoursSinceLastActive < 48) {
-      // Within 48 hours — extend streak
-      const daysSinceLastActive = Math.floor(hoursSinceLastActive / 24);
-      if (daysSinceLastActive >= 1) newStreak += 1;
+    if (dayDiff === 0) {
+      // Same calendar day — already counted, no change
+    } else if (dayDiff === 1) {
+      newStreak += 1;
     } else if (await streakFreeze.wasGapFrozen(userId, lastActive, now)) {
       // Every day actually missed was covered by an activated Streak Freeze —
       // bridge the gap instead of resetting, same as a normal extension.
       newStreak += 1;
     } else {
-      // More than 48 hours, gap not (fully) frozen — streak broken
+      // More than a day missed, gap not (fully) frozen — streak broken
       newStreak = 1;
       isBroken  = true;
     }
@@ -1093,7 +1100,7 @@ const getExerciseVideoUrl = async (req, res) => {
 // Returns a sample exercise with its video URL to confirm the API key is valid.
 const ymovePing = async (req, res) => {
   if (!ymove.isConfigured()) {
-    return res.status(503).json({ success: false, message: 'YMOVE_API_KEY not set in Railway' });
+    return res.status(503).json({ success: false, message: 'YMOVE_API_KEY not configured' });
   }
   try {
     const { exercises } = await ymove.getExercises({ limit: 1, page: 1 });
@@ -1404,7 +1411,7 @@ const generateWorkout = async (req, res) => {
       },
     });
   } catch (err) {
-    logger.error('generateWorkout error:', err.message);
+    logger.error(`generateWorkout error: ${err.message}`);
     res.status(500).json({ success: false, message: 'Failed to generate workout' });
   }
 };
@@ -1439,7 +1446,7 @@ const generateProgram = async (req, res) => {
       },
     });
   } catch (err) {
-    logger.error('generateProgram error:', err.message);
+    logger.error(`generateProgram error: ${err.message}`);
     res.status(500).json({ success: false, message: 'Failed to generate program' });
   }
 };
@@ -1465,7 +1472,7 @@ const analyzePosture = async (req, res) => {
     if (!result) return res.status(503).json({ success: false, message: 'Posture analysis unavailable' });
     res.json({ success: true, data: result });
   } catch (err) {
-    logger.error('analyzePosture error:', err.message);
+    logger.error(`analyzePosture error: ${err.message}`);
     res.status(500).json({ success: false, message: 'Posture analysis failed' });
   }
 };
@@ -1481,7 +1488,7 @@ const getYmoveUsage = async (_req, res) => {
 const debugYmoveExercise = async (req, res) => {
   const { id } = req.params;
   if (!ymove.isConfigured()) {
-    return res.status(503).json({ success: false, message: 'YMOVE_API_KEY not set in Railway' });
+    return res.status(503).json({ success: false, message: 'YMOVE_API_KEY not configured' });
   }
   try {
     const raw = await ymove.getExerciseById(id);
@@ -1677,7 +1684,7 @@ const getYmoveExerciseLibrary = async (muscleGroups = []) => {
     _exerciseLibraryCache.set(cacheKey, { data: normalized, expiresAt: Date.now() + EXERCISE_CACHE_TTL });
     return normalized;
   } catch (err) {
-    logger.error('getYmoveExerciseLibrary error:', err.message);
+    logger.error(`getYmoveExerciseLibrary error: ${err.message}`);
     return [];
   }
 };
@@ -1988,13 +1995,12 @@ Rules:
           isPublic: false,
           exercises: {
             create: resolvedExercisesForDB.map((ex, idx) => ({
-              exerciseId:  ex.dbExerciseId,
-              name:        ex.name,
-              sets:        ex.sets || 3,
-              reps:        ex.reps != null ? String(ex.reps) : (ex.durationSecs ? `${ex.durationSecs}s` : '10'),
-              order:       idx + 1,
-              restSeconds: ex.restSecs || ex.restSeconds || 60,
-              notes:       ex.muscleGroup || '',
+              exerciseId: ex.dbExerciseId,
+              sets:       ex.sets || 3,
+              reps:       ex.reps != null ? String(ex.reps) : (ex.durationSecs ? `${ex.durationSecs}s` : '10'),
+              order:      idx + 1,
+              restSecs:   ex.restSecs || ex.restSeconds || 60,
+              notes:      ex.muscleGroup || '',
             })),
           },
         },

@@ -7,6 +7,7 @@ const logger  = require('../utils/logger');
 const { validatePlan }    = require('../data/planGenerator');
 const { generateAIPlan }  = require('../services/aiPlanGenerator');
 const { canGeneratePlan } = require('../utils/planAccess');
+const { toDateOnly }      = require('../services/streakFreezeService');
 
 // ── GET /api/users/profile ────────────────────────────────────────────────────
 const getProfile = async (req, res) => {
@@ -51,7 +52,7 @@ const updateProfile = async (req, res) => {
         ...(gender               !== undefined && { gender }),
         ...(age !== undefined && age !== null && !isNaN(parseInt(age))         && { age: parseInt(age) }),
         ...(weight !== undefined && weight !== null && !isNaN(parseFloat(weight)) && { weight: parseFloat(weight) }),
-        ...(height               !== undefined && { height }),
+        ...(height !== undefined && height !== null && { height }),
         ...(goal                 !== undefined && { goal }),
         ...(fitnessLevel         !== undefined && { fitnessLevel }),
         ...(daysPerWeek          !== undefined && { daysPerWeek: parseInt(daysPerWeek) }),
@@ -172,38 +173,6 @@ const logProgress = async (req, res) => {
   }
 };
 
-// ── GET /api/users/notifications ─────────────────────────────────────────────
-const getNotifications = async (req, res) => {
-  try {
-    const notifications = await prisma.notification.findMany({
-      where:   { userId: req.user.id },
-      orderBy: { createdAt: 'desc' },
-      take:    20,
-    });
-
-    const unreadCount = notifications.filter(n => !n.read).length;
-
-    res.json({ success: true, data: { notifications, unreadCount } });
-  } catch (error) {
-    logger.error('getNotifications error:', error);
-    res.status(500).json({ success: false, message: 'Failed to fetch notifications' });
-  }
-};
-
-// ── PATCH /api/users/notifications/read — Mark all as read ───────────────────
-const markNotificationsRead = async (req, res) => {
-  try {
-    await prisma.notification.updateMany({
-      where: { userId: req.user.id, read: false },
-      data:  { read: true },
-    });
-    res.json({ success: true });
-  } catch (error) {
-    logger.error('markNotificationsRead error:', error);
-    res.status(500).json({ success: false, message: 'Failed to update notifications' });
-  }
-};
-
 // ── GET /api/users/personal-records ──────────────────────────────────────────
 const getPersonalRecords = async (req, res) => {
   try {
@@ -227,22 +196,64 @@ const getPersonalRecords = async (req, res) => {
   }
 };
 
+// ── GET /api/users/water — Today's water intake ────────────────────────────────
+const getTodayWater = async (req, res) => {
+  try {
+    const today = toDateOnly(new Date());
+    const log = await prisma.waterLog.findUnique({
+      where:  { userId_loggedAt: { userId: req.user.id, loggedAt: today } },
+      select: { glasses: true },
+    });
+    res.json({ success: true, data: { glasses: log?.glasses || 0 } });
+  } catch (err) {
+    logger.error('getTodayWater error:', err);
+    res.status(500).json({ success: false, message: 'Failed to fetch water intake' });
+  }
+};
+
+// ── GET /api/users/water/history — Past daily water intake ────────────────────
+const getWaterHistory = async (req, res) => {
+  const requestedDays = parseInt(req.query.days, 10);
+  const days = Number.isInteger(requestedDays) ? Math.min(Math.max(requestedDays, 1), 90) : 14;
+  try {
+    const since = toDateOnly(new Date());
+    since.setUTCDate(since.getUTCDate() - (days - 1));
+    const logs = await prisma.waterLog.findMany({
+      where:   { userId: req.user.id, loggedAt: { gte: since } },
+      select:  { glasses: true, loggedAt: true },
+      orderBy: { loggedAt: 'desc' },
+    });
+    res.json({
+      success: true,
+      data: { logs: logs.map(l => ({ date: l.loggedAt.toISOString().slice(0, 10), glasses: l.glasses })) },
+    });
+  } catch (err) {
+    logger.error('getWaterHistory error:', err);
+    res.status(500).json({ success: false, message: 'Failed to fetch water intake history' });
+  }
+};
+
 // ── POST /api/users/water — Log water intake ──────────────────────────────────
 const logWater = async (req, res) => {
   const { glasses } = req.body;
-  if (glasses === undefined || glasses === null || !Number.isInteger(Number(glasses)) || Number(glasses) < 0 || Number(glasses) > 50) {
+  // Number(glasses) alone would accept "", " ", false, null, and "0x10" as
+  // valid counts (all coerce to a finite number) — only allow an actual
+  // number or a plain digit string.
+  const numericGlasses =
+    typeof glasses === 'number' ? glasses :
+    typeof glasses === 'string' && /^\d+$/.test(glasses.trim()) ? Number(glasses.trim()) :
+    NaN;
+  if (!Number.isInteger(numericGlasses) || numericGlasses < 0 || numericGlasses > 50) {
     return res.status(400).json({ success: false, message: 'glasses must be an integer between 0 and 50' });
   }
   try {
-    const today = new Date(); today.setHours(0,0,0,0);
-    await prisma.waterLog.upsert({
+    const today = toDateOnly(new Date());
+    const log = await prisma.waterLog.upsert({
       where:  { userId_loggedAt: { userId: req.user.id, loggedAt: today } },
-      create: { userId: req.user.id, glasses: Number(glasses), loggedAt: today },
-      update: { glasses: Number(glasses) },
-    }).catch(async () => {
-      await prisma.waterLog.create({ data: { userId: req.user.id, glasses: Number(glasses) } });
+      create: { userId: req.user.id, glasses: numericGlasses, loggedAt: today },
+      update: { glasses: numericGlasses },
     });
-    res.json({ success: true });
+    res.json({ success: true, data: { glasses: log.glasses } });
   } catch (err) {
     logger.error('logWater error:', err);
     res.status(500).json({ success: false, message: 'Failed to log water' });
@@ -255,8 +266,8 @@ module.exports = {
   logMood,
   getProgressLogs,
   logProgress,
-  getNotifications,
-  markNotificationsRead,
   getPersonalRecords,
+  getTodayWater,
+  getWaterHistory,
   logWater,
 };

@@ -7,7 +7,7 @@ const https   = require('https');
 const logger  = require('../utils/logger');
 
 const CLERK_SECRET = process.env.CLERK_SECRET_KEY;
-logger.info(`CLERK_SECRET_KEY loaded: ${!!CLERK_SECRET} | starts with: ${CLERK_SECRET?.slice(0,8)}`);
+logger.info(`CLERK_SECRET_KEY loaded: ${!!CLERK_SECRET}`);
 
 if (!CLERK_SECRET) {
   logger.error('FATAL: CLERK_SECRET_KEY is not set — all auth operations will fail');

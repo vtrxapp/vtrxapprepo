@@ -21,6 +21,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 const admin  = require('firebase-admin');
+const { getMessaging } = require('firebase-admin/messaging');
 const prisma = require('../config/database');
 const logger = require('../utils/logger');
 
@@ -43,13 +44,14 @@ const initFirebase = () => {
     );
 
     admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
+      // firebase-admin v14 moved credential.cert() to a top-level export.
+      credential: admin.cert(serviceAccount),
     });
 
     firebaseInitialised = true;
     logger.info('Firebase Admin initialised');
   } catch (err) {
-    logger.error('Firebase init failed:', err.message);
+    logger.error(`Firebase init failed: ${err.message}`);
   }
 };
 
@@ -122,7 +124,7 @@ const sendToUser = async ({ userId, title, body, data = {}, imageUrl }) => {
 
   const results = await Promise.allSettled(
     tokens.map(({ token, platform }) =>
-      admin.messaging().send({
+      getMessaging().send({
         token,
         notification: {
           title,
@@ -187,9 +189,11 @@ const sendToUser = async ({ userId, title, body, data = {}, imageUrl }) => {
     },
   }).catch(() => {});
 
-  // Delete notifications older than 24 hours
+  // Delete this user's notifications older than 24 hours — scoped to userId,
+  // since this runs on every send and an unscoped delete would purge every
+  // other user's notification feed too.
   await prisma.notification.deleteMany({
-    where: { createdAt: { lt: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
+    where: { userId, createdAt: { lt: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
   }).catch(() => {});
 
   logger.info(`Push notification sent to user ${userId}: ${succeeded} success, ${failed} failed`);

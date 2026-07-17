@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, createContext, useContext, useImperativeHandle, forwardRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, createContext, useContext, useImperativeHandle, forwardRef } from "react";
 import { useAuth as useClerkAuth, useSignUp as useClerkSignUp, useSignIn as useClerkSignIn, useClerk } from '@clerk/clerk-react';
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, PaymentRequestButtonElement, useStripe, useElements } from "@stripe/react-stripe-js";
@@ -6,10 +6,17 @@ import { getNotificationToken, onForegroundMessage, isPushSupported } from "./fi
 import { identifyUser, resetAnalytics, track } from "./analytics";
 import Hls from "hls.js";
 
-// Stripe.js loaded once at module scope — publishable key is safe in client code
-const _stripePromise = import.meta?.env?.VITE_STRIPE_PUBLISHABLE_KEY
-  ? loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY)
-  : null;
+// Stripe.js is loaded lazily on first use (not at module scope) so its iframe
+// isn't fetched on every page load — only once someone actually opens the payment sheet.
+let _stripePromise;
+function getStripePromise() {
+  if (_stripePromise === undefined) {
+    _stripePromise = import.meta?.env?.VITE_STRIPE_PUBLISHABLE_KEY
+      ? loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY)
+      : null;
+  }
+  return _stripePromise;
+}
 
 // ── API Configuration ─────────────────────────────────────────────────────────
 const API_URL = typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL : "";
@@ -17,18 +24,53 @@ const API_URL = typeof import.meta !== "undefined" && import.meta.env && import.
 // When no real backend URL is set, all API calls silently succeed (demo/preview mode)
 const DEMO_MODE = false;
 
+// Public demo mode — landing-page visitors can explore the real app via ?demo=1
+// in the URL, without an account. Lands straight on a pre-filled sample
+// dashboard instead of onboarding, and — like DEMO_MODE — mocks every API call.
+// That second part also sidesteps a real hazard: several dashboard children
+// fire unauthenticated fetches on mount, and apiCall's session-expired handler
+// forces phase back to "login" on a real 401 — mocking every call means that
+// never fires underneath a visitor who was never signed in to begin with.
+const PUBLIC_DEMO = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("demo") === "1";
+
 // ── API Helper ────────────────────────────────────────────────────────────────
 const apiCall = async (endpoint, options = {}) => {
-  // Demo/preview mode — no backend configured, return mock success
-  if (DEMO_MODE) {
+  // Demo/preview mode — no backend configured, return mock success.
+  // PUBLIC_DEMO also requires !_isSignedIn: a real signed-in user who opens a
+  // stray ?demo=1 link must still hit the real API for their own account, not
+  // get the shared demo profile/plan mocked over their real data.
+  if (DEMO_MODE || (PUBLIC_DEMO && !_isSignedIn)) {
     // Simulate a brief network delay
     await new Promise(r => setTimeout(r, 400));
     // Return plausible mock responses per endpoint
     if (endpoint === "/auth/signup")         return { success:true, data:{ message:"Account created" } };
     if (endpoint === "/auth/confirm-email")  return { success:true, data:{ message:"Verified" } };
     if (endpoint === "/auth/login")          return { success:true, data:{ token:"demo_token", user:{ id:"demo", name:"Demo User", email:"demo@vtrx.app" } } };
-    if (endpoint === "/auth/me")             return { success:true, data:{ user:{ id:"demo", name:"Demo User", email:"demo@vtrx.app", isPremium:false, streakDays:7, goal:"Build Muscle", fitnessLevel:"Intermediate", daysPerWeek:5, weight:"82", height:"180", gender:"Male" } } };
-    if (endpoint === "/users/profile")       return { success:true, data:{ user:{ id:"demo", name:"Demo User", streakDays:7, goal:"Build Muscle", fitnessLevel:"Intermediate", daysPerWeek:5, weight:"82", height:"180", gender:"Male", workoutsTotal:12 } } };
+    if (endpoint === "/auth/me")             return { success:true, data:{ user:{ id:"demo", name:"Demo User", email:"demo@vtrx.app", isPremium:false, streakDays:7, goal:"Build Muscle", fitnessLevel:"Intermediate", daysPerWeek:5, weight:"180.8", height:"180", gender:"Male" } } };
+    if (endpoint === "/users/profile")       return { success:true, data:{ user:{ id:"demo", name:"Demo User", streakDays:7, goal:"Build Muscle", fitnessLevel:"Intermediate", daysPerWeek:5, weight:"180.8", height:"180", gender:"Male", workoutsTotal:12 } } };
+    if (endpoint === "/workouts/active-plan") return { success:true, data:{ planId:"demo-plan-1", weekNumber:1, plan:{ weeks:[{ sessions:[
+      { sessionName:"Upper Body Strength", durationMins:45, isRestDay:false, exercises:[ {name:"Bench Press",sets:4,reps:"8-10"}, {name:"Bent-Over Row",sets:4,reps:"8-10"}, {name:"Overhead Press",sets:3,reps:"10-12"} ] },
+      { sessionName:"Lower Body Power",    durationMins:50, isRestDay:false, exercises:[ {name:"Back Squat",sets:4,reps:"6-8"}, {name:"Romanian Deadlift",sets:3,reps:"8-10"}, {name:"Walking Lunges",sets:3,reps:"12"} ] },
+      { sessionName:"Rest Day",            durationMins:0,  isRestDay:true,  exercises:[] },
+      { sessionName:"HIIT Cardio",         durationMins:30, isRestDay:false, exercises:[ {name:"Kettlebell Swings",sets:5,reps:"20"}, {name:"Burpees",sets:5,reps:"15"} ] },
+      { sessionName:"Push Day",            durationMins:45, isRestDay:false, exercises:[ {name:"Incline Dumbbell Press",sets:4,reps:"8-10"}, {name:"Lateral Raises",sets:3,reps:"12-15"}, {name:"Triceps Dips",sets:3,reps:"10-12"} ] },
+      { sessionName:"Pull Day",            durationMins:45, isRestDay:false, exercises:[ {name:"Deadlift",sets:4,reps:"6-8"}, {name:"Pull-Ups",sets:4,reps:"6-10"}, {name:"Barbell Curl",sets:3,reps:"10-12"} ] },
+      { sessionName:"Rest Day",            durationMins:0,  isRestDay:true,  exercises:[] },
+    ] }] } } };
+    if (endpoint === "/nutrition/active-plan") { const day=(cal)=>({ day_total_calories:cal, meals:[ {meal_name:"Greek Yogurt & Berry Bowl",recipe_name:"Greek Yogurt & Berry Bowl",calories:420,protein_g:32,carbs_g:45,fat_g:12}, {meal_name:"Grilled Chicken & Quinoa Salad",recipe_name:"Grilled Chicken & Quinoa Salad",calories:580,protein_g:45,carbs_g:55,fat_g:18}, {meal_name:"Salmon, Sweet Potato & Greens",recipe_name:"Salmon, Sweet Potato & Greens",calories:650,protein_g:42,carbs_g:48,fat_g:24} ] }); return { success:true, data:{ plan:{
+      plan_name:"Build Muscle: Balanced Plan",
+      plan_summary:"A protein-forward plan built around your goal, fitness level, and training days.",
+      daily_targets:{ calories:1650, protein_g:119, carbs_g:148, fat_g:54 },
+      week:{ monday:day(1650), tuesday:day(1650), wednesday:day(1650), thursday:day(1650), friday:day(1650), saturday:day(1650), sunday:day(1650) },
+      supplement_suggestions:[
+        {supplement:"Whey Protein", reason:"Helps you hit your daily protein target without extra cooking.", timing:"Post-workout"},
+        {supplement:"Creatine Monohydrate", reason:"Well-studied support for strength and lean mass gains.", timing:"Any time, daily"},
+        {supplement:"Vitamin D3", reason:"Commonly low for indoor trainers; supports recovery.", timing:"With breakfast"},
+      ],
+      nutrition_coach_message:"This is a sample plan for the demo. The real plan adapts to your logged meals and progress over time.",
+      shopping_list:{},
+      meal_prep_tips:["Batch-cook grains on Sunday for the week ahead.","Portion proteins into containers right after cooking."],
+    } } }; }
     if (endpoint.startsWith("/workouts/history")) return { success:true, data:{ logs:[ { id:"1", name:"Chest & Triceps", type:"STRENGTH", duration:45, caloriesBurned:320, completedAt:new Date(Date.now()-86400000).toISOString() }, { id:"2", name:"HIIT Cardio", type:"CARDIO", duration:30, caloriesBurned:280, completedAt:new Date(Date.now()-2*86400000).toISOString() } ] } };
     if (endpoint.startsWith("/workouts/stats"))   return { success:true, data:{ stats:{ totalWorkouts:12, totalCalories:3840, totalMinutes:540, currentStreak:7, thisWeek:4 } } };
     if (endpoint === "/nutrition/meal-plan")       return { success:true, data:{ plan:null } };
@@ -39,7 +81,7 @@ const apiCall = async (endpoint, options = {}) => {
     if (endpoint === "/payments/create-checkout") return { success:true, data:{ url:"#" } };
     if (endpoint === "/notifications")       return { success:true, data:[] };
     if (endpoint === "/users/mood")          return { success:true };
-    if (endpoint === "/workouts/log")        return { success:true };
+    if (endpoint === "/workouts/log")        return { success:true, data:{ workoutLog:{ id:`demo-log-${Date.now()}` } } };
     return { success:true, data:{} };
   }
   const { skipAuthRedirect, ...fetchOptions } = options;
@@ -119,7 +161,11 @@ const clearAuth = () => {
     .forEach(k => localStorage.removeItem(k));
 };
 
-const getAuthToken = () => _isSignedIn ? 'clerk_active' : null;
+// PUBLIC_DEMO yields a truthy sentinel here too, so the loaders that gate on
+// getAuthToken() (Nutrition's AI plan, recipe grids, etc.) actually fire for a
+// signed-out demo visitor instead of sitting on their own empty state forever —
+// safe because apiCall() is mocked for the exact same condition.
+const getAuthToken = () => _isSignedIn ? 'clerk_active' : (PUBLIC_DEMO ? 'demo_token' : null);
 const getCachedUser = () => {
   try { return JSON.parse(localStorage.getItem("vtrx_user") || "null"); } catch(_e){ return null; }
 };
@@ -190,6 +236,10 @@ let _openPaymentSheet = null;
 // UpgradePlanPage) — skips PaymentSheet's own duplicate monthly/annual picker
 // instead of asking the same question twice back to back.
 const openPaymentSheet = (plan = "monthly", opts = {}) => {
+  if (PUBLIC_DEMO) {
+    window.alert("This is a shared demo account, so upgrades are disabled here. Join the waitlist for real early access!");
+    return;
+  }
   track("upgrade_clicked", { plan });
   if (_openPaymentSheet) {
     _openPaymentSheet(plan, opts);
@@ -201,36 +251,6 @@ const openPaymentSheet = (plan = "monthly", opts = {}) => {
   }
 };
 
-// ── Premium gate component ────────────────────────────────────────────────────
-function PremiumGate({ feature, children, mini=false }) {
-  const { isPremium } = useUser();
-  if (isPremium) return children;
-  if (mini) return (
-    <div style={{position:"relative",overflow:"hidden",borderRadius:16 }}>
-      <div style={{ filter:"blur(4px)",pointerEvents:"none",userSelect:"none" }}>{children}</div>
-      <div style={{ position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"rgba(10,10,10,0.75)",backdropFilter:"blur(2px)",borderRadius:16,padding:16 }}>
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00A3FF" strokeWidth="2" style={{marginBottom:8}}><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-        <div style={{ fontFamily:"'Montserrat',sans-serif",fontWeight:800,fontSize:12,color:"#fff",marginBottom:4,textAlign:"center" }}>Premium Feature</div>
-        <button onClick={()=>openPaymentSheet()} style={{ padding:"6px 16px",borderRadius:50,background:"#00A3FF",border:"none",fontFamily:"'Montserrat',sans-serif",fontWeight:700,fontSize:11,color:"#fff",cursor:"pointer" }}>Unlock</button>
-      </div>
-    </div>
-  );
-  return (
-    <div style={{ position:"absolute",inset:0,background:"#0a0a0a",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:32,zIndex:100 }}>
-      <div style={{ width:72,height:72,borderRadius:"50%",background:"rgba(0,163,255,0.12)",border:"2px solid rgba(0,163,255,0.4)",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:20 }}>
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#00A3FF" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-      </div>
-      <div style={{ fontFamily:"'Montserrat',sans-serif",fontWeight:900,fontSize:22,color:"#fff",marginBottom:8,textAlign:"center" }}>Premium Feature</div>
-      <div style={{ fontFamily:"'Montserrat',sans-serif",fontSize:13,color:"#888",marginBottom:6,textAlign:"center",lineHeight:1.6 }}>{feature}</div>
-      <div style={{ fontFamily:"'Montserrat',sans-serif",fontSize:12,color:"#555",marginBottom:28,textAlign:"center" }}>Unlock with VTRX Premium</div>
-      <button onClick={()=>openPaymentSheet()}
-        style={{ width:"100%",maxWidth:280,padding:"15px 0",borderRadius:50,background:"#00A3FF",border:"none",fontFamily:"'Montserrat',sans-serif",fontWeight:800,fontSize:15,color:"#fff",cursor:"pointer",marginBottom:14,boxShadow:"0 4px 24px rgba(0,163,255,0.4)" }}>
-        Upgrade to Premium
-      </button>
-      <div style={{ fontFamily:"'Montserrat',sans-serif",fontSize:11,color:"#444" }}>$5.83/month · Cancel anytime</div>
-    </div>
-  );
-}
 const useTheme = () => ({ dark: true });
 
 // ── useScrollRestore: saves & restores scroll position per page key ───────────
@@ -265,8 +285,34 @@ const QUOTES = [
   { text: "The pain you feel today will be the strength you feel tomorrow. Push through your limits!", author: "Arnold Schwarzenegger" },
   { text: "Success usually comes to those who are too busy to be looking for it.", author: "Henry David Thoreau" },
   { text: "The only bad workout is the one that didn't happen.", author: "Unknown" },
-  { text: "Don't stop when you're tired. Stop when you're done.", author: "David Goggins" },
+  { text: "Small steps every day add up to big results.", author: "Unknown" },
   { text: "Take care of your body. It's the only place you have to live.", author: "Jim Rohn" },
+  { text: "The only place success comes before work is in the dictionary.", author: "Vince Lombardi" },
+  { text: "Motivation is what gets you started. Habit is what keeps you going.", author: "Jim Ryun" },
+  { text: "If it doesn't challenge you, it doesn't change you.", author: "Fred DeVito" },
+  { text: "Fitness is not about being better than someone else. It's about being better than you used to be.", author: "Khloé Kardashian" },
+  { text: "It's the repetition of affirmations that leads to belief. And once that belief becomes a deep conviction, things begin to happen.", author: "Muhammad Ali" },
+  { text: "I fear not the man who has practiced 10,000 kicks once, but I fear the man who has practiced one kick 10,000 times.", author: "Bruce Lee" },
+  { text: "You don't have to be perfect, you just have to show up.", author: "Unknown" },
+  { text: "It's what you learn after you know it all that counts.", author: "John Wooden" },
+  { text: "Never let the fear of striking out keep you from playing the game.", author: "Babe Ruth" },
+  { text: "It's going to be a journey. It's not a sprint to get in shape.", author: "Kerri Walsh Jennings" },
+  { text: "I've failed over and over and over again in my life. And that is why I succeed.", author: "Michael Jordan" },
+  { text: "You miss 100% of the shots you don't take.", author: "Wayne Gretzky" },
+  { text: "You don't have to be extreme, just consistent.", author: "Unknown" },
+  { text: "Even 20 minutes today is 20 minutes closer to your goal.", author: "Unknown" },
+  { text: "What seems impossible today will one day become your warm-up.", author: "Unknown" },
+  { text: "The difference between the impossible and the possible lies in a person's determination.", author: "Tommy Lasorda" },
+  { text: "Every day is a fresh chance to feel a little stronger.", author: "Unknown" },
+  { text: "Celebrate every small win along the way.", author: "Unknown" },
+  { text: "I don't focus on what I'm up against. I focus on my goals and I try to ignore the rest.", author: "Venus Williams" },
+  { text: "I really think a champion is defined not by their wins but by how they can recover when they fall.", author: "Serena Williams" },
+  { text: "It does not matter how slowly you go as long as you do not stop.", author: "Confucius" },
+  { text: "Sore today, strong tomorrow.", author: "Unknown" },
+  { text: "Your body can stand almost anything. It's your mind you have to convince.", author: "Unknown" },
+  { text: "A year from now you may wish you had started today.", author: "Karen Lamb" },
+  { text: "Consistency beats intensity. Just keep going.", author: "Unknown" },
+  { text: "Doubt kills more dreams than failure ever will.", author: "Rikki Rogers" },
 ];
 
 const MEALS = [
@@ -284,7 +330,12 @@ const MEALS = [
 // another let mealIdx point at two different recipes for the same number.
 function getMealPool(user) {
   const restrictions = user?.dietaryRestrictions || [];
-  const goal         = user?.nutritionGoal || '';
+  // Was user?.nutritionGoal || '' — silently skipped tailoring for anyone
+  // who set a primary fitness goal but never separately answered the
+  // nutrition-specific onboarding question (the common case), always
+  // falling through to the unsorted default below. resolveNutritionGoal()
+  // already exists precisely to fall back onto that primary goal.
+  const goal = resolveNutritionGoal(user);
   const eligible = MEALS.filter(m => {
     const text = ((m.name || '') + ' ' + (m.ingredients || []).join(' ')).toLowerCase();
     if (restrictions.includes('vegan')       && /chicken|beef|pork|fish|egg|dairy|milk|cheese/i.test(text)) return false;
@@ -470,10 +521,9 @@ const GROCERY_CATEGORIES = {
 
 const AI_SUGGESTIONS = {
   empty: { title:"Rest Day Nutrition",       tip:"Slight calorie reduction on rest days. Keep protein high to preserve muscle while your body recovers.",              rec:[4,8,6]  },
-  low:   { title:"Light Day Fueling",        tip:"Easy movement today — keep meals light but protein-rich. Anti-inflammatory foods like salmon help.",                 rec:[0,6,11] },
+  low:   { title:"Light Day Fueling",        tip:"Easy movement today: keep meals light but protein-rich. Anti-inflammatory foods like salmon help.",                 rec:[0,6,11] },
   okay:  { title:"Steady Day Nutrition",     tip:"Balanced macros support steady energy. Aim for even distribution across 3–4 meals throughout the day.",              rec:[1,2,3]  },
-  good:  { title:"Performance Nutrition",    tip:"You're training hard — fuel accordingly. High protein post-workout and complex carbs to sustain energy.",             rec:[0,1,9]  },
-  peak:  { title:"Max Effort Nutrition",     tip:"Carb-loading the night before helps. Post-workout window is critical — eat within 30 min for optimal recovery.",     rec:[0,9,10] },
+  good:  { title:"Performance Nutrition",    tip:"You're training hard, so fuel accordingly. High protein post-workout and complex carbs to sustain energy.",             rec:[0,1,9]  },
 };
 
 // Rotates daily (Mon–Sun). Each entry drives the VTRX Smart Nutrition banner.
@@ -481,14 +531,14 @@ const AI_SUGGESTIONS = {
 const DAILY_NUTRITION_FACTS = [
   {
     focus:      "Carbohydrates & Energy",
-    fact:       "Complex carbs are your body's preferred fuel source. Unlike simple sugars, they digest slowly — giving you steady energy throughout your workout and keeping you fuller for longer.",
+    fact:       "Complex carbs are your body's preferred fuel source. Unlike simple sugars, they digest slowly, giving you steady energy throughout your workout and keeping you fuller for longer.",
     examples:   "Best sources: oats, sweet potatoes, brown rice, quinoa, lentils, whole-grain bread, chickpeas.",
     recipeTag:  "High Protein",
     showRecipe: true,
   },
   {
     focus:      "Protein & Muscle Recovery",
-    fact:       "After training, your muscle fibres micro-tear and need protein to rebuild stronger. Spread your intake across meals — your body can only absorb around 30–40 g per sitting.",
+    fact:       "After training, your muscle fibres micro-tear and need protein to rebuild stronger. Spread your intake across meals: your body can only absorb around 30–40 g per sitting.",
     examples:   "Best sources: chicken breast, eggs, Greek yoghurt, cottage cheese, salmon, tofu, edamame.",
     recipeTag:  "High Protein",
     showRecipe: true,
@@ -508,7 +558,7 @@ const DAILY_NUTRITION_FACTS = [
   },
   {
     focus:      "Pre-Workout Nutrition",
-    fact:       "Eating 1–2 hours before training fills your glycogen stores and gives muscles a pool of amino acids to draw from — directly improving power output and delaying fatigue.",
+    fact:       "Eating 1–2 hours before training fills your glycogen stores and gives muscles a pool of amino acids to draw from, directly improving power output and delaying fatigue.",
     examples:   "Ideas: banana + peanut butter, oat porridge with berries, brown rice with chicken, rice cakes + turkey.",
     recipeTag:  "High Protein",
     showRecipe: true,
@@ -556,7 +606,6 @@ const WORKOUTS = {
   low:   { name: "Light Cardio",    type: "CARDIO",    target: "Cardiovascular System, Core",         mins: 20, cal: 150, exercises: 5  },
   okay:  { name: "Chest & Triceps", type: "STRENGTH",  target: "Pectorals, Triceps, Anterior Deltoids", mins: 30, cal: 300, exercises: 8  },
   good:  { name: "Full Body Power", type: "STRENGTH",  target: "Full Body, Compound Movements",       mins: 40, cal: 380, exercises: 9  },
-  peak:  { name: "Max Effort Day",  type: "STRENGTH",  target: "All Major Muscle Groups",             mins: 55, cal: 480, exercises: 10 },
 };
 
 // SVG face icons for energy levels — no emojis
@@ -571,16 +620,15 @@ function EnergyFaceIcon({ type, color, size=28 }) {
 }
 
 const ENERGY_LEVELS = [
-  { key: "empty", faceType: "empty", label: "Running on Empty",   sub: "Rest & recover — gentle session today", color: "#EF4444", bg: "rgba(239,68,68,0.1)"  },
-  { key: "low",   faceType: "low",   label: "Getting Through It", sub: "A light push — you can do this",        color: "#F97316", bg: "rgba(249,115,22,0.1)" },
+  { key: "empty", faceType: "empty", label: "Running on Empty",   sub: "Rest & recover: gentle session today", color: "#EF4444", bg: "rgba(239,68,68,0.1)"  },
+  { key: "low",   faceType: "low",   label: "Getting Through It", sub: "A light push: you can do this",        color: "#F97316", bg: "rgba(249,115,22,0.1)" },
   { key: "okay",  faceType: "okay",  label: "Feeling Okay",       sub: "Standard session ready for you",        color: "#EAB308", bg: "rgba(234,179,8,0.1)"  },
   { key: "good",  faceType: "good",  label: "Feeling Good",       sub: "Let's push a little harder today",      color: "#22C55E", bg: "rgba(34,197,94,0.1)"  },
-  { key: "peak",  faceType: "peak",  label: "Let's Go Hard",      sub: "Maximum effort — this is your day",     color: PRIMARY,   bg: "rgba(0,163,255,0.1)"  },
 ];
 
 // How today's mood check-in scales an AI-generated plan session for display —
-// one-directional (only ever trims, never adds to, what's programmed). "okay",
-// "good" and "peak" (or no mood set yet) render the session exactly as planned;
+// one-directional (only ever trims, never adds to, what's programmed). "okay"
+// and "good" (or no mood set yet) render the session exactly as planned;
 // the 4-week plan itself, its progressive-overload sets-per-week logic, and
 // session ordering are never touched, only what's shown/logged for today.
 const MOOD_SESSION_ADAPTATION = {
@@ -617,20 +665,28 @@ function SlideIcon({ type }) {
 
 const ONBOARDING_SLIDES = [
   {
+    // TODO: Replace with warmer, more approachable imagery.
+    // Current image is high-contrast/intimidating (intense athlete straining, dark equipment closeup).
+    // Target: someone who looks like a normal beginner, mid-workout but approachable, warmer lighting, not maximal-effort grimacing.
+    // Suggested free source: Pexels.com — search terms "beginner gym workout," "woman dumbbell smiling," "gym confidence"
     id: 0, bg: "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=800&q=80",
     overlay: "linear-gradient(180deg,rgba(0,0,0,0.3) 0%,rgba(0,0,0,0.5) 45%,rgba(0,0,0,0.88) 100%)",
-    tag: "WELCOME TO VTRX",
-    headline: ["Transform your body.", "Break past limits.", "Become unstoppable."],
-    body: "This isn't just about workouts — it's about redefining what you're capable of. Your goals, your pace, your evolution.",
-    features: [{ icon: "bolt",  text: "AI-powered workout plans" },
-               { icon: "fork",  text: "Macro-based meal planning" },
-               { icon: "chart", text: "Progressive overload tracking" }],
+    tag: "BUILT FOR BEGINNERS",
+    headline: ["Never feel lost at the gym again."],
+    body: "A coach that adapts to you: your experience level, your schedule, your pace. No judgment, no guesswork, just a clear plan every time you walk in.",
+    features: [{ icon: "bolt",  text: "Workouts built for your exact level" },
+               { icon: "fork",  text: "Meals that fit your goals, no guesswork" },
+               { icon: "chart", text: "Watch yourself get stronger every week" }],
   },
   {
+    // TODO: Replace with warmer, more approachable imagery.
+    // Current image is high-contrast/intimidating (intense athlete straining, dark equipment closeup).
+    // Target: someone who looks like a normal beginner, mid-workout but approachable, warmer lighting, not maximal-effort grimacing.
+    // Suggested free source: Pexels.com — search terms "beginner gym workout," "woman dumbbell smiling," "gym confidence"
     id: 4, bg: "https://images.unsplash.com/photo-1550345332-09e3ac987658?w=800&q=80",
     overlay: "linear-gradient(180deg,rgba(0,0,0,0.45) 0%,rgba(0,0,0,0.5) 35%,rgba(0,0,0,0.92) 100%)",
-    tag: "START YOUR JOURNEY",
-    headline: ["Your goals.", "Your plan.", "Your AI coach.", "Let's get to work."],
+    tag: "BUILT FOR BEGINNERS",
+    headline: ["Start where you are.", "Get stronger every week.", "No experience needed."],
     cta: true,
   },
 ];
@@ -651,15 +707,16 @@ function BackHeader({ title, right, onBack }) {
   );
 }
 
-function CTA({ label, onClick, icon, secondary }) {
+function CTA({ label, onClick, icon, secondary, disabled }) {
   return (
-    <button onClick={onClick} style={{
+    <button onClick={disabled ? undefined : onClick} disabled={disabled} style={{
       width:"100%",padding:"16px 0",borderRadius:50,
       border: secondary?"1.5px solid rgba(255,255,255,0.35)":"none",
       background: secondary?"transparent":`linear-gradient(135deg,${PRIMARY},#0068CC)`,
       fontFamily:FONT,fontWeight:800,fontSize:14,
       color: secondary?"rgba(255,255,255,0.85)":"#fff",
-      letterSpacing: secondary?0.5:2,cursor:"pointer",
+      letterSpacing: secondary?0.5:2,cursor:disabled?"not-allowed":"pointer",
+      opacity: disabled?0.7:1,
       boxShadow: secondary?"none":`0 4px 28px ${PRIMARY}55`,
       display:"flex",alignItems:"center",justifyContent:"center",gap:8,
     }}>{label}{icon&&<span style={{display:"flex",alignItems:"center",marginLeft:4}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></span>}</button>
@@ -682,9 +739,10 @@ function Shell({ bg, overlay, children }) {
 // Real week data — current date: April 29, 2026 (Wednesday)
 const WEEKS_DATA = [
   // 0 = current (Apr 27 – May 3), higher index = older
-  { label:"Apr 27 – May 3", days:[{day:"Mon",cal:380,type:"strength"},{day:"Tue",cal:320,type:"hiit"},{day:"Wed",cal:410,type:"strength"},{day:"Thu",cal:0,type:"rest"},{day:"Fri",cal:0,type:"rest"},{day:"Sat",cal:0,type:"rest"},{day:"Sun",cal:0,type:"rest"}], bestDays:[{day:"Thursday",type:"Strength",cal:410},{day:"Monday",type:"Strength",cal:380}], improvement:"N/A" },
-  { label:"Apr 20 – 26",    days:[{day:"Mon",cal:350,type:"strength"},{day:"Tue",cal:0,type:"rest"},{day:"Wed",cal:450,type:"hiit"},{day:"Thu",cal:320,type:"hiit"},{day:"Fri",cal:400,type:"strength"},{day:"Sat",cal:0,type:"rest"},{day:"Sun",cal:380,type:"cardio"}], bestDays:[{day:"Wednesday",type:"HIIT",cal:450},{day:"Friday",type:"Strength",cal:400}], improvement:"12%" },
-  { label:"Apr 13 – 19",    days:[{day:"Mon",cal:380,type:"strength"},{day:"Tue",cal:290,type:"cardio"},{day:"Wed",cal:0,type:"rest"},{day:"Thu",cal:410,type:"strength"},{day:"Fri",cal:350,type:"hiit"},{day:"Sat",cal:300,type:"cardio"},{day:"Sun",cal:0,type:"rest"}], bestDays:[{day:"Thursday",type:"Strength",cal:410},{day:"Monday",type:"Strength",cal:380}], improvement:"8%" },
+  // Index 0 intentionally omitted — allWeeks below always substitutes the
+  // live week for position 0, so a WEEKS_DATA[0] entry would never be read.
+  { label:"Apr 20 – 26",    days:[{day:"Mon",cal:350,type:"strength"},{day:"Tue",cal:0,type:"rest"},{day:"Wed",cal:450,type:"hiit"},{day:"Thu",cal:320,type:"hiit"},{day:"Fri",cal:400,type:"strength"},{day:"Sat",cal:0,type:"rest"},{day:"Sun",cal:380,type:"cardio"}], improvement:"12%" },
+  { label:"Apr 13 – 19",    days:[{day:"Mon",cal:380,type:"strength"},{day:"Tue",cal:290,type:"cardio"},{day:"Wed",cal:0,type:"rest"},{day:"Thu",cal:410,type:"strength"},{day:"Fri",cal:350,type:"hiit"},{day:"Sat",cal:300,type:"cardio"},{day:"Sun",cal:0,type:"rest"}], improvement:"8%" },
 ];
 
 function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
@@ -732,11 +790,11 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
     return merged;
   };
   // Always built from real data (backend dailyBreakdown, falling back to an honest
-  // all-zero week) — never the static WEEKS_DATA[0] placeholder, which showed fake
-  // non-zero calories that got replaced by the real (usually much lower) numbers as
-  // soon as /workouts/stats resolved, reading as bars appearing then disappearing.
-  const liveWeek  = { label: getWeekLabel(), days: buildLiveDays(), bestDays: [], improvement: "Live" };
-  const allWeeks  = [liveWeek, ...WEEKS_DATA.slice(1)];
+  // all-zero week) — never a static placeholder, which would show fake non-zero
+  // calories that got replaced by the real (usually much lower) numbers as soon
+  // as /workouts/stats resolved, reading as bars appearing then disappearing.
+  const liveWeek  = { label: getWeekLabel(), days: buildLiveDays(), improvement: "Live" };
+  const allWeeks  = [liveWeek, ...WEEKS_DATA];
   const MAX_WEEK  = allWeeks.length - 1;
 
   const goTo = (next) => {
@@ -761,6 +819,14 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
   const minCal   = calDays.length ? Math.min(...calDays.map(d => d.cal)) : 0;
   const totalCal = calDays.reduce((s,d) => s + d.cal, 0);
   const avgCal   = calDays.length ? Math.round(totalCal / calDays.length) : 0;
+  // Derived fresh from calDays for every week (live or static) rather than
+  // read from w.bestDays — the live week never had real best-days data (it
+  // was hardcoded to []), and this keeps the static weeks' display driven by
+  // the same logic instead of separately hand-authored values.
+  const DAY_FULL_NAME = { Mon:"Monday", Tue:"Tuesday", Wed:"Wednesday", Thu:"Thursday", Fri:"Friday", Sat:"Saturday", Sun:"Sunday" };
+  const typeLabel = (t) => t === "hiit" ? "HIIT" : (t ? t.charAt(0).toUpperCase() + t.slice(1) : "Workout");
+  const bestDays = [...calDays].sort((a,b) => b.cal - a.cal).slice(0, 2)
+    .map(d => ({ day: DAY_FULL_NAME[d.day] || d.day, type: typeLabel(d.type), cal: d.cal }));
 
   const barH = (cal) => {
     if (!cal) return 0;
@@ -816,9 +882,16 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
         onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
 
         {week===0 && statsLoading ? (
-          <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"48px 16px",textAlign:"center" }}>
-            <div style={{ fontFamily:FONT,fontSize:13,color:"#888888" }}>Loading your week…</div>
-          </div>
+          <>
+            <style>{`@keyframes statsSkeletonPulse{0%,100%{opacity:0.4}50%{opacity:0.8}}`}</style>
+            <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"18px 16px",marginBottom:14,height:180,animation:"statsSkeletonPulse 1.4s ease-in-out infinite" }}/>
+            <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12 }}>
+              {[0,1,2,3].map(i => (
+                <div key={i} style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"24px 16px",height:118,animation:"statsSkeletonPulse 1.4s ease-in-out infinite",animationDelay:`${i*0.1}s` }}/>
+              ))}
+            </div>
+            <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"16px 18px",height:100,animation:"statsSkeletonPulse 1.4s ease-in-out infinite",animationDelay:"0.4s" }}/>
+          </>
         ) : (<>
         {/* Bar chart */}
         {(()=>{
@@ -884,7 +957,7 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
           {[
             { iconBg:"#DC2626", label:"Average Calories",   val:avgCal,         svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> },
             { iconBg:"#6366F1", label:"Workouts This Week", val:calDays.length, svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg> },
-            { iconBg:"#16A34A", label:"Avg Minutes",        val:60,             svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> },
+            { iconBg:"#16A34A", label:"Avg Minutes",        val:week===0 ? (apiStats?.avgMinutes ?? 0) : 0, svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> },
             { iconBg:"#9333EA", label:"Weekly Improvement", val:w.improvement,  svg:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg> },
           ].map((s,i)=>(
             <div key={i} style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"24px 16px",display:"flex",flexDirection:"column",alignItems:"center",gap:12 }}>
@@ -898,8 +971,10 @@ function FitnessStatsPage({ onBack, loggedWorkouts=[] }) {
         {/* Best days */}
         <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"16px 18px" }}>
           <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13,color:"#888888",marginBottom:12,letterSpacing:1 }}>THIS WEEK'S BEST DAYS</div>
-          {w.bestDays.map((r,i)=>(
-            <div key={i} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",paddingBottom:i===0&&w.bestDays.length>1?14:0,borderBottom:i===0&&w.bestDays.length>1?`1px solid ${BORDER}`:0,marginBottom:i===0&&w.bestDays.length>1?14:0 }}>
+          {bestDays.length === 0 ? (
+            <div style={{ fontFamily:FONT,fontSize:13,color:"#666666" }}>Log a workout to see your best days here.</div>
+          ) : bestDays.map((r,i)=>(
+            <div key={i} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",paddingBottom:i===0&&bestDays.length>1?14:0,borderBottom:i===0&&bestDays.length>1?`1px solid ${BORDER}`:0,marginBottom:i===0&&bestDays.length>1?14:0 }}>
               <div>
                 <div style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:"#fff" }}>{r.day}</div>
                 <div style={{ fontFamily:FONT,fontSize:12,color:"#888888",marginTop:2 }}>{r.type}</div>
@@ -2022,85 +2097,85 @@ const VideoPlayer = forwardRef(function VideoPlayer({ videoUrl, hlsUrl = null, t
 // ─────────────────────────────────────────────────────────────────────────────
 const EXERCISE_INSTRUCTIONS_MAP = {
   // ── BICEPS ──────────────────────────────────────────────────────────────
-  "alternating dumbbell curl":["Stand with feet shoulder-width apart, a dumbbell in each hand with palms facing forward","Keep your upper arms still and elbows pinned close to your torso throughout","Curl one dumbbell up toward your shoulder, squeezing your bicep hard at the top","Lower slowly over 2–3 seconds, then repeat on the other arm","Alternate sides for each rep — avoid swinging or using momentum"],
-  "dumbbell curl":["Stand feet shoulder-width apart, dumbbells at your sides with palms facing forward","Keep elbows pinned to your sides and curl both dumbbells up to shoulder height","Squeeze your biceps hard at the top for a full contraction","Lower slowly over 2–3 seconds back to full extension","Avoid swinging — keep the movement strictly controlled"],
-  "bicep curl":["Stand feet shoulder-width apart, dumbbells at your sides with palms facing forward","Keep elbows pinned to your sides and curl both dumbbells up to shoulder height","Squeeze your biceps hard at the top for a full contraction","Lower slowly over 2–3 seconds back to full extension","Avoid swinging — keep the movement strictly controlled"],
-  "barbell curl":["Stand feet shoulder-width apart, grip the barbell underhand at hip level","Keep your elbows close to your body and curl the bar up toward your chest","Squeeze your biceps at the top and hold for 1 second","Lower the bar slowly over 2–3 seconds — keep your back straight","Avoid leaning back to cheat the weight up"],
+  "alternating dumbbell curl":["Stand with feet shoulder-width apart, a dumbbell in each hand with palms facing forward","Keep your upper arms still and elbows pinned close to your torso throughout","Curl one dumbbell up toward your shoulder, squeezing your bicep hard at the top","Lower slowly over 2–3 seconds, then repeat on the other arm","Alternate sides for each rep. Avoid swinging or using momentum"],
+  "dumbbell curl":["Stand feet shoulder-width apart, dumbbells at your sides with palms facing forward","Keep elbows pinned to your sides and curl both dumbbells up to shoulder height","Squeeze your biceps hard at the top for a full contraction","Lower slowly over 2–3 seconds back to full extension","Avoid swinging. Keep the movement strictly controlled"],
+  "bicep curl":["Stand feet shoulder-width apart, dumbbells at your sides with palms facing forward","Keep elbows pinned to your sides and curl both dumbbells up to shoulder height","Squeeze your biceps hard at the top for a full contraction","Lower slowly over 2–3 seconds back to full extension","Avoid swinging. Keep the movement strictly controlled"],
+  "barbell curl":["Stand feet shoulder-width apart, grip the barbell underhand at hip level","Keep your elbows close to your body and curl the bar up toward your chest","Squeeze your biceps at the top and hold for 1 second","Lower the bar slowly over 2–3 seconds. Keep your back straight","Avoid leaning back to cheat the weight up"],
   "hammer curl":["Stand feet shoulder-width apart, dumbbells at your sides with palms facing inward (thumbs up)","Without rotating your wrists, curl both dumbbells up toward your shoulders","Squeeze at the top then lower slowly back over 2–3 seconds","This neutral grip targets the brachialis alongside the biceps for thicker arms"],
-  "preacher curl":["Sit at the preacher bench and rest the back of your upper arms flat against the pad","Hold the barbell or dumbbell underhand with arms nearly fully extended","Curl the weight up toward your chin, squeezing your biceps hard at the top","Lower slowly — do not fully lock out at the bottom to keep constant tension"],
-  "concentration curl":["Sit on a bench, feet wide apart — rest your right upper arm against your inner right thigh","Hold a dumbbell with your right hand and let it hang fully extended","Curl the weight up toward your shoulder, rotating your pinky slightly outward at the top","Lower slowly and complete all reps before switching arms"],
-  "cable curl":["Attach a straight bar or EZ-bar to the low pulley of a cable machine","Stand close, grip the bar underhand at hip height with elbows tucked in","Curl the bar up toward your chest against the constant cable tension","Squeeze at the top then lower slowly — the cable keeps tension through the whole movement"],
-  "incline dumbbell curl":["Set a bench to 45–60° incline and sit back with dumbbells hanging at full extension","The incline creates a long-head bicep stretch at the bottom for greater muscle development","Curl both dumbbells up toward your shoulders keeping elbows pulled back","Squeeze at the top and lower slowly — feel the full stretch at the bottom"],
+  "preacher curl":["Sit at the preacher bench and rest the back of your upper arms flat against the pad","Hold the barbell or dumbbell underhand with arms nearly fully extended","Curl the weight up toward your chin, squeezing your biceps hard at the top","Lower slowly. Do not fully lock out at the bottom to keep constant tension"],
+  "concentration curl":["Sit on a bench, feet wide apart. Rest your right upper arm against your inner right thigh","Hold a dumbbell with your right hand and let it hang fully extended","Curl the weight up toward your shoulder, rotating your pinky slightly outward at the top","Lower slowly and complete all reps before switching arms"],
+  "cable curl":["Attach a straight bar or EZ-bar to the low pulley of a cable machine","Stand close, grip the bar underhand at hip height with elbows tucked in","Curl the bar up toward your chest against the constant cable tension","Squeeze at the top then lower slowly: the cable keeps tension through the whole movement"],
+  "incline dumbbell curl":["Set a bench to 45–60° incline and sit back with dumbbells hanging at full extension","The incline creates a long-head bicep stretch at the bottom for greater muscle development","Curl both dumbbells up toward your shoulders keeping elbows pulled back","Squeeze at the top and lower slowly. Feel the full stretch at the bottom"],
   // ── CHEST ───────────────────────────────────────────────────────────────
-  "bench press":["Lie flat on the bench with feet firmly on the floor for stability","Grip the bar slightly wider than shoulder-width with an overhand grip","Unrack the bar and lower it to your mid-chest — keep elbows at 45° from your body","Press the bar upward explosively until your arms are fully extended","Lower the weight slowly over 2–3 seconds — never bounce off your chest"],
-  "barbell bench press":["Lie flat on the bench with feet firmly on the floor for stability","Grip the bar slightly wider than shoulder-width with an overhand grip","Lower the bar to your mid-chest — elbows at roughly 45° to your torso","Press upward until arms are fully extended, squeezing your chest at the top","Lower slowly over 2–3 seconds — never bounce off your chest"],
-  "dumbbell bench press":["Lie flat on the bench, hold a dumbbell in each hand at chest level","Press both dumbbells upward until your arms are straight, bringing them slightly together","Squeeze your chest at the top of the movement","Lower the dumbbells slowly — feel a stretch across your chest at the bottom","Keep feet flat, back slightly arched, and shoulders retracted throughout"],
-  "incline bench press":["Set the bench to 30–45° and lie back with feet flat on the floor","Grip the bar just outside shoulder-width and unrack it","Lower the bar to your upper chest — keep elbows at 45–60° from your body","Press back up powerfully until arms are extended — squeeze your upper chest","Lower slowly — the incline targets the upper pectoral muscle"],
+  "bench press":["Lie flat on the bench with feet firmly on the floor for stability","Grip the bar slightly wider than shoulder-width with an overhand grip","Unrack the bar and lower it to your mid-chest. Keep elbows at 45° from your body","Press the bar upward explosively until your arms are fully extended","Lower the weight slowly over 2–3 seconds. Never bounce off your chest"],
+  "barbell bench press":["Lie flat on the bench with feet firmly on the floor for stability","Grip the bar slightly wider than shoulder-width with an overhand grip","Lower the bar to your mid-chest, elbows at roughly 45° to your torso","Press upward until arms are fully extended, squeezing your chest at the top","Lower slowly over 2–3 seconds. Never bounce off your chest"],
+  "dumbbell bench press":["Lie flat on the bench, hold a dumbbell in each hand at chest level","Press both dumbbells upward until your arms are straight, bringing them slightly together","Squeeze your chest at the top of the movement","Lower the dumbbells slowly. Feel a stretch across your chest at the bottom","Keep feet flat, back slightly arched, and shoulders retracted throughout"],
+  "incline bench press":["Set the bench to 30–45° and lie back with feet flat on the floor","Grip the bar just outside shoulder-width and unrack it","Lower the bar to your upper chest. Keep elbows at 45–60° from your body","Press back up powerfully until arms are extended. Squeeze your upper chest","Lower slowly: the incline targets the upper pectoral muscle"],
   "incline dumbbell press":["Set the bench to 30–45°, sit back with a dumbbell in each hand resting on your thighs","Kick the dumbbells up as you lie back, positioning them at chest level","Press both dumbbells up and slightly together until arms are straight","Squeeze your upper chest at the top, then lower slowly back to the starting position"],
-  "push up":["Place hands slightly wider than shoulder-width on the floor, fingers pointing forward","Start in a straight-arm plank — keep your body in a rigid straight line from head to heels","Lower your chest toward the floor, keeping elbows at roughly 45° from your body","Press back up powerfully until your arms are fully extended","Keep your core tight throughout — don't let your hips sag or pike up"],
-  "push-up":["Place hands slightly wider than shoulder-width on the floor, fingers pointing forward","Start in a straight-arm plank — keep your body in a rigid straight line from head to heels","Lower your chest toward the floor, keeping elbows at roughly 45° from your body","Press back up powerfully until your arms are fully extended","Keep your core tight throughout — don't let your hips sag or pike up"],
-  "pushup":["Place hands slightly wider than shoulder-width on the floor, fingers pointing forward","Start in a straight-arm plank — keep your body in a rigid straight line from head to heels","Lower your chest toward the floor, keeping elbows at roughly 45° from your body","Press back up powerfully until your arms are fully extended","Keep your core tight throughout — don't let your hips sag or pike up"],
-  "dumbbell flye":["Lie flat on a bench, hold dumbbells above your chest with a slight bend in your elbows","Open your arms in a wide arc, lowering dumbbells out to your sides until you feel a chest stretch","Squeeze your chest and bring the dumbbells back together in the same arc motion","Maintain the slight elbow bend throughout — do not straighten or over-bend your arms"],
-  "cable flye":["Set both cable stations to the high position and stand in the center","Hold a handle in each hand and lean forward slightly at the hips","Bring your hands together in front of your lower chest in a wide arc, squeezing your pecs","Slowly let your arms return to the starting position — feel the chest stretch"],
-  "chest dip":["Grip the parallel bars and support your bodyweight with arms straight","Lean your torso forward slightly — this shifts focus to the chest rather than triceps","Lower your body by bending your elbows until they reach 90° or slightly below","Press back up strongly until arms are fully straight, squeezing your chest at the top"],
+  "push up":["Place hands slightly wider than shoulder-width on the floor, fingers pointing forward","Start in a straight-arm plank. Keep your body in a rigid straight line from head to heels","Lower your chest toward the floor, keeping elbows at roughly 45° from your body","Press back up powerfully until your arms are fully extended","Keep your core tight throughout. Don't let your hips sag or pike up"],
+  "push-up":["Place hands slightly wider than shoulder-width on the floor, fingers pointing forward","Start in a straight-arm plank. Keep your body in a rigid straight line from head to heels","Lower your chest toward the floor, keeping elbows at roughly 45° from your body","Press back up powerfully until your arms are fully extended","Keep your core tight throughout. Don't let your hips sag or pike up"],
+  "pushup":["Place hands slightly wider than shoulder-width on the floor, fingers pointing forward","Start in a straight-arm plank. Keep your body in a rigid straight line from head to heels","Lower your chest toward the floor, keeping elbows at roughly 45° from your body","Press back up powerfully until your arms are fully extended","Keep your core tight throughout. Don't let your hips sag or pike up"],
+  "dumbbell flye":["Lie flat on a bench, hold dumbbells above your chest with a slight bend in your elbows","Open your arms in a wide arc, lowering dumbbells out to your sides until you feel a chest stretch","Squeeze your chest and bring the dumbbells back together in the same arc motion","Maintain the slight elbow bend throughout. Do not straighten or over-bend your arms"],
+  "cable flye":["Set both cable stations to the high position and stand in the center","Hold a handle in each hand and lean forward slightly at the hips","Bring your hands together in front of your lower chest in a wide arc, squeezing your pecs","Slowly let your arms return to the starting position. Feel the chest stretch"],
+  "chest dip":["Grip the parallel bars and support your bodyweight with arms straight","Lean your torso forward slightly: this shifts focus to the chest rather than triceps","Lower your body by bending your elbows until they reach 90° or slightly below","Press back up strongly until arms are fully straight, squeezing your chest at the top"],
   // ── BACK ────────────────────────────────────────────────────────────────
-  "pull up":["Hang from the bar with an overhand grip, hands slightly wider than shoulder-width","Start from a dead hang with arms fully extended and shoulders engaged","Pull your chest toward the bar — drive your elbows down and back toward your hips","Squeeze your lats and upper back when your chin clears the bar","Lower yourself slowly over 2–3 seconds back to the full hang"],
-  "pull-up":["Hang from the bar with an overhand grip, hands slightly wider than shoulder-width","Start from a dead hang with arms fully extended and shoulders engaged","Pull your chest toward the bar — drive your elbows down and back toward your hips","Squeeze your lats and upper back when your chin clears the bar","Lower yourself slowly over 2–3 seconds back to the full hang"],
+  "pull up":["Hang from the bar with an overhand grip, hands slightly wider than shoulder-width","Start from a dead hang with arms fully extended and shoulders engaged","Pull your chest toward the bar. Drive your elbows down and back toward your hips","Squeeze your lats and upper back when your chin clears the bar","Lower yourself slowly over 2–3 seconds back to the full hang"],
+  "pull-up":["Hang from the bar with an overhand grip, hands slightly wider than shoulder-width","Start from a dead hang with arms fully extended and shoulders engaged","Pull your chest toward the bar. Drive your elbows down and back toward your hips","Squeeze your lats and upper back when your chin clears the bar","Lower yourself slowly over 2–3 seconds back to the full hang"],
   "chin up":["Hang from the bar with an underhand (supinated) grip, hands shoulder-width apart","Start from a dead hang with arms fully extended","Pull your chin above the bar by driving your elbows down and back","Squeeze your biceps and lats at the top, then lower slowly"],
-  "lat pulldown":["Sit at the machine and adjust the thigh pad to lock your legs in","Grip the bar slightly wider than shoulder-width with an overhand grip","Lean back slightly and pull the bar down to your upper chest, leading with your elbows","Squeeze your lats hard at the bottom — hold for a second","Slowly return the bar to the top, maintaining muscle tension throughout"],
-  "bent over row":["Stand with feet hip-width apart, grip the bar overhand at hip level","Hinge forward at the hips until your torso is roughly parallel to the floor","Keep your back flat, core braced — pull the bar to your lower chest or upper abdomen","Drive your elbows back and squeeze your shoulder blades together at the top","Lower slowly under control back to the start"],
-  "barbell row":["Stand with feet hip-width apart, grip the bar overhand at hip level","Hinge forward at the hips until your torso is roughly parallel to the floor","Keep your back flat, core braced — pull the bar to your lower chest or upper abdomen","Drive your elbows back and squeeze your shoulder blades together at the top","Lower slowly under control back to the start"],
-  "dumbbell row":["Place your left knee and hand on a flat bench for support","Hold a dumbbell in your right hand and let it hang fully extended","Row the dumbbell to your hip by driving your elbow straight back — keep your back flat","Squeeze your lat at the top and lower slowly","Complete all reps then switch sides"],
-  "seated cable row":["Sit at the cable row machine with feet on the platform and knees slightly bent","Grip the handle and sit tall with your back straight and chest up","Pull the handle to your abdomen, driving your elbows back and squeezing your shoulder blades","Hold the contraction for a second, then slowly extend arms back to the start","Avoid rocking your torso — keep the movement isolated to your back"],
-  "deadlift":["Stand with feet hip-width apart, barbell over your mid-foot","Hinge at your hips and bend your knees to grip the bar just outside your legs","Take a big breath, brace your core, and drive through your heels to pull the bar up","Keep the bar dragging close to your body — up your shins and thighs","Stand fully upright squeezing glutes at the top, then hinge back down under control"],
+  "lat pulldown":["Sit at the machine and adjust the thigh pad to lock your legs in","Grip the bar slightly wider than shoulder-width with an overhand grip","Lean back slightly and pull the bar down to your upper chest, leading with your elbows","Squeeze your lats hard at the bottom; hold for a second","Slowly return the bar to the top, maintaining muscle tension throughout"],
+  "bent over row":["Stand with feet hip-width apart, grip the bar overhand at hip level","Hinge forward at the hips until your torso is roughly parallel to the floor","Keep your back flat, core braced. Pull the bar to your lower chest or upper abdomen","Drive your elbows back and squeeze your shoulder blades together at the top","Lower slowly under control back to the start"],
+  "barbell row":["Stand with feet hip-width apart, grip the bar overhand at hip level","Hinge forward at the hips until your torso is roughly parallel to the floor","Keep your back flat, core braced. Pull the bar to your lower chest or upper abdomen","Drive your elbows back and squeeze your shoulder blades together at the top","Lower slowly under control back to the start"],
+  "dumbbell row":["Place your left knee and hand on a flat bench for support","Hold a dumbbell in your right hand and let it hang fully extended","Row the dumbbell to your hip by driving your elbow straight back; keep your back flat","Squeeze your lat at the top and lower slowly","Complete all reps then switch sides"],
+  "seated cable row":["Sit at the cable row machine with feet on the platform and knees slightly bent","Grip the handle and sit tall with your back straight and chest up","Pull the handle to your abdomen, driving your elbows back and squeezing your shoulder blades","Hold the contraction for a second, then slowly extend arms back to the start","Avoid rocking your torso. Keep the movement isolated to your back"],
+  "deadlift":["Stand with feet hip-width apart, barbell over your mid-foot","Hinge at your hips and bend your knees to grip the bar just outside your legs","Take a big breath, brace your core, and drive through your heels to pull the bar up","Keep the bar dragging close to your body, up your shins and thighs","Stand fully upright squeezing glutes at the top, then hinge back down under control"],
   "romanian deadlift":["Stand with feet hip-width apart, hold the barbell in front of your thighs with an overhand grip","Push your hips back while keeping your back flat and chest tall","Lower the bar along your legs until you feel a deep hamstring stretch","Drive your hips forward to return to standing, squeezing your glutes at the top","Keep the bar close to your body and maintain a neutral spine throughout"],
   "rdl":["Stand with feet hip-width apart, hold the barbell in front of your thighs with an overhand grip","Push your hips back while keeping your back flat and chest tall","Lower the bar along your legs until you feel a deep hamstring stretch","Drive your hips forward to return to standing, squeezing your glutes at the top"],
   // ── SHOULDERS ───────────────────────────────────────────────────────────
-  "overhead press":["Stand feet shoulder-width apart, hold the barbell at shoulder height with an overhand grip","Brace your core — keep your ribs down and glutes tight to protect your spine","Press the bar straight overhead until your arms are fully extended","Shrug your traps slightly at the top to lock out the shoulder joint","Lower the bar slowly back to your shoulders under control"],
-  "barbell overhead press":["Stand feet shoulder-width apart, hold the barbell at shoulder height with an overhand grip","Brace your core — keep your ribs down and glutes tight","Press the bar straight overhead until your arms are fully extended","Shrug your traps slightly at the top to lock out the shoulder joint","Lower the bar slowly back to your shoulders under control"],
-  "military press":["Stand feet shoulder-width apart, grip the barbell at shoulder height","Brace your core tightly — do not arch your lower back","Press the bar straight overhead until your arms are fully locked out","Keep the bar over your center of mass throughout the movement","Lower the bar slowly back to shoulder level under control"],
-  "dumbbell shoulder press":["Sit on an upright bench, hold dumbbells at shoulder height with palms facing forward","Brace your core and press both dumbbells directly overhead until arms are extended","Bring the dumbbells slightly together at the top without touching","Lower slowly back to shoulder level — full range of motion on every rep"],
-  "arnold press":["Sit upright, hold dumbbells in front of your shoulders with palms facing you (like a top curl position)","As you press upward, rotate your palms outward — palms face forward by full extension","Reverse the rotation as you lower back to the starting position","This rotation targets the anterior and medial deltoid across a full range of motion"],
-  "lateral raise":["Stand feet shoulder-width apart, hold dumbbells at your sides with a slight elbow bend","Raise both arms out to the sides until they reach shoulder height — lead with your elbows","At the top, let your pinkies be slightly higher than your thumbs for full medial delt activation","Lower the dumbbells slowly over 3 seconds — control the descent","Avoid using momentum — keep the movement strict and isolated"],
-  "front raise":["Stand feet shoulder-width apart, hold dumbbells in front of your thighs with palms facing down","With a slight elbow bend, raise one or both arms forward to shoulder height","Pause at the top, then lower slowly back to the start","Avoid swinging — this targets the anterior (front) deltoid"],
-  "rear delt fly":["Stand and hinge forward at the hips about 45°, or use an incline bench","Hold dumbbells hanging down with a slight bend in your elbows","Raise both arms out to the sides in a wide arc — squeeze your rear delts and upper back at the top","Lower slowly back to the starting position — feel the stretch in your rear delts"],
-  "face pull":["Attach a rope to a cable machine at approximately head height","Grip the rope with both hands and step back with arms extended","Pull the rope toward your face, driving your elbows back and out to the sides","Externally rotate your shoulders at the end — thumbs pointing back behind you","Slowly return to the start — great for shoulder health and rear delt development"],
-  "upright row":["Stand feet shoulder-width apart, grip the barbell narrow with an overhand grip","Pull the bar straight up toward your chin, leading with your elbows","Elbows should travel up and flare out — keep the bar close to your body","Lower the bar slowly back to hip level under full control"],
+  "overhead press":["Stand feet shoulder-width apart, hold the barbell at shoulder height with an overhand grip","Brace your core: keep your ribs down and glutes tight to protect your spine","Press the bar straight overhead until your arms are fully extended","Shrug your traps slightly at the top to lock out the shoulder joint","Lower the bar slowly back to your shoulders under control"],
+  "barbell overhead press":["Stand feet shoulder-width apart, hold the barbell at shoulder height with an overhand grip","Brace your core: keep your ribs down and glutes tight","Press the bar straight overhead until your arms are fully extended","Shrug your traps slightly at the top to lock out the shoulder joint","Lower the bar slowly back to your shoulders under control"],
+  "military press":["Stand feet shoulder-width apart, grip the barbell at shoulder height","Brace your core tightly: do not arch your lower back","Press the bar straight overhead until your arms are fully locked out","Keep the bar over your center of mass throughout the movement","Lower the bar slowly back to shoulder level under control"],
+  "dumbbell shoulder press":["Sit on an upright bench, hold dumbbells at shoulder height with palms facing forward","Brace your core and press both dumbbells directly overhead until arms are extended","Bring the dumbbells slightly together at the top without touching","Lower slowly back to shoulder level: full range of motion on every rep"],
+  "arnold press":["Sit upright, hold dumbbells in front of your shoulders with palms facing you (like a top curl position)","As you press upward, rotate your palms outward. Palms face forward by full extension","Reverse the rotation as you lower back to the starting position","This rotation targets the anterior and medial deltoid across a full range of motion"],
+  "lateral raise":["Stand feet shoulder-width apart, hold dumbbells at your sides with a slight elbow bend","Raise both arms out to the sides until they reach shoulder height. Lead with your elbows","At the top, let your pinkies be slightly higher than your thumbs for full medial delt activation","Lower the dumbbells slowly over 3 seconds. Control the descent","Avoid using momentum. Keep the movement strict and isolated"],
+  "front raise":["Stand feet shoulder-width apart, hold dumbbells in front of your thighs with palms facing down","With a slight elbow bend, raise one or both arms forward to shoulder height","Pause at the top, then lower slowly back to the start","Avoid swinging: this targets the anterior (front) deltoid"],
+  "rear delt fly":["Stand and hinge forward at the hips about 45°, or use an incline bench","Hold dumbbells hanging down with a slight bend in your elbows","Raise both arms out to the sides in a wide arc. Squeeze your rear delts and upper back at the top","Lower slowly back to the starting position. Feel the stretch in your rear delts"],
+  "face pull":["Attach a rope to a cable machine at approximately head height","Grip the rope with both hands and step back with arms extended","Pull the rope toward your face, driving your elbows back and out to the sides","Externally rotate your shoulders at the end, thumbs pointing back behind you","Slowly return to the start: great for shoulder health and rear delt development"],
+  "upright row":["Stand feet shoulder-width apart, grip the barbell narrow with an overhand grip","Pull the bar straight up toward your chin, leading with your elbows","Elbows should travel up and flare out. Keep the bar close to your body","Lower the bar slowly back to hip level under full control"],
   // ── TRICEPS ─────────────────────────────────────────────────────────────
-  "tricep dip":["Support your bodyweight on parallel bars with arms straight","Keep your torso upright (vertical) to target the triceps","Lower your body by bending your elbows until they reach 90°","Press back up powerfully until your arms are fully extended — squeeze triceps at the top"],
-  "skull crusher":["Lie flat on a bench, hold the EZ-bar or dumbbells directly above your forehead with arms extended","Keeping your upper arms stationary and vertical, bend your elbows to lower the weight toward your forehead","Stop just before the weight reaches your head, then extend your arms back to the top","Control the descent — do not rush this movement","Only your forearms should move — upper arms stay fixed and vertical"],
-  "overhead tricep extension":["Stand or sit and hold a dumbbell with both hands, raising it overhead with arms extended","Keeping your upper arms close to your head, lower the dumbbell behind your head by bending your elbows","Feel the stretch in your triceps at the bottom of the movement","Extend your arms back overhead — squeeze your triceps hard at full extension"],
-  "tricep pushdown":["Stand at the cable machine with a straight bar or rope attached to the high pulley","Grip the attachment and pin your elbows to your sides — keep them locked throughout","Push the bar or rope down until your arms are fully extended, squeezing your triceps hard","Slowly allow the weight to rise back up — control the movement throughout"],
-  "close grip bench press":["Lie flat on the bench and grip the bar with hands about shoulder-width apart (narrower than a normal bench press)","Lower the bar to your lower chest keeping your elbows tucked close to your body","Press the bar back up — squeeze your triceps hard at full extension","The close grip shifts the focus from the chest to the triceps"],
+  "tricep dip":["Support your bodyweight on parallel bars with arms straight","Keep your torso upright (vertical) to target the triceps","Lower your body by bending your elbows until they reach 90°","Press back up powerfully until your arms are fully extended. Squeeze triceps at the top"],
+  "skull crusher":["Lie flat on a bench, hold the EZ-bar or dumbbells directly above your forehead with arms extended","Keeping your upper arms stationary and vertical, bend your elbows to lower the weight toward your forehead","Stop just before the weight reaches your head, then extend your arms back to the top","Control the descent. Do not rush this movement","Only your forearms should move. Upper arms stay fixed and vertical"],
+  "overhead tricep extension":["Stand or sit and hold a dumbbell with both hands, raising it overhead with arms extended","Keeping your upper arms close to your head, lower the dumbbell behind your head by bending your elbows","Feel the stretch in your triceps at the bottom of the movement","Extend your arms back overhead. Squeeze your triceps hard at full extension"],
+  "tricep pushdown":["Stand at the cable machine with a straight bar or rope attached to the high pulley","Grip the attachment and pin your elbows to your sides. Keep them locked throughout","Push the bar or rope down until your arms are fully extended, squeezing your triceps hard","Slowly allow the weight to rise back up. Control the movement throughout"],
+  "close grip bench press":["Lie flat on the bench and grip the bar with hands about shoulder-width apart (narrower than a normal bench press)","Lower the bar to your lower chest keeping your elbows tucked close to your body","Press the bar back up. Squeeze your triceps hard at full extension","The close grip shifts the focus from the chest to the triceps"],
   "diamond push up":["Get into push-up position but place your hands close together, forming a diamond with thumbs and index fingers","Keep your elbows tucked in close to your body throughout","Lower your chest toward your hands then press back up powerfully","This variation places maximum stress on the triceps"],
   // ── LEGS ────────────────────────────────────────────────────────────────
-  "squat":["Stand with feet shoulder-width apart, toes pointing slightly outward","Brace your core and sit back and down as if lowering into a chair","Keep your chest tall and knees tracking over your toes — do not let them cave in","Lower until your thighs are at least parallel to the floor","Drive through your heels to stand, squeezing your glutes at the top"],
-  "barbell squat":["Set the bar across your upper traps, grip outside shoulder-width, and unrack","Step back with feet shoulder-width apart and toes slightly out","Brace your core — break at the hips and knees simultaneously and descend until thighs are parallel","Drive powerfully through your heels to stand — knees track over toes throughout","Keep your chest tall and lower back neutral — no rounding"],
-  "goblet squat":["Hold a dumbbell or kettlebell vertically at your chest with both hands","Stand with feet shoulder-width apart, toes turned slightly outward","Squat down keeping your chest tall — let your elbows brush inside your knees at the bottom","Drive through your heels to stand, squeezing your glutes at the top"],
-  "leg press":["Sit in the leg press machine with your back and head firmly against the pad","Place feet shoulder-width on the platform, toes slightly turned out","Unlock the safety handles and lower the platform toward you until knees reach 90°","Do not let your lower back round off the pad at the bottom","Drive the platform away pressing through your heels until legs are nearly straight — do not lock out"],
-  "lunge":["Stand tall with feet hip-width apart, hands on hips or holding dumbbells at your sides","Step forward with one leg and lower your back knee toward the floor","Keep your front shin vertical and torso upright — front knee should not travel past your toes","Push back off your front foot to return to the starting position","Alternate legs for each rep — focus on balance and control"],
-  "walking lunge":["Stand tall holding dumbbells at your sides","Step forward with your right foot and lower your left knee toward the floor","Keep your torso upright and front shin vertical","Push through your right heel and step forward with your left foot to continue walking","Alternate legs continuously — keep the movement smooth and controlled"],
-  "leg extension":["Sit in the leg extension machine and adjust the pad to rest just above your lower shins","Grip the handles and extend your legs until fully straight — squeeze your quads hard at the top","Hold the top position for a second, then lower slowly over 2–3 seconds","Stop just before the weights touch — keep constant tension on the quads"],
-  "leg curl":["Lie face down on the leg curl machine — position the pad just above your heels","Grip the handles and curl your heels toward your glutes, squeezing your hamstrings at the top","Hold the contraction for a second at the top","Lower slowly over 2–3 seconds back to the start"],
-  "hip thrust":["Sit on the floor with your upper back against a bench and a barbell across your hips","Plant your feet flat on the floor, hip-width apart, shins vertical","Drive your hips toward the ceiling by squeezing your glutes — create a straight line from knees to shoulders","Pause at the top for a full glute contraction","Lower your hips back down slowly and repeat — keep chin tucked throughout"],
+  "squat":["Stand with feet shoulder-width apart, toes pointing slightly outward","Brace your core and sit back and down as if lowering into a chair","Keep your chest tall and knees tracking over your toes. Do not let them cave in","Lower until your thighs are at least parallel to the floor","Drive through your heels to stand, squeezing your glutes at the top"],
+  "barbell squat":["Set the bar across your upper traps, grip outside shoulder-width, and unrack","Step back with feet shoulder-width apart and toes slightly out","Brace your core. Break at the hips and knees simultaneously and descend until thighs are parallel","Drive powerfully through your heels to stand. Knees track over toes throughout","Keep your chest tall and lower back neutral: no rounding"],
+  "goblet squat":["Hold a dumbbell or kettlebell vertically at your chest with both hands","Stand with feet shoulder-width apart, toes turned slightly outward","Squat down keeping your chest tall. Let your elbows brush inside your knees at the bottom","Drive through your heels to stand, squeezing your glutes at the top"],
+  "leg press":["Sit in the leg press machine with your back and head firmly against the pad","Place feet shoulder-width on the platform, toes slightly turned out","Unlock the safety handles and lower the platform toward you until knees reach 90°","Do not let your lower back round off the pad at the bottom","Drive the platform away pressing through your heels until legs are nearly straight. Do not lock out"],
+  "lunge":["Stand tall with feet hip-width apart, hands on hips or holding dumbbells at your sides","Step forward with one leg and lower your back knee toward the floor","Keep your front shin vertical and torso upright. Front knee should not travel past your toes","Push back off your front foot to return to the starting position","Alternate legs for each rep. Focus on balance and control"],
+  "walking lunge":["Stand tall holding dumbbells at your sides","Step forward with your right foot and lower your left knee toward the floor","Keep your torso upright and front shin vertical","Push through your right heel and step forward with your left foot to continue walking","Alternate legs continuously. Keep the movement smooth and controlled"],
+  "leg extension":["Sit in the leg extension machine and adjust the pad to rest just above your lower shins","Grip the handles and extend your legs until fully straight. Squeeze your quads hard at the top","Hold the top position for a second, then lower slowly over 2–3 seconds","Stop just before the weights touch. Keep constant tension on the quads"],
+  "leg curl":["Lie face down on the leg curl machine. Position the pad just above your heels","Grip the handles and curl your heels toward your glutes, squeezing your hamstrings at the top","Hold the contraction for a second at the top","Lower slowly over 2–3 seconds back to the start"],
+  "hip thrust":["Sit on the floor with your upper back against a bench and a barbell across your hips","Plant your feet flat on the floor, hip-width apart, shins vertical","Drive your hips toward the ceiling by squeezing your glutes. Create a straight line from knees to shoulders","Pause at the top for a full glute contraction","Lower your hips back down slowly and repeat. Keep chin tucked throughout"],
   "glute bridge":["Lie flat on your back with knees bent and feet flat on the floor, hip-width apart","Drive your hips toward the ceiling by squeezing your glutes hard","Create a straight line from your knees to your shoulders at the top","Pause and squeeze hard, then lower slowly back to the floor"],
-  "calf raise":["Stand with the balls of your feet on the edge of a step or raised platform","Let your heels drop below the platform level to get a full calf stretch","Rise up onto your toes as high as possible — squeeze your calves hard at the top","Lower slowly over 3 seconds — feel the full stretch at the bottom","Avoid bouncing — slow controlled reps build the most muscle"],
-  "seated calf raise":["Sit at the seated calf raise machine with pads resting on your lower thighs","Place the balls of your feet on the platform, heels hanging off the edge","Push up onto your toes as high as possible — squeeze your calves hard at the top","Lower slowly — this seated variation particularly targets the soleus muscle"],
+  "calf raise":["Stand with the balls of your feet on the edge of a step or raised platform","Let your heels drop below the platform level to get a full calf stretch","Rise up onto your toes as high as possible. Squeeze your calves hard at the top","Lower slowly over 3 seconds. Feel the full stretch at the bottom","Avoid bouncing: slow controlled reps build the most muscle"],
+  "seated calf raise":["Sit at the seated calf raise machine with pads resting on your lower thighs","Place the balls of your feet on the platform, heels hanging off the edge","Push up onto your toes as high as possible. Squeeze your calves hard at the top","Lower slowly: this seated variation particularly targets the soleus muscle"],
   // ── CORE ────────────────────────────────────────────────────────────────
-  "plank":["Place forearms on the floor with elbows directly under your shoulders","Lift your body into a rigid straight line from head to heels — squeeze everything tight","Keep your hips level — do not let them sag down or pike up","Look slightly forward, breathe steadily and hold the position","Quality over duration — a perfect 30 seconds beats a sloppy 2 minutes"],
-  "crunch":["Lie flat on your back with knees bent and feet flat on the floor","Place hands lightly behind your head — do not pull your neck forward","Engage your abs and curl your upper body upward, bringing your chest toward your knees","Pause at the top with a full ab contraction, then lower slowly","Focus on the contraction — a short intense range of motion is all you need"],
-  "sit up":["Lie flat with knees bent and feet flat on the floor","Cross arms over your chest or place hands behind your head","Engage your core and lift your torso all the way up toward your knees","Lower slowly back to the floor — keep the movement controlled throughout"],
-  "leg raise":["Lie flat on your back with legs extended and hands under your glutes for support","Keep your legs straight and raise them toward the ceiling until they reach 90°","Lower your legs slowly — stop just before they touch the floor to keep tension","Avoid arching your lower back — press it into the floor throughout"],
-  "hanging leg raise":["Hang from a pull-up bar with an overhand grip, body fully extended","Keep your legs straight and raise them up to hip height or higher","Avoid swinging — control the movement entirely with your abs","Lower your legs slowly, stopping just before the dead hang position"],
-  "russian twist":["Sit with knees bent and feet slightly off the floor, or flat for an easier version","Lean back to about 45° and hold your hands or a weight in front of you","Rotate your torso side to side, bringing your hands toward the floor on each side","Keep your core tight and movements controlled — feel the obliques working"],
-  "mountain climber":["Get into a straight-arm plank with hands directly under your shoulders","Drive your right knee toward your chest, then quickly switch — left knee in as right goes back","Keep your hips low and your core tight throughout — don't let them rise up","Maintain a quick alternating pace while holding full core tension"],
-  "bicycle crunch":["Lie flat with hands behind your head and legs raised off the floor","Bring your right elbow and left knee toward each other while extending your right leg straight","Rotate to the other side in a smooth pedaling motion — left elbow to right knee","Keep your lower back pressed into the floor throughout"],
-  "cable crunch":["Kneel in front of a high cable machine with a rope attachment","Hold the rope beside your head and keep your hips completely stationary","Crunch downward by contracting your abs — bring your elbows toward your knees","Pause at the bottom with a full contraction then slowly return to the start"],
+  "plank":["Place forearms on the floor with elbows directly under your shoulders","Lift your body into a rigid straight line from head to heels. Squeeze everything tight","Keep your hips level. Do not let them sag down or pike up","Look slightly forward, breathe steadily and hold the position","Quality over duration: a perfect 30 seconds beats a sloppy 2 minutes"],
+  "crunch":["Lie flat on your back with knees bent and feet flat on the floor","Place hands lightly behind your head. Do not pull your neck forward","Engage your abs and curl your upper body upward, bringing your chest toward your knees","Pause at the top with a full ab contraction, then lower slowly","Focus on the contraction: a short intense range of motion is all you need"],
+  "sit up":["Lie flat with knees bent and feet flat on the floor","Cross arms over your chest or place hands behind your head","Engage your core and lift your torso all the way up toward your knees","Lower slowly back to the floor. Keep the movement controlled throughout"],
+  "leg raise":["Lie flat on your back with legs extended and hands under your glutes for support","Keep your legs straight and raise them toward the ceiling until they reach 90°","Lower your legs slowly. Stop just before they touch the floor to keep tension","Avoid arching your lower back. Press it into the floor throughout"],
+  "hanging leg raise":["Hang from a pull-up bar with an overhand grip, body fully extended","Keep your legs straight and raise them up to hip height or higher","Avoid swinging. Control the movement entirely with your abs","Lower your legs slowly, stopping just before the dead hang position"],
+  "russian twist":["Sit with knees bent and feet slightly off the floor, or flat for an easier version","Lean back to about 45° and hold your hands or a weight in front of you","Rotate your torso side to side, bringing your hands toward the floor on each side","Keep your core tight and movements controlled. Feel the obliques working"],
+  "mountain climber":["Get into a straight-arm plank with hands directly under your shoulders","Drive your right knee toward your chest, then quickly switch: left knee in as right goes back","Keep your hips low and your core tight throughout. Don't let them rise up","Maintain a quick alternating pace while holding full core tension"],
+  "bicycle crunch":["Lie flat with hands behind your head and legs raised off the floor","Bring your right elbow and left knee toward each other while extending your right leg straight","Rotate to the other side in a smooth pedaling motion: left elbow to right knee","Keep your lower back pressed into the floor throughout"],
+  "cable crunch":["Kneel in front of a high cable machine with a rope attachment","Hold the rope beside your head and keep your hips completely stationary","Crunch downward by contracting your abs. Bring your elbows toward your knees","Pause at the bottom with a full contraction then slowly return to the start"],
   // ── FULL BODY / CARDIO ──────────────────────────────────────────────────
   "burpee":["Stand with feet shoulder-width apart","Drop your hands to the floor and jump your feet back to a plank position","Perform a push-up, then jump your feet back toward your hands","Explode upward, jumping with your arms raised overhead","Land softly and immediately go into the next rep"],
-  "kettlebell swing":["Stand feet hip-width apart, kettlebell on the floor in front of you","Hinge at the hips to grip the kettlebell — back flat, chest up","Swing the kettlebell back between your legs to load your hips and hamstrings","Drive your hips forward explosively to swing the bell to shoulder height","Let the bell swing back down and immediately load your hips for the next rep"],
+  "kettlebell swing":["Stand feet hip-width apart, kettlebell on the floor in front of you","Hinge at the hips to grip the kettlebell, back flat, chest up","Swing the kettlebell back between your legs to load your hips and hamstrings","Drive your hips forward explosively to swing the bell to shoulder height","Let the bell swing back down and immediately load your hips for the next rep"],
   "box jump":["Stand facing a box, feet shoulder-width apart","Bend your knees and swing your arms back to load up","Explode upward and forward, pulling your knees toward your chest","Land softly on top of the box with knees slightly bent to absorb the impact","Step back down carefully and reset for the next rep"],
-  "jump squat":["Stand feet shoulder-width apart, toes slightly out","Descend into a squat until thighs reach parallel — arms swinging back","Explode upward through the balls of your feet, leaving the floor","Land softly with knees slightly bent to absorb the impact","Immediately descend into the next squat rep"],
+  "jump squat":["Stand feet shoulder-width apart, toes slightly out","Descend into a squat until thighs reach parallel, arms swinging back","Explode upward through the balls of your feet, leaving the floor","Land softly with knees slightly bent to absorb the impact","Immediately descend into the next squat rep"],
 };
 
 function getExerciseInstructions(ex) {
@@ -2131,45 +2206,45 @@ function getExerciseInstructions(ex) {
   const e = (ex.equipment || '').toLowerCase();
   if (m.includes('bicep')) return [
     "Stand or sit in a stable position, gripping the weight with palms facing up",
-    "Pin your elbows close to your sides — keep them stationary throughout",
+    "Pin your elbows close to your sides. Keep them stationary throughout",
     "Curl the weight upward by bending at the elbow, squeezing your bicep at the top",
     "Lower slowly over 2–3 seconds back to full extension",
-    "Avoid swinging — the movement should be fully controlled",
+    "Avoid swinging: the movement should be fully controlled",
   ];
   if (m.includes('tricep')) return [
     "Set up with your upper arm stationary in a fixed position",
     "Begin with your elbow bent and the weight loaded on your tricep",
-    "Extend your arm fully — squeeze your tricep hard at full extension",
+    "Extend your arm fully. Squeeze your tricep hard at full extension",
     "Slowly return to the starting position, feeling the stretch in your tricep",
   ];
   if (m.includes('chest') || m.includes('pec')) return [
     "Set up in a stable position with shoulder blades retracted and chest tall",
-    "Lower the weight in a controlled arc — feel the stretch across your chest at the bottom",
+    "Lower the weight in a controlled arc. Feel the stretch across your chest at the bottom",
     "Press or push back to the starting position, squeezing your chest at the top",
-    "Exhale on the effort, inhale as you return — maintain controlled breathing throughout",
+    "Exhale on the effort, inhale as you return. Maintain controlled breathing throughout",
   ];
   if (m.includes('back') || m.includes('lat')) return [
     "Set up and retract your shoulder blades to initiate the movement",
-    "Pull by driving your elbows back toward your hips — not just with your arms",
+    "Pull by driving your elbows back toward your hips, not just with your arms",
     "Squeeze your back muscles hard at the point of full contraction",
-    "Return to the starting position slowly — feel the stretch in your lats",
+    "Return to the starting position slowly. Feel the stretch in your lats",
   ];
   if (m.includes('shoulder') || m.includes('delt')) return [
     "Set up in a stable position with shoulders relaxed and core braced",
-    "Execute the movement in a controlled deliberate arc — quality over weight",
+    "Execute the movement in a controlled deliberate arc: quality over weight",
     "Squeeze your deltoids at the peak of the movement",
     "Return to the starting position slowly, maintaining muscle tension throughout",
   ];
   if (m.includes('quad') || m.includes('hamstring') || m.includes('glute') || m.includes('leg')) return [
-    "Set up with feet in the appropriate position — core braced, neutral spine",
-    "Lower yourself in a controlled manner — knees tracking over your toes",
+    "Set up with feet in the appropriate position, core braced, neutral spine",
+    "Lower yourself in a controlled manner, knees tracking over your toes",
     "Drive through your heels to return to the starting position",
     "Squeeze your glutes and quads at the top of each rep",
   ];
   if (m.includes('calf')) return [
-    "Position the balls of your feet on the platform — heels free to drop",
+    "Position the balls of your feet on the platform, heels free to drop",
     "Lower your heels for a full calf stretch before each rep",
-    "Rise as high as possible onto your toes — squeeze your calves hard at the top",
+    "Rise as high as possible onto your toes. Squeeze your calves hard at the top",
     "Lower slowly over 3 seconds to maximize time under tension",
   ];
   if (m.includes('core') || m.includes('ab')) return [
@@ -2183,7 +2258,7 @@ function getExerciseInstructions(ex) {
     "Engage your core and maintain good posture throughout the movement",
     "Perform the exercise through the full range of motion in a controlled manner",
     "Exhale during the exertion phase and inhale on the return",
-    "Focus on quality contractions — avoid using momentum or swinging",
+    "Focus on quality contractions. Avoid using momentum or swinging",
   ];
 }
 
@@ -2237,7 +2312,7 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
         if (hUrl) setResolvedHlsUrl(hUrl);
         if (tUrl) setResolvedThumbnailUrl(tUrl);
         if (vUrl || hUrl || tUrl) _videoUrlCache.set(cacheKey, { videoUrl: vUrl||null, hlsUrl: hUrl||null, thumbnailUrl: tUrl||null, cachedAt: Date.now() });
-        if (!vUrl && !hUrl) console.warn(`[video] No URL for "${ex.name}" — check YMOVE_API_KEY in Railway`);
+        if (!vUrl && !hUrl) console.warn(`[video] No URL for "${ex.name}". Check YMOVE_API_KEY in Railway`);
       })
       .catch(err => { console.error(`[video] fetch failed for "${ex.name}":`, err); setResolvedHlsUrl(null); })
       .finally(()=>{ setVideoLoading(false); });
@@ -2362,7 +2437,7 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
     { icon:"clock", label:"Rest Time", value:"60–90 seconds between sets", color:"#00A3FF" },
     { icon:"target", label:"Focus",     value:"Control the weight on the way down", color:"#22C55E" },
     { icon:"muscle", label:"Tip",       value:"Keep your feet planted for stability", color:"#F97316" },
-    { icon:"lightbulb", label:"Beginner",  value:"Start light — master form before adding weight", color:"#8B5CF6" },
+    { icon:"lightbulb", label:"Beginner",  value:"Start light. Master form before adding weight", color:"#8B5CF6" },
   ];
 
   const progressPct = (completedSets / sets.length) * 100;
@@ -2528,7 +2603,7 @@ function ExercisePage({ exercise, onBack, onComplete, workoutElapsed=0, workoutF
       ) : (
         <button onClick={()=>{ if(onComplete) onComplete(sets.filter(s=>s.done)); onBack(); }} style={{ width:"100%",padding:"16px 0",borderRadius:50,border:"none",background:"linear-gradient(135deg,#22C55E,#16A34A)",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1,cursor:"pointer",boxShadow:"0 4px 24px rgba(34,197,94,0.5)" }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" style={{display:"inline",marginRight:6,verticalAlign:"middle"}}><polyline points="20 6 9 17 4 12"/></svg>
-          EXERCISE COMPLETE — NEXT
+          EXERCISE COMPLETE: NEXT
         </button>
       )}
     </div>
@@ -2834,7 +2909,7 @@ function AISummaryPage({ energyKey, logId, onBack }) {
 
   // Typewriter for AI summary text
   const recap = summaryData?.recap || {};
-  const aiMainText = summaryData?.summary || "Great effort today! Based on your mood check-in, I adapted your session intensity. Your form held strong through all sets — consistency like this compounds over time.";
+  const aiMainText = summaryData?.summary || "Great effort today! Based on your mood check-in, I adapted your session intensity. Your form held strong through all sets. Consistency like this compounds over time.";
   const aiCoachText = recap.coachingInsights || "";
 
   useEffect(() => {
@@ -2960,7 +3035,7 @@ function AISummaryPage({ energyKey, logId, onBack }) {
                   </div>
                   <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:"#fff",marginBottom:8 }}>Get Per-Workout AI Coaching</div>
                   <div style={{ fontFamily:FONT,fontSize:13,color:"#888",lineHeight:1.6,marginBottom:20 }}>
-                    Upgrade to Pro and get a detailed AI analysis after every single workout — form feedback, intensity score, and personalised next-session recommendations.
+                    Upgrade to Pro and get a detailed AI analysis after every single workout: form feedback, intensity score, and personalised next-session recommendations.
                   </div>
                   <button onClick={()=>openPaymentSheet("monthly")} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:"linear-gradient(135deg,#F59E0B,#D97706)",border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",letterSpacing:1,boxShadow:"0 4px 20px rgba(245,158,11,0.35)" }}>
                     UPGRADE TO PRO
@@ -2977,7 +3052,7 @@ function AISummaryPage({ energyKey, logId, onBack }) {
               <div style={{ fontFamily:FONT,fontWeight:900,fontSize:18,color:"#fff",marginBottom:10 }}>{onboardingPending ? "Preparing Your Analysis" : "No Analysis Yet"}</div>
               <div style={{ fontFamily:FONT,fontSize:13,color:"#888",lineHeight:1.7,marginBottom:24 }}>
                 {onboardingPending
-                  ? "Your personalised VTRX analysis is being generated — this usually takes just a few seconds. Check back shortly."
+                  ? "Your personalised VTRX analysis is being generated: this usually takes just a few seconds. Check back shortly."
                   : "We couldn't generate your personalised analysis yet. Give it another try."}
               </div>
               <button
@@ -3139,7 +3214,7 @@ function AISummaryPage({ energyKey, logId, onBack }) {
                   <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
                 </div>
                 <div style={{ fontFamily:FONT,fontWeight:900,fontSize:17,color:"#fff",marginBottom:8 }}>Unlock Full Analysis</div>
-                <div style={{ fontFamily:FONT,fontSize:13,color:"#888",lineHeight:1.65,marginBottom:6 }}>You're on the <span style={{ color:"#8B5CF6",fontWeight:700 }}>Free Plan</span> — 1 AI summary per week.</div>
+                <div style={{ fontFamily:FONT,fontSize:13,color:"#888",lineHeight:1.65,marginBottom:6 }}>You're on the <span style={{ color:"#8B5CF6",fontWeight:700 }}>Free Plan</span>: 1 AI summary per week.</div>
                 <div style={{ fontFamily:FONT,fontSize:13,color:"#888",lineHeight:1.65,marginBottom:22 }}>Upgrade to <span style={{ color:"#F59E0B",fontWeight:700 }}>Premium</span> for a full AI breakdown after every single workout.</div>
                 <button onClick={()=>openPaymentSheet("monthly")} style={{ width:"100%",padding:"15px 0",borderRadius:50,background:"linear-gradient(135deg,#7C3AED,#4C1D95)",border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",cursor:"pointer",letterSpacing:1,boxShadow:"0 4px 24px rgba(124,58,237,0.45)" }}>
                   UPGRADE TO PREMIUM
@@ -3380,9 +3455,9 @@ function OnboardSlide({ slide, isActive }) {
     if (isActive) { const t = setTimeout(() => setRdy(true), 60); return () => clearTimeout(t); }
     else setRdy(false);
   }, [isActive]);
-  // Last slide needs room for GET STARTED + Log In + legal text (~195px)
+  // Last slide needs room for reassurance line + GET STARTED + Log In + legal text (~230px)
   // Other slides just need room for "Swipe" hint (~70px)
-  const bottomPad = slide.cta ? 240 : 70;
+  const bottomPad = slide.cta ? 270 : 70;
   return (
     <div style={{ position: "absolute", inset: 0, opacity: isActive ? 1 : 0, transition: "opacity 0.4s ease", pointerEvents: isActive ? "auto" : "none" }}>
       <img src={slide.bg} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "center top", transform: isActive ? "scale(1)" : "scale(1.04)", transition: "transform 0.6s ease" }} />
@@ -3506,9 +3581,18 @@ function ForgotPasswordPage({ onBack }) {
   const [newPass, setNewPass]     = useState("");
   const [confirmPass, setConfirmPass] = useState("");
   const [err, setErr]             = useState("");
+  const [info, setInfo]           = useState("");
   const [loading, setLoading]     = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const { signIn, setActive } = useClerkSignIn();
+  const submitRef = useRef(false);
+  const infoTimeoutRef = useRef(null);
+  useEffect(() => () => clearTimeout(infoTimeoutRef.current), []);
+  const showInfoBriefly = (msg) => {
+    setInfo(msg);
+    clearTimeout(infoTimeoutRef.current);
+    infoTimeoutRef.current = setTimeout(() => setInfo(""), 5000);
+  };
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
@@ -3517,56 +3601,93 @@ function ForgotPasswordPage({ onBack }) {
   }, [resendCooldown]);
 
   const sendCode = async () => {
+    if (submitRef.current) return;
     if (!email.trim()) { setErr("Please enter your email."); return; }
-    setErr(""); setLoading(true);
+    const isResend = step === "code";
+    setErr(""); setInfo(""); setLoading(true);
+    submitRef.current = true;
     try {
       await signIn.create({
         strategy: 'reset_password_email_code',
         identifier: email.trim().toLowerCase(),
       });
+      setCode("");
       setStep("code");
       setResendCooldown(30);
+      if (isResend) showInfoBriefly("New code sent. Check your inbox (and spam folder).");
     } catch (e) {
       const clerkErr = e?.errors?.[0];
-      // Treat "user not found" as success to avoid email enumeration
-      if (clerkErr?.code === 'form_identifier_not_found') { setStep("code"); setResendCooldown(30); }
-      else { setErr(clerkErr?.longMessage || clerkErr?.message || e?.message || "Failed to send code."); }
+      if (clerkErr?.code === 'form_identifier_not_found') {
+        // Treat "user not found" as success to avoid email enumeration
+        setCode("");
+        setStep("code");
+        setResendCooldown(30);
+        if (isResend) showInfoBriefly("New code sent. Check your inbox (and spam folder).");
+      } else if (clerkErr?.code === 'verification_exists') {
+        // A verification is already pending for this identifier — the code is
+        // already out there, so this is a success case, not an error.
+        setCode("");
+        setStep("code");
+        setResendCooldown(30);
+        showInfoBriefly("A code was already sent. Check your inbox (and spam folder).");
+      } else {
+        setErr(clerkErr?.longMessage || clerkErr?.message || e?.message || "Failed to send code.");
+      }
     }
-    finally { setLoading(false); }
+    finally { setLoading(false); submitRef.current = false; }
   };
 
   const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
 
   const resetPass = async () => {
+    if (submitRef.current) return;
     if (!code.trim() || code.trim().length !== 6) { setErr("Please enter the complete 6-digit code."); return; }
     if (!passwordRegex.test(newPass)) {
       setErr("Password must be at least 8 characters and include uppercase, lowercase, and a number.");
       return;
     }
     if (newPass !== confirmPass) { setErr("Passwords do not match."); return; }
-    setErr(""); setLoading(true);
+    setErr(""); setInfo(""); setLoading(true);
+    submitRef.current = true;
     try {
-      const result = await signIn.attemptFirstFactor({
-        strategy: 'reset_password_email_code',
-        code: code.trim(),
-        password: newPass,
-      });
+      let result;
+      try {
+        result = await signIn.attemptFirstFactor({
+          strategy: 'reset_password_email_code',
+          code: code.trim(),
+          password: newPass,
+        });
+      } catch (e) {
+        const clerkErr = e?.errors?.[0];
+        setCode("");
+        if (clerkErr?.code === 'form_code_incorrect') { setErr("Incorrect code. Please try again."); }
+        else if (clerkErr?.code === 'form_code_expired' || clerkErr?.code === 'verification_expired' || clerkErr?.code === 'verification_failed') {
+          setResendCooldown(0);
+          setErr('This code is no longer valid. Tap "Resend code" above to get a new one.');
+        }
+        else if (clerkErr?.code === 'too_many_attempts') { setErr("Too many attempts. Please wait a few seconds and try again."); }
+        else if (clerkErr?.code?.includes('password')) { setErr(clerkErr?.longMessage || clerkErr?.message || "Password does not meet requirements."); }
+        else { setErr(clerkErr?.longMessage || clerkErr?.message || e?.message || "Failed to reset password."); }
+        return;
+      }
+      // The password reset itself already succeeded server-side at this point —
+      // keep setActive's own failure out of the catch above so a transient
+      // session-activation hiccup isn't mislabeled as "Failed to reset password"
+      // (which would invite a retry against an already-consumed code).
       if (result.status === 'complete') {
-        await setActive({ session: result.createdSessionId });
-        setStep("done");
+        try {
+          await setActive({ session: result.createdSessionId });
+          setStep("done");
+        } catch (e) {
+          setErr("Your password was reset, but we couldn't sign you in automatically. Please log in with your new password.");
+        }
       } else {
         // e.g. needs_second_factor — no session was actually established,
         // so don't show the success screen.
         setErr("Your password was updated, but sign-in needs an extra step this screen doesn't support. Please contact support.");
       }
-    } catch (e) {
-      const clerkErr = e?.errors?.[0];
-      if (clerkErr?.code === 'form_code_incorrect') { setErr("Incorrect code. Please try again."); }
-      else if (clerkErr?.code === 'form_code_expired') { setErr("Code expired. Please request a new one."); }
-      else if (clerkErr?.code?.includes('password')) { setErr(clerkErr?.longMessage || clerkErr?.message || "Password does not meet requirements."); }
-      else { setErr(clerkErr?.longMessage || clerkErr?.message || e?.message || "Failed to reset password."); }
     }
-    finally { setLoading(false); }
+    finally { setLoading(false); submitRef.current = false; }
   };
 
   const bg = "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=800&q=80";
@@ -3601,6 +3722,10 @@ function ForgotPasswordPage({ onBack }) {
             <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email address" type="email"
               style={{ width:"100%",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:14,padding:"15px 18px",fontFamily:FONT,fontSize:16,color:"#fff",outline:"none",boxSizing:"border-box",marginBottom:16 }}/>
             {err && <div style={{ fontFamily:FONT,fontSize:13,color:"#EF4444",marginBottom:12,textAlign:"center" }}>{err}</div>}
+            {/* Clerk Bot Protection renders its challenge into this element
+                when enabled — required for custom flows, or signIn.create()
+                below never reaches 'complete'. */}
+            <div id="clerk-captcha"/>
             <button onClick={sendCode} disabled={loading} style={{ width:"100%",padding:"16px 0",borderRadius:50,background:loading?"#555":PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff",cursor:loading?"not-allowed":"pointer",letterSpacing:1,opacity:loading?0.7:1 }}>
               {loading ? "SENDING..." : "SEND CODE"}
             </button>
@@ -3610,12 +3735,17 @@ function ForgotPasswordPage({ onBack }) {
             <div style={{ fontFamily:FONT,fontSize:14,color:"#888",marginBottom:8,lineHeight:1.6 }}>We sent a code to <span style={{ color:"#fff",fontWeight:600 }}>{email}</span></div>
             <div style={{ fontFamily:FONT,fontSize:13,color:"#666",marginBottom:12 }}>Check your spam folder if you don't see it.</div>
             <button onClick={sendCode} disabled={resendCooldown > 0 || loading}
-              style={{ background:"none",border:"none",padding:0,marginBottom:20,fontFamily:FONT,fontSize:13,fontWeight:700,color:resendCooldown>0?"#666":PRIMARY,cursor:resendCooldown>0?"default":"pointer" }}>
+              style={{ background:"none",border:"none",padding:0,marginBottom:8,fontFamily:FONT,fontSize:13,fontWeight:700,color:resendCooldown>0?"#666":PRIMARY,cursor:resendCooldown>0?"default":"pointer" }}>
               {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : "Resend code"}
             </button>
+            {/* Same signIn.create() call as the initial send above (sendCode is
+                shared) — needs its own mount point in this branch too, or a
+                challenge required specifically on resend has nowhere to render. */}
+            <div id="clerk-captcha"/>
+            {info && <div style={{ fontFamily:FONT,fontSize:13,color:PRIMARY,marginBottom:12,fontWeight:600 }}>{info}</div>}
             <div style={{ fontFamily:FONT,fontSize:11,fontWeight:700,color:"#888",letterSpacing:1,marginBottom:6 }}>VERIFICATION CODE</div>
-            <input value={code} onChange={e=>setCode(e.target.value)} placeholder="6-digit code"
-              inputMode="numeric" maxLength={6}
+            <input value={code} onChange={e=>setCode(e.target.value.replace(/[^0-9]/g,"").slice(0,6))} placeholder="6-digit code"
+              inputMode="numeric"
               style={{ width:"100%",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:14,padding:"15px 18px",fontFamily:FONT,fontSize:20,color:"#fff",outline:"none",boxSizing:"border-box",marginBottom:16,letterSpacing:6,textAlign:"center" }}/>
             <div style={{ fontFamily:FONT,fontSize:11,fontWeight:700,color:"#888",letterSpacing:1,marginBottom:6 }}>NEW PASSWORD</div>
             <input value={newPass} onChange={e=>setNewPass(e.target.value)} placeholder="Min 8 chars, uppercase & number" type="password"
@@ -3677,7 +3807,7 @@ function OAuthButtons({ onGoogle, onApple, loadingProvider }) {
   );
 }
 
-function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
+function LoginScreen({ onLogin, onSignUp, onForgot }) {
   const { setUser } = useUser();   // ← This was missing
   const { signIn, setActive } = useClerkSignIn();
   const { isLoaded: clerkLoaded, isSignedIn } = useClerkAuth();
@@ -3702,12 +3832,14 @@ function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
 
   React.useEffect(() => {
     if (!clerkLoaded || !isSignedIn) return;
-    // Already signed in (e.g., after password reset) — fetch profile and route.
-    // skipAuthRedirect: a 401 here (fresh session, first authenticated call) should
-    // route to onboarding via the catch below, not force a full Clerk sign-out.
+    // Already signed in (e.g., after password reset) — fetch the real profile and
+    // route accordingly. If the fetch fails (stale/expired token, network blip),
+    // do NOT assume "new user" and bounce them into profile setup — that silently
+    // sent already-onboarded users back through BodyScreen just from loading this
+    // screen with a stale session. Leave them on the normal login form instead.
     apiCall("/users/profile", { skipAuthRedirect: true })
       .then(res => onLogin(res?.data?.user || {}))
-      .catch(() => onLogin({}));
+      .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clerkLoaded, isSignedIn]);
 
@@ -3717,6 +3849,28 @@ function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [submitted, setSubmitted] = useState(false);
+
+  // Client Trust (Clerk treats sign-ins from a device it doesn't recognize as
+  // needing extra verification) and real account-level MFA both surface via
+  // the same second-factor API — 'needs_client_trust' / 'needs_second_factor'
+  // respectively. Only email_code is enabled on this Clerk instance, so that's
+  // the only strategy handled here. This stays inside LoginScreen (rather than
+  // becoming its own top-level phase) because it needs the SAME in-progress
+  // `signIn` resource the credential step already created.
+  const [step, setStep] = useState("credentials"); // "credentials" | "verifyDevice"
+  const [deviceCode, setDeviceCode] = useState("");
+  const [deviceLoading, setDeviceLoading] = useState(false);
+  const [deviceError, setDeviceError] = useState("");
+  const [deviceInfo, setDeviceInfo] = useState("");
+  const [deviceCooldown, setDeviceCooldown] = useState(0);
+  const deviceSubmitRef = useRef(false);
+  const deviceInfoTimeoutRef = useRef(null);
+  useEffect(() => () => clearTimeout(deviceInfoTimeoutRef.current), []);
+  useEffect(() => {
+    if (deviceCooldown <= 0) return;
+    const t = setInterval(() => setDeviceCooldown(c => Math.max(0, c - 1)), 1000);
+    return () => clearInterval(t);
+  }, [deviceCooldown]);
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -3735,31 +3889,53 @@ function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
 
   // Shared by the happy path and the "already signed in" error branch below —
   // always route off the real profile, never assume an empty one means "new user".
+  // Returns whether the profile actually loaded — callers on a screen other
+  // than the main credentials form (e.g. the device-verification step below)
+  // can't rely on `errors.general` alone, since that's only rendered there.
   const fetchProfileAndLogin = async () => {
     try {
       const profileRes = await apiCall("/users/profile", { skipAuthRedirect: true });
       const u = profileRes?.data?.user || {};
       if (u.id) setUser(prev => ({...prev, ...u}));
       onLogin(u);
-    } catch (_) {
-      onLogin({});
+      return true;
+    } catch (e) {
+      // Same fetch failure as the mount effect above (stale token, network blip,
+      // backend hiccup right after a fresh sign-in) — don't call onLogin({}) here
+      // either, or a real returning user gets treated as brand new and routed
+      // into onboarding right after successfully authenticating. Surface an
+      // error instead of failing silently, since unlike the mount effect this
+      // runs after a deliberate user action (submitting the form).
+      // TEMP DEBUG: pinpointing why this fetch fails in production — remove
+      // once diagnosed. status 0 = never got a response at all (network/CORS/
+      // DNS); any other status means the backend was reached and responded.
+      console.error('[VTRX DEBUG] /users/profile fetch failed:', { status: e?.status, code: e?.code, message: e?.message });
+      setErrors({ general: "Signed in, but we couldn't load your profile. Please try again." });
+      return false;
     }
   };
 
+  // A same-tick double-tap (easy on mobile) fires this twice before React
+  // re-renders the now-disabled button — loading state alone doesn't block a
+  // second call started in that window. Lock with a ref, same fix already
+  // used elsewhere in this file for the identical class of bug.
+  const submitRef = useRef(false);
   const handle = async () => {
+    if (submitRef.current) return;
     setSubmitted(true);
     const errs = {};
     if (!email.trim()) errs.email = "Email is required.";
     else if (!emailRegex.test(email.trim())) errs.email = "Please enter a valid email address.";
     if (!pass.trim()) errs.pass = "Password is required.";
 
-    if (Object.keys(errs).length) { 
-      setErrors(errs); 
+    if (Object.keys(errs).length) {
+      setErrors(errs);
       return; 
     }
 
-    setErrors({}); 
+    setErrors({});
     setLoading(true);
+    submitRef.current = true;
 
     try {
       const result = await signIn.create({
@@ -3775,33 +3951,175 @@ function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
         // users straight back to the login screen after a successful login).
         await fetchProfileAndLogin();
       } else if (result.status === 'needs_new_password') {
-        setErrors({ general: "For your security you'll need to set a new password before signing in — use \"Forgot password?\" below." });
+        setErrors({ general: "For your security you'll need to set a new password before signing in. Use \"Forgot password?\" below." });
+      } else if (result.status === 'needs_client_trust' || result.status === 'needs_second_factor') {
+        // Client Trust (unrecognized device) and real account-level MFA both
+        // funnel through the same second-factor API — only email_code is
+        // enabled on this Clerk instance, so that's the only one handled.
+        const emailFactor = result.supportedSecondFactors?.find(f => f.strategy === 'email_code');
+        if (!emailFactor) {
+          setErrors({ general: "We couldn't complete sign-in for this account. If you have two-factor authentication enabled, contact support. It isn't supported here yet." });
+          return;
+        }
+        try {
+          await signIn.prepareSecondFactor({ strategy: 'email_code', emailAddressId: emailFactor.emailAddressId });
+          setStep("verifyDevice");
+          setDeviceCooldown(30);
+        } catch (e) {
+          const clerkErr = e?.errors?.[0];
+          setErrors({ general: clerkErr?.longMessage || clerkErr?.message || "Couldn't send a verification code. Please try again." });
+        }
       } else {
-        // needs_second_factor / needs_client_trust / anything else this UI doesn't
-        // have a screen for. Retrying won't change the outcome, so say so honestly
-        // instead of looping the user through "please try again".
-        setErrors({ general: "We couldn't complete sign-in for this account. If you have two-factor authentication enabled, contact support — it isn't supported here yet." });
+        // Anything else this UI doesn't have a screen for (e.g. needs_first_factor
+        // via a strategy other than password). Retrying won't change the outcome,
+        // so say so honestly instead of looping the user through "please try again".
+        // TEMP DEBUG: pinpointing exactly which status this is in production —
+        // remove once confirmed this doesn't happen in practice.
+        console.error('[VTRX DEBUG] signIn.create() did not complete, status:', result?.status);
+        setErrors({ general: "We couldn't complete sign-in for this account. Please contact support." });
       }
     } catch (e) {
       console.error(e);
       const clerkErr = e?.errors?.[0];
-      if (clerkErr?.code === 'session_exists' || e?.status === 422) {
+      if (clerkErr?.code === 'session_exists') {
         // Already signed in — fetch the real profile rather than assuming
         // "no profile", which was incorrectly demoting onboarded users back
-        // into the onboarding flow.
+        // into the onboarding flow. Scoped to the actual error code, not a
+        // bare e?.status === 422 — Clerk also returns 422 for unrelated
+        // failures like a wrong password, which would otherwise get routed
+        // into fetchProfileAndLogin() and show a misleading "Signed in,
+        // but..." message to someone who was never signed in at all.
         await fetchProfileAndLogin();
       } else if (clerkErr?.code === 'form_identifier_not_found' || clerkErr?.code === 'form_password_incorrect' || clerkErr?.code === 'not_found') {
         setErrors({ general: "Incorrect email or password." });
-      } else if (clerkErr?.code === 'strategy_for_user_invalid' || clerkErr?.code === 'verification_failed') {
-        setErrors({ general: "Please verify your email before logging in." });
-        if (onEmailVerify) onEmailVerify(email.trim().toLowerCase());
       } else {
+        // Previously assumed strategy_for_user_invalid/verification_failed meant
+        // "unverified email" and routed to EmailVerifyScreen — but per Clerk's own
+        // error catalog, strategy_for_user_invalid means this sign-in *method*
+        // isn't valid for the account (e.g. an OAuth-only account trying a
+        // password), and verification_failed is about a verification *code*,
+        // which doesn't apply to a password sign-in call at all. Neither is
+        // reliably "unverified email", and EmailVerifyScreen needs a signUp
+        // resource this sign-in flow never creates — routing there was a
+        // guaranteed dead end. Show Clerk's own accurate message instead.
         setErrors({ general: clerkErr?.longMessage || clerkErr?.message || e?.message || "Incorrect email or password." });
       }
     } finally {
       setLoading(false);
+      submitRef.current = false;
     }
   };
+
+  const verifyDevice = async () => {
+    if (deviceSubmitRef.current) return;
+    if (deviceCode.length !== 6) { setDeviceError("Please enter the full 6-digit code"); return; }
+    setDeviceLoading(true); setDeviceError(""); setDeviceInfo("");
+    deviceSubmitRef.current = true;
+    try {
+      let result;
+      try {
+        result = await signIn.attemptSecondFactor({ strategy: 'email_code', code: deviceCode });
+      } catch (e) {
+        const clerkErr = e?.errors?.[0];
+        if (clerkErr?.code === 'form_code_incorrect') {
+          setDeviceCode("");
+          setDeviceError("Incorrect code. Please try again.");
+        } else if (clerkErr?.code === 'verification_expired' || clerkErr?.code === 'verification_failed') {
+          setDeviceCode("");
+          setDeviceCooldown(0);
+          setDeviceError('This code is no longer valid. Tap "Resend code" below to get a new one.');
+        } else if (clerkErr?.code === 'too_many_attempts') {
+          setDeviceError("Too many attempts. Please wait a few seconds and try again.");
+        } else {
+          setDeviceCode("");
+          setDeviceError(clerkErr?.longMessage || clerkErr?.message || e?.message || "Invalid or expired code. Please try again.");
+        }
+        return;
+      }
+      // The device/second-factor verification itself already succeeded
+      // server-side at this point — keep setActive's own failure out of the
+      // catch above so a transient session-activation hiccup isn't mislabeled
+      // as an invalid code (which would wrongly clear an already-consumed,
+      // unrepeatable code).
+      if (result.status === 'complete') {
+        try {
+          await setActive({ session: result.createdSessionId });
+          const profileLoaded = await fetchProfileAndLogin();
+          if (!profileLoaded) {
+            setDeviceError("Verified, but we couldn't load your profile. Please try again.");
+          }
+        } catch (e) {
+          setDeviceError("Verified, but we couldn't sign you in automatically. Please try logging in again.");
+        }
+      } else {
+        setDeviceError("Verification incomplete. Please try again.");
+      }
+    } finally {
+      setDeviceLoading(false);
+      deviceSubmitRef.current = false;
+    }
+  };
+
+  const resendDeviceCode = async () => {
+    if (deviceSubmitRef.current || deviceCooldown > 0 || deviceLoading) return;
+    deviceSubmitRef.current = true;
+    setDeviceLoading(true); setDeviceError(""); setDeviceInfo("");
+    try {
+      const emailFactor = signIn.supportedSecondFactors?.find(f => f.strategy === 'email_code');
+      await signIn.prepareSecondFactor({ strategy: 'email_code', emailAddressId: emailFactor?.emailAddressId });
+      setDeviceCode("");
+      setDeviceInfo("New code sent. Check your inbox (and spam folder).");
+      setDeviceCooldown(30);
+      clearTimeout(deviceInfoTimeoutRef.current);
+      deviceInfoTimeoutRef.current = setTimeout(() => setDeviceInfo(""), 5000);
+    } catch (e) {
+      const clerkErr = e?.errors?.[0];
+      setDeviceError(clerkErr?.longMessage || clerkErr?.message || e?.message || "Failed to resend code. Please try again.");
+    } finally {
+      setDeviceLoading(false);
+      deviceSubmitRef.current = false;
+    }
+  };
+
+  if (step === "verifyDevice") {
+    return (
+      <div style={{ position:"absolute",inset:0,background:"#0a0a0a",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"0 32px" }}>
+        <VTRXLogo size={28}/>
+        <div style={{ fontFamily:FONT,fontWeight:900,fontSize:22,color:"#fff",marginTop:20,marginBottom:8,textAlign:"center" }}>Verify it's you</div>
+        <div style={{ fontFamily:FONT,fontSize:14,color:"#666",textAlign:"center",lineHeight:1.6,marginBottom:32 }}>
+          For your security, we sent a 6-digit code to<br/>
+          <span style={{ color:PRIMARY,fontWeight:700 }}>{email}</span>
+        </div>
+
+        <input
+          value={deviceCode}
+          onChange={e=>setDeviceCode(e.target.value.replace(/[^0-9]/g,"").slice(0,6))}
+          placeholder="000000"
+          inputMode="numeric"
+          style={{ width:"100%",background:"rgba(255,255,255,0.06)",border:`2px solid ${deviceCode.length===6?PRIMARY:BORDER}`,borderRadius:16,padding:"18px 0",fontFamily:FONT,fontWeight:800,fontSize:28,color:"#fff",outline:"none",textAlign:"center",letterSpacing:12,marginBottom:8,boxSizing:"border-box",transition:"border-color 0.2s" }}
+        />
+
+        {deviceError && <div style={{ fontFamily:FONT,fontSize:13,color:"#EF4444",marginBottom:16,textAlign:"center",fontWeight:600 }}>{deviceError}</div>}
+        {deviceInfo && <div style={{ fontFamily:FONT,fontSize:13,color:PRIMARY,marginBottom:16,textAlign:"center",fontWeight:600 }}>{deviceInfo}</div>}
+
+        <button
+          onClick={verifyDevice}
+          disabled={deviceLoading || deviceCode.length !== 6}
+          style={{ width:"100%",padding:"16px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1.5,cursor:deviceLoading?"not-allowed":"pointer",opacity:deviceLoading||deviceCode.length!==6?0.7:1,marginBottom:16,boxShadow:`0 4px 24px ${PRIMARY}44` }}
+        >
+          {deviceLoading ? "VERIFYING..." : "VERIFY"}
+        </button>
+
+        <button onClick={resendDeviceCode} disabled={deviceCooldown > 0 || deviceLoading}
+          style={{ background:"none",border:"none",fontFamily:FONT,fontSize:13,color:deviceCooldown>0?"#555":PRIMARY,cursor:deviceCooldown>0||deviceLoading?"default":"pointer",marginBottom:12,opacity:deviceCooldown>0||deviceLoading?0.6:1 }}>
+          {deviceCooldown > 0 ? `Resend in ${deviceCooldown}s` : "Resend code"}
+        </button>
+        <button onClick={()=>{ setStep("credentials"); setDeviceCode(""); setDeviceError(""); setDeviceInfo(""); }} style={{ background:"none",border:"none",fontFamily:FONT,fontSize:13,color:"#555",cursor:"pointer" }}>
+          Back to Sign In
+        </button>
+      </div>
+    );
+  }
 
   return (
     <Shell
@@ -3873,9 +4191,14 @@ function LoginScreen({ onLogin, onSignUp, onForgot, onEmailVerify }) {
           </button>
         </div>
 
+        {/* Clerk Bot Protection renders its challenge into this element when
+            enabled — required for custom (non-prebuilt-component) sign-in
+            flows like this one, or signIn.create() never reaches 'complete'. */}
+        <div id="clerk-captcha"/>
+
         {/* Sign in button */}
         <div style={{ marginTop:4 }}>
-          <CTA label={loading ? "SIGNING IN..." : "SIGN IN"} onClick={handle}/>
+          <CTA label={loading ? "SIGNING IN..." : "SIGN IN"} onClick={handle} disabled={loading}/>
         </div>
 
         <OrDivider label="OR"/>
@@ -3943,6 +4266,13 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
     const base = (f.email.trim().toLowerCase().split('@')[0] || 'user').replace(/[^a-z0-9_]/g, '_').slice(0, 16) || 'user';
     return suffix ? `${base}_${suffix}` : base;
   };
+  // Math.random() isn't a CSPRNG — use Web Crypto for the collision-retry suffix instead.
+  // Uint16Array (max 65535 = "1ekf" in base36, 4 chars) + padStart guarantees exactly
+  // 4 characters every time, instead of slice()'s variable length for small values.
+  const randomSuffix = () => {
+    const n = crypto.getRandomValues(new Uint16Array(1))[0];
+    return n.toString(36).padStart(4, '0');
+  };
   const attemptSignUp = (username) => signUp.create({
     emailAddress: f.email.trim().toLowerCase(),
     password:     f.password,
@@ -3951,7 +4281,9 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
     lastName:     f.name.split(' ').slice(1).join(' ') || undefined,
   });
 
-   const handle = async () => {
+  const submitRef = useRef(false);
+  const handle = async () => {
+    if (submitRef.current) return;
     setSubmitted(true);
     const errs = {};
     if (!f.name.trim())                       errs.name     = "Full name is required.";
@@ -3961,6 +4293,7 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
     if (f.password !== f.confirm)             errs.confirm  = "Passwords do not match.";
     if (Object.keys(errs).length) { setErrors(errs); return; }
     setErrors({}); setLoading(true);
+    submitRef.current = true;
 
     try {
       try {
@@ -3968,7 +4301,7 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
       } catch (e1) {
         const err1 = e1?.errors?.[0];
         if (err1?.code === 'form_identifier_exists' && err1?.meta?.paramName === 'username') {
-          await attemptSignUp(genUsername(Math.random().toString(36).slice(2, 6)));
+          await attemptSignUp(genUsername(randomSuffix()));
         } else {
           throw e1;
         }
@@ -3979,7 +4312,7 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
       const clerkErr = e?.errors?.[0];
       if (clerkErr?.code === 'form_identifier_exists') {
         setErrors({ general: clerkErr?.meta?.paramName === 'username'
-          ? "We couldn't create your account right now — please try again."
+          ? "We couldn't create your account right now. Please try again."
           : "An account with this email already exists." });
       } else if (clerkErr?.code === 'form_password_pwned' || clerkErr?.code?.includes('password')) {
         setErrors({ general: clerkErr?.longMessage || clerkErr?.message || "Password does not meet requirements." });
@@ -3988,6 +4321,7 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
       }
     } finally {
       setLoading(false);
+      submitRef.current = false;
     }
   };
 
@@ -4047,9 +4381,14 @@ function SignUpScreen({ onContinue, onBack, onLogin }) {
         ))}
         {errors.general && <div style={{ fontFamily:FONT, fontSize:13, color:"#EF4444", textAlign:"center", padding:"10px 16px", background:"rgba(239,68,68,0.1)", borderRadius:12, border:"1px solid rgba(239,68,68,0.3)", marginBottom:8 }}>{errors.general}</div>}
 
+        {/* Clerk Bot Protection renders its challenge into this element when
+            enabled — required for custom (non-prebuilt-component) sign-up
+            flows like this one, or signUp.create() never reaches 'complete'. */}
+        <div id="clerk-captcha"/>
+
         {/* Sign up button */}
         <div style={{ marginTop:4 }}>
-          <CTA label={loading ? "CREATING ACCOUNT..." : "SIGN UP"} onClick={handle}/>
+          <CTA label={loading ? "CREATING ACCOUNT..." : "SIGN UP"} onClick={handle} disabled={loading}/>
         </div>
 
         <OrDivider label="OR"/>
@@ -4078,24 +4417,62 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
   const [code,      setCode]      = React.useState("");
   const [loading,   setLoading]   = React.useState(false);
   const [error,     setError]     = React.useState("");
+  const [info,      setInfo]      = React.useState("");
   const [resending, setResending] = React.useState(false);
   const [cooldown,  setCooldown]  = React.useState(0);
+  const submitRef = useRef(false);
+  const infoTimeoutRef = useRef(null);
+  useEffect(() => () => clearTimeout(infoTimeoutRef.current), []);
 
   const verify = async () => {
+    if (submitRef.current) return;
     if (code.length !== 6) { setError("Please enter the full 6-digit code"); return; }
-    setLoading(true); setError("");
+    setLoading(true); setError(""); setInfo("");
+    submitRef.current = true;
     try {
-      const result = await signUp.attemptEmailAddressVerification({ code });
-      if (result.status === 'complete') {
-        await setActive({ session: result.createdSessionId });
-        onVerified();
-      } else {
-        throw new Error("Verification incomplete — please try again");
+      let result;
+      try {
+        result = await signUp.attemptEmailAddressVerification({ code });
+      } catch (e) {
+        const clerkErr = e?.errors?.[0];
+        // form_code_incorrect: wrong code, but this verification is still alive — retry works.
+        // verification_expired/verification_failed: the verification itself is dead (too old, or
+        // too many wrong attempts already made against it) — no code will ever succeed against it
+        // again, so silently letting the user keep retyping just looks like a hang/timeout. Send
+        // them to Resend instead, and clear any cooldown blocking that.
+        if (clerkErr?.code === 'form_code_incorrect') {
+          setCode("");
+          setError("Incorrect code. Please try again.");
+        } else if (clerkErr?.code === 'verification_expired' || clerkErr?.code === 'verification_failed') {
+          setCode("");
+          setCooldown(0);
+          setError('This code is no longer valid. Tap "Resend code" below to get a new one.');
+        } else if (clerkErr?.code === 'too_many_attempts') {
+          setError("Too many attempts. Please wait a few seconds and try again.");
+        } else {
+          setCode("");
+          setError(clerkErr?.longMessage || clerkErr?.message || e?.message || "Invalid or expired code. Please try again.");
+        }
+        return;
       }
-    } catch (e) {
-      const clerkErr = e?.errors?.[0];
-      setError(clerkErr?.longMessage || clerkErr?.message || e?.message || "Invalid or expired code. Please try again.");
-    } finally { setLoading(false); }
+      // The email verification itself already succeeded server-side at this
+      // point — keep setActive's own failure out of the catch above so a
+      // transient session-activation hiccup isn't mislabeled as an invalid
+      // code (which would also wrongly clear an already-consumed, unrepeatable code).
+      if (result.status === 'complete') {
+        try {
+          await setActive({ session: result.createdSessionId });
+          onVerified();
+        } catch (e) {
+          setError("Your email was verified, but we couldn't sign you in automatically. Please log in.");
+        }
+      } else {
+        setError("Verification incomplete. Please try again");
+      }
+    } finally {
+      setLoading(false);
+      submitRef.current = false;
+    }
   };
 
   React.useEffect(() => {
@@ -4105,17 +4482,34 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
   }, [cooldown]);
 
   const resend = async () => {
-    if (cooldown > 0 || resending) return;
-    setResending(true); setError("");
+    // Shares submitRef with verify() — a verify/resend tap in the same tick
+    // must not start both Clerk operations concurrently, since the loading/
+    // resending state checks below aren't visible until React re-renders.
+    if (submitRef.current || cooldown > 0 || resending || loading) return;
+    submitRef.current = true;
+    setResending(true); setError(""); setInfo("");
     try {
       await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
-      setError("New code sent — check your inbox (and spam folder).");
+      setCode("");
+      setInfo("New code sent. Check your inbox (and spam folder).");
       setCooldown(60);
-      setTimeout(() => setError(""), 5000);
+      clearTimeout(infoTimeoutRef.current);
+      infoTimeoutRef.current = setTimeout(() => setInfo(""), 5000);
     } catch (e) {
       const clerkErr = e?.errors?.[0];
-      setError(clerkErr?.message || e?.message || "Failed to resend code. Please try again.");
-    } finally { setResending(false); }
+      if (clerkErr?.code === 'verification_exists') {
+        setCode("");
+        setInfo("A code was already sent. Check your inbox (and spam folder).");
+        setCooldown(60);
+        clearTimeout(infoTimeoutRef.current);
+        infoTimeoutRef.current = setTimeout(() => setInfo(""), 5000);
+      } else {
+        setError(clerkErr?.longMessage || clerkErr?.message || e?.message || "Failed to resend code. Please try again.");
+      }
+    } finally {
+      setResending(false);
+      submitRef.current = false;
+    }
   };
 
   return (
@@ -4132,22 +4526,22 @@ function EmailVerifyScreen({ email: emailProp, onVerified, onBack }) {
         onChange={e=>setCode(e.target.value.replace(/[^0-9]/g,"").slice(0,6))}
         placeholder="000000"
         inputMode="numeric"
-        maxLength={6}
         style={{ width:"100%",background:"rgba(255,255,255,0.06)",border:`2px solid ${code.length===6?PRIMARY:BORDER}`,borderRadius:16,padding:"18px 0",fontFamily:FONT,fontWeight:800,fontSize:28,color:"#fff",outline:"none",textAlign:"center",letterSpacing:12,marginBottom:8,boxSizing:"border-box",transition:"border-color 0.2s" }}
       />
 
       {error && <div style={{ fontFamily:FONT,fontSize:13,color:"#EF4444",marginBottom:16,textAlign:"center",fontWeight:600 }}>{error}</div>}
+      {info && <div style={{ fontFamily:FONT,fontSize:13,color:PRIMARY,marginBottom:16,textAlign:"center",fontWeight:600 }}>{info}</div>}
 
       <button
         onClick={verify}
-        disabled={loading || code.length !== 6}
-        style={{ width:"100%",padding:"16px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1.5,cursor:loading?"not-allowed":"pointer",opacity:loading||code.length!==6?0.7:1,marginBottom:16,boxShadow:`0 4px 24px ${PRIMARY}44` }}
+        disabled={loading || resending || code.length !== 6}
+        style={{ width:"100%",padding:"16px 0",borderRadius:50,background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,border:"none",fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:1.5,cursor:loading?"not-allowed":"pointer",opacity:loading||resending||code.length!==6?0.7:1,marginBottom:16,boxShadow:`0 4px 24px ${PRIMARY}44` }}
       >
         {loading ? "VERIFYING..." : "VERIFY EMAIL"}
       </button>
 
-      <button onClick={resend} disabled={cooldown > 0 || resending}
-        style={{ background:"none",border:"none",fontFamily:FONT,fontSize:13,color:cooldown>0?"#555":PRIMARY,cursor:cooldown>0||resending?"default":"pointer",marginBottom:12,opacity:cooldown>0?0.6:1 }}>
+      <button onClick={resend} disabled={cooldown > 0 || resending || loading}
+        style={{ background:"none",border:"none",fontFamily:FONT,fontSize:13,color:cooldown>0?"#555":PRIMARY,cursor:cooldown>0||resending||loading?"default":"pointer",marginBottom:12,opacity:cooldown>0||loading?0.6:1 }}>
         {resending ? "Sending..." : cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}
       </button>
       <button onClick={onBack} style={{ background:"none",border:"none",fontFamily:FONT,fontSize:13,color:"#555",cursor:"pointer" }}>
@@ -4162,7 +4556,7 @@ function BodyScreen({ onContinue, onBack }) {
   const storedHtIsFt = typeof user.height === "string" && user.height.includes("'");
   const [weightUnit, setWeightUnit] = useState(() => getUnitPref("vtrx_weight_unit", "lbs"));
   const [heightUnit, setHeightUnit] = useState(() => storedHtIsFt ? "ft" : getUnitPref("vtrx_height_unit", "ft"));
-  const [weight,  setWeight]  = useState(() => kgToDisplay(user.weight, weightUnit));
+  const [weight,  setWeight]  = useState(() => lbsToDisplay(user.weight, weightUnit));
   const [height,  setHeight]  = useState(() => {  // always stored as display string
     if (storedHtIsFt) return String(user.height);
     const n = parseFloat(user.height);
@@ -4235,7 +4629,7 @@ function BodyScreen({ onContinue, onBack }) {
   };
 
   const handleContinue = () => {
-    const weightKg = toKg(weight, weightUnit);
+    const weightLbs = toLbs(weight, weightUnit);
     const heightCm = toCm(height, heightUnit);
     const ageVal   = calcAgeFromDob(dob);
     const goalWLbs = goalW && !isNaN(parseFloat(goalW))
@@ -4247,7 +4641,12 @@ function BodyScreen({ onContinue, onBack }) {
       localStorage.setItem("vtrx_height_unit", heightUnit);
       if (dob) localStorage.setItem("vtrx_user_dob", dob);
     } catch {}
-    setUser(u=>({...u, weight: weightKg, height: heightCm, dob, age: ageVal, gender, goalWeightLbs: goalWLbs, bodyFatPercentage: bfVal}));
+    // toLbs/toCm return null for blank/invalid input — fall back to whatever
+    // was already there locally, and omit the key from the PUT body below,
+    // rather than writing/sending an explicit null. The backend already
+    // no-ops on a null weight, but height had no such guard and would
+    // overwrite a previously-saved value with nothing.
+    setUser(u=>({...u, weight: weightLbs ?? u.weight, height: heightCm ?? u.height, dob, age: ageVal, gender, goalWeightLbs: goalWLbs, bodyFatPercentage: bfVal}));
     // Not gated on getAuthToken() — that flag mirrors Clerk's isSignedIn via a
     // useEffect and can still be false in the brief window right after
     // EmailVerifyScreen establishes the session, silently skipping this save
@@ -4255,9 +4654,23 @@ function BodyScreen({ onContinue, onBack }) {
     // once on 401, so just always attempt it.
     if (!DEMO_MODE) {
       apiCall('/users/profile', { method:'PUT', skipAuthRedirect:true, body: JSON.stringify({
-        gender, weight: weightKg, height: heightCm, age: ageVal,
+        gender, age: ageVal,
         goalWeightLbs: goalWLbs, bodyFatPercentage: bfVal,
-      })}).catch(e => track("profile_save_failed", { screen: "body", message: e?.message }));
+        ...(weightLbs != null && { weight: weightLbs }),
+        ...(heightCm  != null && { height: heightCm }),
+      })})
+        .then(res => {
+          // This is very likely the first authenticated backend call of a fresh
+          // signup, which is what auto-provisions the Prisma user row (see
+          // middleware/auth.js) — the response is the only place this screen can
+          // learn the resulting name/username. Neither is otherwise ever synced
+          // into shared user state during onboarding (SignUpScreen's typed name
+          // only ever reaches Clerk), so without this, Dashboard renders right
+          // after signup with an empty name and falls back to a generic greeting.
+          const u = res?.data?.user;
+          if (u) setUser(prev => ({ ...prev, name: u.name ?? prev.name, username: u.username ?? prev.username }));
+        })
+        .catch(e => track("profile_save_failed", { screen: "body", message: e?.message }));
     }
     onContinue();
   };
@@ -4289,7 +4702,7 @@ function BodyScreen({ onContinue, onBack }) {
 
         {/* Height — single field, auto formats ft */}
         <div style={{ marginBottom:22 }}>
-          <span style={lbl}>HEIGHT{heightUnit==="ft"?" — type feet then inches (e.g. 5'9)":""}</span>
+          <span style={lbl}>HEIGHT{heightUnit==="ft"?": type feet then inches (e.g. 5'9)":""}</span>
           <UnitToggle units={["ft","cm"]} current={heightUnit} onChange={switchHeightUnit}/>
           <input value={height} onChange={e=>handleHeightChange(e.target.value)}
             placeholder={heightUnit==="ft"?"5'9":"178"} inputMode="numeric" style={field}/>
@@ -4367,7 +4780,7 @@ function TrainingScreen({ onContinue, onBack }) {
   const DIET_MAP  = {"Vegan":"vegan","Vegetarian":"vegetarian","Gluten Free":"gluten_free","Dairy-Free":"dairy_free","No Peanuts":"no_peanuts","Other?":"other"};
   const MEALS_MAP = {"2 meals":"2","3 meals":"3","4+ meals":"4_plus","It varies":"varies"};
   const revMap = (map, val) => Object.keys(map).find(k => map[k] === val) || "";
-  const[want,setWant]=useState(user.wantsMealSuggestions===true?"Yes":user.wantsMealSuggestions===false?"No":"");const[nutGoal,setNutGoal]=useState(revMap(GOAL_MAP,user.nutritionGoal));const[track,setTrack]=useState(revMap(TRACK_MAP,user.trackingPreference));const[diet,setDiet]=useState((user.dietaryRestrictions||[]).map(d=>revMap(DIET_MAP,d)||d));const[meals,setMeals]=useState(revMap(MEALS_MAP,user.mealsPerDay));
+  const[want,setWant]=useState(user.wantsMealSuggestions===true?"Yes":user.wantsMealSuggestions===false?"No":"");const[nutGoal,setNutGoal]=useState(revMap(GOAL_MAP,user.nutritionGoal));const[trackPref,setTrackPref]=useState(revMap(TRACK_MAP,user.trackingPreference));const[diet,setDiet]=useState((user.dietaryRestrictions||[]).map(d=>revMap(DIET_MAP,d)||d));const[meals,setMeals]=useState(revMap(MEALS_MAP,user.mealsPerDay));
 
   const save = (overrides = {}) => {
     const g  = overrides.goal  ?? (goal  || user.goal);
@@ -4382,15 +4795,13 @@ function TrainingScreen({ onContinue, onBack }) {
     const nutritionPrefs = {
       wantsMealSuggestions: want === "Yes",
       nutritionGoal: GOAL_MAP[nutGoal] || nutGoal || "maintain",
-      trackingPreference: TRACK_MAP[track] || track || "no_not_interested",
+      trackingPreference: TRACK_MAP[trackPref] || trackPref || "no_not_interested",
       dietaryRestrictions: diet.map(d => DIET_MAP[d] || d.toLowerCase().replace(/\s+/g, "_")),
       mealsPerDay: MEALS_MAP[meals] || meals || "3",
     };
     setUser(u => ({ ...u, ...workoutPrefs, ...nutritionPrefs }));
     // Not gated on getAuthToken() — see BodyScreen's handleContinue for why that
     // check can race right after onboarding establishes the session.
-    // NOTE: this component has a local `track` state var (tracking preference),
-    // so use console.warn here rather than the analytics track() import.
     if (!DEMO_MODE) {
       apiCall('/users/profile', { method:'PUT', skipAuthRedirect:true, body: JSON.stringify({
         goal: workoutPrefs.goal, fitnessLevel: workoutPrefs.fitnessLevel,
@@ -4398,7 +4809,15 @@ function TrainingScreen({ onContinue, onBack }) {
         location: workoutPrefs.location, sessionDuration: time,
         preferredStyles: Array.isArray(style) ? style : [style].filter(Boolean),
         ...nutritionPrefs,
-      })}).catch(e => console.warn('profile_save_failed:training', e?.message));
+      })})
+        .then(res => {
+          // Same gap as BodyScreen.handleContinue — pick up name/username from
+          // the response in case BodyScreen's own save hasn't resolved yet (or
+          // failed) by the time this one completes.
+          const u = res?.data?.user;
+          if (u) setUser(prev => ({ ...prev, name: u.name ?? prev.name, username: u.username ?? prev.username }));
+        })
+        .catch(e => track("profile_save_failed", { screen: "training", message: e?.message }));
     }
   };
 
@@ -4418,7 +4837,7 @@ function TrainingScreen({ onContinue, onBack }) {
     <div style={{ fontFamily:FONT,fontWeight:800,fontSize:12,color:PRIMARY,letterSpacing:2,marginTop:30,marginBottom:14,paddingTop:22,borderTop:"1px solid rgba(255,255,255,0.12)" }}>YOUR NUTRITION</div>
     <Q n="8" text="Would you like meal suggestions based on your goals?"/><ChipGroup options={["Yes","No"]} value={want} onChange={setWant}/>
     <Q n="9" text="What's your main nutrition goal?"/><ChipGroup options={["Lose Fat","Build Muscle","Maintain","Eat clean","Improve Energy"]} value={nutGoal} onChange={setNutGoal}/>
-    <Q n="10" text="Do you track your calories or macros?"/><ChipGroup options={["Yes, both","Only Calories","No, but I'd like to","No, not interested"]} value={track} onChange={setTrack}/>
+    <Q n="10" text="Do you track your calories or macros?"/><ChipGroup options={["Yes, both","Only Calories","No, but I'd like to","No, not interested"]} value={trackPref} onChange={setTrackPref}/>
     <Q n="11" text="Do you have any dietary preferences or restrictions?"/><ChipGroup options={["Vegan","Vegetarian","Gluten Free","Dairy-Free","No Peanuts","Other?"]} value={diet} onChange={setDiet} multi/>
     <Q n="12" text="How many meals do you eat daily?"/><ChipGroup options={["2 meals","3 meals","4+ meals","It varies"]} value={meals} onChange={setMeals}/>
 
@@ -4434,14 +4853,14 @@ function PricingScreen({ onContinue, onBack }) {
   const [billingAnnual, setBillingAnnual] = useState(true);
 
   const FREE_FEATURES = [
-    "1 training programme — 5 days, fully personalised",
+    "1 training programme: 5 days, fully personalised",
     "Unlimited workout logging",
     "14-day workout history",
     "1 basic AI weekly summary",
     "Daily mood check-in",
     "Browse all recipes (view only)",
     "Save up to 3 recipes",
-    "Meal swap — twice per day",
+    "Meal swap: twice per day",
     "Water intake tracker",
     "Streak tracking",
     "3 personal records tracked",
@@ -4451,7 +4870,7 @@ function PricingScreen({ onContinue, onBack }) {
   const PREMIUM_FEATURES = [
     "Everything in your 1-month free trial",
     "Unlimited programmes + full customisation",
-    "Full workout history — all time",
+    "Full workout history: all time",
     "AI coaching summary after every workout",
     "Weekly AI performance report every Sunday",
     "AI-generated personalised workout plan",
@@ -4463,7 +4882,7 @@ function PricingScreen({ onContinue, onBack }) {
     "Unlimited personal records",
     "Full progress charts & trends",
     "Progress photos & body measurements",
-    "Challenges access — coming soon",
+    "Challenges access: coming soon",
   ];
 
   return (
@@ -4520,8 +4939,8 @@ function PricingScreen({ onContinue, onBack }) {
         <div style={{ background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:14,padding:"12px 16px",display:"flex",alignItems:"center",gap:12,marginBottom:4 }}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
           <div>
-            <div style={{ fontFamily:FONT,fontWeight:800,fontSize:13,color:"#22C55E" }}>1 Month Free Trial — No Card Needed</div>
-            <div style={{ fontFamily:FONT,fontSize:11,color:"#888",marginTop:1 }}>Unlimited AI coaching, meal planning, full history — every feature unlocked.</div>
+            <div style={{ fontFamily:FONT,fontWeight:800,fontSize:13,color:"#22C55E" }}>1 Month Free Trial: No Card Needed</div>
+            <div style={{ fontFamily:FONT,fontSize:11,color:"#888",marginTop:1 }}>Unlimited AI coaching, meal planning, full history: every feature unlocked.</div>
           </div>
         </div>
 
@@ -4543,7 +4962,7 @@ function PricingScreen({ onContinue, onBack }) {
                     <div style={{ fontFamily:FONT,fontSize:26,fontWeight:900,color:"#fff" }}>$5.83<span style={{ fontSize:13,fontWeight:500,color:"#888" }}>/month</span></div>
                     <div style={{ fontFamily:FONT,fontSize:11,color:"#22C55E",fontWeight:600,marginTop:2 }}>$69.99 billed annually · Save 40%</div>
                   </div>
-                : <div style={{ fontFamily:FONT,fontSize:26,fontWeight:900,color:"#fff" }}>$9.83<span style={{ fontSize:13,fontWeight:500,color:"#888" }}>/month</span></div>
+                : <div style={{ fontFamily:FONT,fontSize:26,fontWeight:900,color:"#fff" }}>$9.99<span style={{ fontSize:13,fontWeight:500,color:"#888" }}>/month</span></div>
               }
             </div>
             <div style={{ width:22,height:22,borderRadius:"50%",border:`2px solid ${selected==="premium"?PRIMARY:"#444"}`,background:selected==="premium"?PRIMARY:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:8 }}>
@@ -4568,14 +4987,14 @@ function PricingScreen({ onContinue, onBack }) {
 
           {/* 7-day trial note */}
           <div style={{ marginTop:14,padding:"10px 12px",background:"rgba(34,197,94,0.08)",borderRadius:10,border:"1px solid rgba(34,197,94,0.2)" }}>
-            <div style={{ fontFamily:FONT,fontSize:12,color:"#22C55E",fontWeight:700,textAlign:"center" }}>1 month free trial — cancel anytime</div>
+            <div style={{ fontFamily:FONT,fontSize:12,color:"#22C55E",fontWeight:700,textAlign:"center" }}>1 month free trial, cancel anytime</div>
           </div>
         </div>
 
         {/* CTA Button */}
         <button onClick={()=>{ if(selected==="premium") { openPaymentSheet(billingAnnual?"annual":"monthly"); return; } onContinue(); }}
           style={{ width:"100%",padding:"16px 0",borderRadius:50,background:PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:15,color:"#fff",cursor:"pointer",boxShadow:`0 4px 24px ${PRIMARY}44`,marginTop:4,letterSpacing:0.5 }}>
-          {selected==="free" ? "Continue with Free" : "Start Free — 1 Month On Us"}
+          {selected==="free" ? "Continue with Free" : "Start Free: 1 Month On Us"}
         </button>
 
         {selected==="premium" && (
@@ -4609,11 +5028,23 @@ function ReadyScreen({ onFinish }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // ── MOOD SHEET ───────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
-function MoodSheet({ visible, onSelect }) {
+function MoodSheet({ visible, onSelect, workoutPreviews }) {
   const[step,setStep]=useState(0);const[picked,setPicked]=useState(null);
   const choose=(key)=>{setPicked(key);setStep(1);};
   const lvl=picked?ENERGY_LEVELS.find(l=>l.key===picked):null;
-  const w=picked?WORKOUTS[picked]:null;
+  // workoutPreviews carries today's *actual* plan session, mood-adapted per
+  // option — falls back to the static table only if a caller ever renders
+  // this without it. The two possible shapes (a real plan session's
+  // duration/calories/exercises-array vs. the static table's mins/cal/
+  // exercises-count) are normalised the same way Dashboard's own workout
+  // card already does, just below.
+  const rawW = picked ? (workoutPreviews?.[picked] || WORKOUTS[picked]) : null;
+  const w = rawW ? {
+    ...rawW,
+    mins: rawW.duration ?? rawW.mins ?? 0,
+    cal:  rawW.calories ?? rawW.cal  ?? 0,
+    exercises: Array.isArray(rawW.exercises) ? rawW.exercises.length : (rawW.exercises || 0),
+  } : null;
   const hr=new Date().getHours();const greet=hr<12?"morning":hr<17?"afternoon":"evening";
   return (
     <>
@@ -4672,36 +5103,6 @@ function MoodSheet({ visible, onSelect }) {
 
 // ── TYPE COLORS ──────────────────────────────────────────────────────────────
 const TYPE_LABEL = { strength: "Strength", cardio: "Cardio", hiit: "HIIT", rest: "Rest" };
-
-// ── CALENDAR DATA ────────────────────────────────────────────────────────────
-// Workout types keyed by day of month (Dec 2024)
-const CAL_DATA = {
-  2:"strength", 4:"cardio", 5:"strength", 7:"strength",
-  9:"cardio", 10:"strength", 12:"strength", 14:"hiit",
-  16:"cardio", 17:"strength", 19:"strength", 21:"hiit",
-  22:"strength", 23:"hiit", 24:"cardio", 26:"strength", 28:"strength", 31:"strength"
-};
-
-const DAY_STATS = {
-  2:  { name:"Chest & Triceps",  type:"strength", duration:45, vol:"2,100kg", exercises:6, cal:320 },
-  4:  { name:"HIIT Cardio",      type:"cardio",   duration:25, vol:"—",        exercises:5, cal:380 },
-  5:  { name:"Back & Biceps",    type:"strength", duration:50, vol:"2,400kg", exercises:7, cal:340 },
-  7:  { name:"Leg Day",          type:"strength", duration:55, vol:"3,200kg", exercises:6, cal:420 },
-  9:  { name:"Steady State Run", type:"cardio",   duration:30, vol:"—",        exercises:1, cal:290 },
-  10: { name:"Shoulder & Core",  type:"strength", duration:40, vol:"1,800kg", exercises:6, cal:300 },
-  12: { name:"Full Body",        type:"strength", duration:60, vol:"2,800kg", exercises:8, cal:460 },
-  14: { name:"HIIT Circuit",     type:"hiit",     duration:30, vol:"—",        exercises:6, cal:400 },
-  16: { name:"Cycling",          type:"cardio",   duration:40, vol:"—",        exercises:1, cal:330 },
-  17: { name:"Push Day",         type:"strength", duration:45, vol:"2,200kg", exercises:7, cal:350 },
-  19: { name:"Pull Day",         type:"strength", duration:45, vol:"2,500kg", exercises:7, cal:360 },
-  21: { name:"Tabata HIIT",      type:"hiit",     duration:25, vol:"—",        exercises:8, cal:420 },
-  22: { name:"Upper Body",       type:"strength", duration:50, vol:"2,600kg", exercises:8, cal:382 },
-  23: { name:"HIIT Intervals",   type:"hiit",     duration:30, vol:"—",        exercises:5, cal:390 },
-  24: { name:"Rowing",           type:"cardio",   duration:35, vol:"—",        exercises:1, cal:310 },
-  26: { name:"Lower Body",       type:"strength", duration:55, vol:"3,100kg", exercises:6, cal:440 },
-  28: { name:"Chest & Shoulders",type:"strength", duration:45, vol:"2,300kg", exercises:7, cal:360 },
-  31: { name:"New Year Strength",type:"strength", duration:60, vol:"2,900kg", exercises:8, cal:480 },
-};
 
 // ── EXERCISE LIBRARY ─────────────────────────────────────────────────────────
 const EXERCISE_LIBRARY = {
@@ -5010,7 +5411,7 @@ function CalendarPage({ onBack }) {
             ) : frozenDaySet.has(selectedDay) ? (
               <div style={{ background:CARD,borderRadius:20,border:`1px solid ${TYPE_COLOR.frozen}44`,padding:"32px 18px",textAlign:"center",marginBottom:12 }}>
                 <div style={{ fontFamily:FONT,fontSize:16,color:TYPE_COLOR.frozen,marginBottom:6 }}>❄ Streak Freeze Active</div>
-                <div style={{ fontFamily:FONT,fontSize:13,color:"#888" }}>No workout needed — this day is protected</div>
+                <div style={{ fontFamily:FONT,fontSize:13,color:"#888" }}>No workout needed: this day is protected</div>
               </div>
             ) : (
               <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"32px 18px",textAlign:"center",marginBottom:12 }}>
@@ -5451,7 +5852,7 @@ function CustomizePage({ onBack }) {
           <button onClick={()=>setEditDay(null)} style={{ width:36,height:36,borderRadius:"50%",background:CARD,border:`1px solid ${BORDER}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#aaa" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
           </button>
-          <div style={{ fontFamily:FONT,fontWeight:900,fontSize:15,color:"#fff",letterSpacing:1.5 }}>{w.day.toUpperCase()} — EDIT</div>
+          <div style={{ fontFamily:FONT,fontWeight:900,fontSize:15,color:"#fff",letterSpacing:1.5 }}>{w.day.toUpperCase()}: EDIT</div>
         </div>
         <div style={{ flex:1,overflowY:"auto",padding:"0 18px 40px" }}>
           {/* Rest day toggle */}
@@ -5761,7 +6162,7 @@ function WeightsHub({ onLogout=null, onNavigate=null, weekPlanSessions=[], onSwa
                   return (
                     <div style={{ background:CARD,borderRadius:20,border:`1px solid ${nc}44`,marginBottom:12,overflow:"hidden" }}>
                       <div style={{ background:`linear-gradient(135deg,${nc}22,${nc}08)`,padding:"16px 16px 12px" }}>
-                        <div style={{ fontFamily:FONT,fontWeight:600,fontSize:10,color:nc,letterSpacing:1.5,marginBottom:3 }}>UP NEXT — {current.workout.dayLabel}</div>
+                        <div style={{ fontFamily:FONT,fontWeight:600,fontSize:10,color:nc,letterSpacing:1.5,marginBottom:3 }}>UP NEXT: {current.workout.dayLabel}</div>
                         <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff",marginBottom:6 }}>{generateWorkoutTitle(exs) || current.workout.name}</div>
                         <div style={{ fontFamily:FONT,fontSize:12,color:"#888" }}>{current.workout.duration} min · {current.workout.calories} cal · {current.workout.target}</div>
                         {current.workout.moodAdapted && (
@@ -6142,17 +6543,6 @@ function NotifIcon({ type }) {
   if (type==="water")     return <svg width={p.width} height={p.height} viewBox={p.viewBox} fill={p.fill} stroke={p.stroke} strokeWidth={p.strokeWidth}><path d="M12 2.69l5.66 5.66a8 8 0 11-11.31 0z"/></svg>;
   return <svg width={p.width} height={p.height} viewBox={p.viewBox} fill={p.fill} stroke={p.stroke} strokeWidth={p.strokeWidth}><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/></svg>;
 }
-const NOTIF_DATA = [
-  { id:1, iconKey:"workout",  iconBg:PRIMARY,   title:"Workout Reminder",  time:"2m ago",    unread:true,  body:"Time for your evening strength training session. 30 minute strength workout." },
-  { id:2, iconKey:"goal",     iconBg:PRIMARY,   title:"Goal Achieved!",    time:"15m ago",   unread:true,  body:"Congratulations! You've completed your weekly cardio goal of 150 minutes." },
-  { id:3, iconKey:"streak",   iconBg:PRIMARY,   title:"Streak Alert",      time:"1h ago",    unread:true,  body:"You're on a 7-day workout streak! Keep it going to reach your 10-day milestone." },
-  { id:4, iconKey:"nutrition",iconBg:"#374151", title:"Nutrition Tip",     time:"3h ago",    unread:false, body:"Don't forget to fuel your body. Try adding protein at least 30g within 30 minutes post-workout." },
-  { id:5, iconKey:"steps",    iconBg:"#374151", title:"Daily Steps",       time:"5h ago",    unread:false, body:"Great job! You've walked 8,247 steps today. Only 1,753 more to reach your daily goal." },
-  { id:6, iconKey:"sleep",    iconBg:"#374151", title:"Sleep Reminder",    time:"Yesterday", unread:false, body:"Time to wind down. Getting 7-8 hours of sleep helps with muscle recovery and performance." },
-  { id:7, iconKey:"water",    iconBg:"#374151", title:"Hydration Check",   time:"Yesterday", unread:false, body:"You've logged 6 glasses of water today. Remember to stay hydrated throughout your workout." },
-  { id:8, iconKey:"rest",     iconBg:"#374151", title:"Rest Day Scheduled",time:"2 days ago",unread:false, body:"Tomorrow is your scheduled rest day. Use this time for light stretching or meditation." },
-];
-
 // ── NOTIFICATION SETTINGS PAGE ────────────────────────────────────────────────
 
 function NotifSectionIcon({ type }) {
@@ -6364,17 +6754,28 @@ function NotifSettingsPage({ onBack }) {
 // ── NOTIFICATIONS PAGE ────────────────────────────────────────────────────────
 // Map backend notification types to icon keys for rendering
 const NOTIF_ICON_MAP = {
-  welcome:          'logo',
-  workout_reminder: 'workout',
-  ai_summary:       'goal',
-  ai_ready:         'goal',
-  streak_alert:     'streak',
-  streak_broken:    'streak',
-  weekly_summary:   'goal',
-  meal_reminder:    'meal',
-  hydration:        'water',
-  payment_failed:   'premium',
-  test:             'workout',
+  welcome:              'logo',
+  workout_reminder:     'workout',
+  ai_summary:           'goal',
+  ai_ready:             'goal',
+  streak_alert:         'streak',
+  streak_broken:        'streak',
+  weekly_summary:       'goal',
+  weekly_recap:         'goal',
+  meal_reminder:        'meal',
+  hydration:            'water',
+  payment_failed:       'premium',
+  // The rest of these are produced by services/notificationScheduler.js's
+  // cron-driven jobs (reminders, recaps, milestones, re-engagement, onboarding)
+  // — the notifications a real user actually accumulates over time. Without
+  // entries here they all fell through to the 'workout' default below.
+  reengagement:         'rest',
+  comeback:             'workout',
+  trial_expiry_24h:     'premium',
+  trial_expiry_3d:      'premium',
+  onboarding_workout:   'workout',
+  onboarding_nutrition: 'nutrition',
+  test:                 'workout',
 };
 
 function NotificationsPage({ onBack, onMarkAllRead }) {
@@ -6449,7 +6850,7 @@ function NotificationsPage({ onBack, onMarkAllRead }) {
           title:   n.title,
           body:    n.body,
           time:    new Date(n.createdAt).toLocaleDateString('en-GB', { day:'numeric', month:'short' }),
-          iconKey: NOTIF_ICON_MAP[n.type] || 'workout',
+          iconKey: n.type?.startsWith('milestone_') ? 'challenge' : (NOTIF_ICON_MAP[n.type] || 'workout'),
           type:    n.type,
           read:    n.read,
         }))
@@ -6462,7 +6863,7 @@ function NotificationsPage({ onBack, onMarkAllRead }) {
       {/* Header */}
       <div style={{ padding:"50px 18px 16px", display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0, background:BG }}>
         <button onClick={onBack} style={{ width:36,height:36,borderRadius:"50%",background:CARD,border:`1px solid ${BORDER}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={"#888888"} strokeWidth="2.5"><polyline points="19 12 5 12"/><polyline points="12 5 5 12 12 19"/></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={"#888888"} strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
         <div style={{ fontFamily:FONT, fontWeight:900, fontSize:15, color:"#ffffff", letterSpacing:2 }}>NOTIFICATIONS</div>
         <button onClick={() => setShowSettings(true)} style={{ width:38, height:38, borderRadius:"50%", background:PRIMARY, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", border:"none" }}>
@@ -6485,7 +6886,18 @@ function NotificationsPage({ onBack, onMarkAllRead }) {
 
       <div style={{ flex:1, overflowY:"auto", padding:"0 16px 32px" }}>
         {displayList === null && (
-          <div style={{ textAlign:"center", padding:"40px 0", fontFamily:FONT, fontSize:13, color:"#555" }}>Loading...</div>
+          <>
+            <style>{`@keyframes notifSkeletonPulse{0%,100%{opacity:0.4}50%{opacity:0.8}}`}</style>
+            {[0,1,2,3].map(i => (
+              <div key={i} style={{ background:CARD, borderRadius:18, padding:"16px 18px", marginBottom:10, display:"flex", gap:14, alignItems:"center", animation:"notifSkeletonPulse 1.4s ease-in-out infinite", animationDelay:`${i*0.12}s` }}>
+                <div style={{ width:44, height:44, borderRadius:"50%", background:"#2a2a2a", flexShrink:0 }}/>
+                <div style={{ flex:1 }}>
+                  <div style={{ width:"55%", height:13, borderRadius:4, background:"#2a2a2a", marginBottom:8 }}/>
+                  <div style={{ width:"80%", height:11, borderRadius:4, background:"#232323" }}/>
+                </div>
+              </div>
+            ))}
+          </>
         )}
         {displayList !== null && displayList.length === 0 && (
           <div style={{ textAlign:"center", padding:"60px 20px", fontFamily:FONT, fontSize:14, color:"#555" }}>
@@ -6641,9 +7053,13 @@ function calcAgeFromDob(dob) {
   if (m < 0 || (m === 0 && today.getDate() < d.getDate())) age--;
   return age >= 1 ? age : null;
 }
-function kgToDisplay(kg, unit) {
-  const v = parseFloat(kg); if (!v) return "";
-  return unit === "lbs" ? (v * 2.20462).toFixed(1) : String(v);
+// User.weight is stored in lbs (see prisma/schema.prisma and every backend
+// consumer — nutritionPlanService, workoutController, aiController all read
+// it as lbs). Convert to the display unit from that baseline, not the other
+// way around.
+function lbsToDisplay(lbs, unit) {
+  const v = parseFloat(lbs); if (!v) return "";
+  return unit === "kg" ? (v * 0.453592).toFixed(1) : String(v);
 }
 function cmToDisplay(cm, unit) {
   const v = parseFloat(cm); if (!v) return "";
@@ -6655,20 +7071,27 @@ function cmToDisplay(cm, unit) {
   }
   return String(Math.round(v));
 }
-function toKg(val, unit) {
+// Same baseline as lbsToDisplay above — always resolve to lbs before this
+// reaches the backend, regardless of which unit the user is entering in.
+function toLbs(val, unit) {
   const v = parseFloat(val);
   if (isNaN(v) || v <= 0) return null;
-  return unit === "lbs" ? parseFloat((v * 0.453592).toFixed(1)) : v;
+  return unit === "kg" ? parseFloat((v * 2.20462).toFixed(1)) : v;
 }
 function toCm(val, unit) {
+  // Prisma's height column is String? (schema: e.g. "5'10") — always return a
+  // string (or null), never a bare number. A number here gets rejected by
+  // Prisma's own runtime type validation against a String? field, which
+  // would fail the entire profile update in the same call (name/age/gender/
+  // weight included, since it's one atomic Prisma update).
   if (unit === "ft") {
     const m = String(val).match(/(\d+)[^\d]*(\d*)/);
     if (!m) return null;
     const cm = Math.round((parseInt(m[1]) || 0) * 30.48 + (parseInt(m[2] || 0) || 0) * 2.54);
-    return cm > 0 ? cm : null;
+    return cm > 0 ? String(cm) : null;
   }
   const v = parseFloat(val);
-  return isNaN(v) || v <= 0 ? null : Math.round(v);
+  return isNaN(v) || v <= 0 ? null : String(Math.round(v));
 }
 function getUnitPref(key, fallback) {
   try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
@@ -6684,7 +7107,7 @@ function PersonalDetailsPage({ onBack }) {
   const [gender,     setGender]     = useState(user.gender || "");
   const [weightUnit, setWeightUnit] = useState(initWU);
   const [heightUnit, setHeightUnit] = useState(initHU);
-  const [weight,     setWeight]     = useState(() => kgToDisplay(user.weight, initWU));
+  const [weight,     setWeight]     = useState(() => lbsToDisplay(user.weight, initWU));
   const [height,     setHeight]     = useState(() => {
     if (storedHtIsFt) return String(user.height);
     const n = parseFloat(user.height);
@@ -6736,29 +7159,38 @@ function PersonalDetailsPage({ onBack }) {
   };
 
   const save = async () => {
-    const ageVal   = calcAgeFromDob(dob);
-    const weightKg = toKg(weight, weightUnit);
-    const heightCm = toCm(height, heightUnit);
+    const ageVal    = calcAgeFromDob(dob);
+    const weightLbs = toLbs(weight, weightUnit);
+    const heightCm  = toCm(height, heightUnit);
     try {
       localStorage.setItem("vtrx_weight_unit", weightUnit);
       localStorage.setItem("vtrx_height_unit", heightUnit);
       if (dob) localStorage.setItem("vtrx_user_dob", dob);
     } catch {}
     setSaveError(false);
+    // toLbs/toCm return null for blank/invalid input — fall back to whatever
+    // was already there locally, and omit the key from the PUT body below,
+    // rather than writing/sending an explicit null. The backend already
+    // no-ops on a null weight, but height had no such guard and would
+    // overwrite a previously-saved value with nothing.
     // DEMO_MODE has no real backend to confirm against — keep the old optimistic
     // behavior there. Otherwise only show "Saved!" (and update the shared user
     // state) once the backend actually confirms it, instead of assuming success
     // and silently losing the write on failure.
     if (DEMO_MODE) {
-      setUser(u=>({...u, name, dob, age: ageVal, gender, weight: weightKg, height: heightCm}));
+      setUser(u=>({...u, name, dob, age: ageVal, gender, weight: weightLbs ?? u.weight, height: heightCm ?? u.height}));
       setSaved(true);
       setTimeout(()=>setSaved(false), 2200);
       return;
     }
     setSaving(true);
     try {
-      await apiCall("/users/profile", { method:"PUT", body:JSON.stringify({ name, age: ageVal, gender, weight: weightKg, height: heightCm }) });
-      setUser(u=>({...u, name, dob, age: ageVal, gender, weight: weightKg, height: heightCm}));
+      await apiCall("/users/profile", { method:"PUT", body:JSON.stringify({
+        name, age: ageVal, gender,
+        ...(weightLbs != null && { weight: weightLbs }),
+        ...(heightCm  != null && { height: heightCm }),
+      }) });
+      setUser(u=>({...u, name, dob, age: ageVal, gender, weight: weightLbs ?? u.weight, height: heightCm ?? u.height}));
       setSaved(true);
       setTimeout(()=>setSaved(false), 2200);
     } catch (e) {
@@ -6836,7 +7268,7 @@ function PersonalDetailsPage({ onBack }) {
         {/* Height */}
         <div>
           <div style={{ fontFamily:FONT,fontWeight:600,fontSize:11,color:"#888888",marginBottom:6 }}>
-            HEIGHT{heightUnit==="ft" ? " — feet then inches (e.g. 5'9)" : ""}
+            HEIGHT{heightUnit==="ft" ? ": feet then inches (e.g. 5'9)" : ""}
           </div>
           <UnitToggle units={["ft","cm"]} current={heightUnit} onChange={switchHeightUnit}/>
           <div style={{ background:"#1e1e1e",border:`1.5px solid ${BORDER}`,borderRadius:12,padding:"12px 14px",display:"flex",alignItems:"center",gap:8 }}>
@@ -6852,125 +7284,36 @@ function PersonalDetailsPage({ onBack }) {
       <SaveBtn onClick={save} saved={saved} saving={saving}/>
       {saveError && (
         <div style={{ fontFamily:FONT,fontSize:12,color:"#EF4444",textAlign:"center",marginTop:10 }}>
-          Couldn't save — check your connection and try again.
+          Couldn't save. Check your connection and try again.
         </div>
       )}
     </SubShell>
   );
 }
 
-
-function GoalIcon({ type }) {
-  const s = { width:22, height:22, viewBox:"0 0 24 24", fill:"none", stroke:"currentColor", strokeWidth:"2" };
-  if (type==="fire")    return <svg {...s}><path d="M12 2c0 6-6 8-6 14a6 6 0 0012 0c0-6-6-8-6-14z"/></svg>;
-  if (type==="muscle")  return <svg {...s}><path d="M1 7h4v10H1zM5 9h2.5v6H5zM7.5 11h9v2H7.5zM16.5 9h2.5v6H16.5zM19 7h4v10H19z"/></svg>;
-  if (type==="bolt")    return <svg {...s}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>;
-  if (type==="run")     return <svg {...s}><circle cx="12" cy="5" r="2"/><path d="M10 22v-6l-2-3 4-4 2 3h4"/><path d="M10 13l-4 2"/></svg>;
-  if (type==="star")    return <svg {...s}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>;
-  if (type==="sparkle") return <svg {...s}><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"/></svg>;
-  return <svg {...s}><circle cx="12" cy="12" r="10"/></svg>;
-}
-function FitnessGoalPage({ onBack }) {
-  const { user, setUser } = useUser();
-  const [goal, setGoal]   = useState(user.goal);
-  const [level, setLevel] = useState(user.fitnessLevel || user.level || "");
-  const [days, setDays]   = useState(Number(user.daysPerWeek || user.days) || 5);
-  const [saved, setSaved] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState(false);
-
-  const goals = [
-    { key:"Lose Weight",                ico:"fire", desc:"Burn fat and reduce body weight" },
-    { key:"Build Muscle",               ico:"muscle", desc:"Increase muscle mass and strength" },
-    { key:"Weight Loss & Muscle Gain",  ico:"bolt", desc:"Body recomposition — best of both" },
-    { key:"Improve Endurance",          ico:"run", desc:"Cardio fitness and stamina" },
-    { key:"Stay Active",                ico:"star", desc:"Maintain a healthy active lifestyle" },
-    { key:"Get Toned",                  ico:"sparkle", desc:"Lean, defined physique" },
-  ];
-
-  return (
-    <SubShell title="FITNESS GOAL" onBack={onBack}>
-      <div style={{ fontFamily:FONT,fontSize:13,color:"#888888",marginBottom:18 }}>Choose your primary fitness goal. This shapes your entire workout plan.</div>
-
-      <div style={{ display:"flex",flexDirection:"column",gap:10,marginBottom:16 }}>
-        {goals.map(g=>(
-          <button key={g.key} onClick={()=>setGoal(g.key)} style={{ display:"flex",alignItems:"center",gap:14,padding:"14px 18px",borderRadius:18,border:`2px solid ${goal===g.key?PRIMARY:BORDER}`,background:goal===g.key?`${PRIMARY}12`:CARD,cursor:"pointer",textAlign:"left",transition:"all 0.2s" }}>
-            <div style={{ width:44,height:44,borderRadius:14,background:goal===g.key?`${PRIMARY}25`:"#1a1a1a",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"background 0.18s" }}><GoalIcon type={g.ico}/></div>
-            <div style={{ flex:1 }}>
-              <div style={{ fontFamily:FONT,fontWeight:700,fontSize:15,color:goal===g.key?PRIMARY:"#fff" }}>{g.key}</div>
-              <div style={{ fontFamily:FONT,fontSize:12,color:"#888888",marginTop:2 }}>{g.desc}</div>
-            </div>
-            {goal===g.key&&<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>}
-          </button>
-        ))}
-      </div>
-
-      <div style={{ background:"#ffffff",borderRadius:20,border:"1px solid #e8e8e8",padding:"18px",marginBottom:16 }}>
-        <div style={{ fontFamily:FONT,fontWeight:700,fontSize:12,color:"#888888",letterSpacing:1,marginBottom:14 }}>EXPERIENCE LEVEL</div>
-        <div style={{ display:"flex",gap:8 }}>
-          {["Beginner","Intermediate","Advanced"].map(l=>(
-            <button key={l} onClick={()=>setLevel(l)} style={{ flex:1,padding:"12px 0",borderRadius:12,border:`1.5px solid ${level===l?PRIMARY:BORDER}`,background:level===l?`${PRIMARY}18`:"transparent",fontFamily:FONT,fontWeight:600,fontSize:12,color:level===l?PRIMARY:"#555",cursor:"pointer",transition:"all 0.2s" }}>{l}</button>
-          ))}
-        </div>
-      </div>
-
-      <div style={{ background:"#ffffff",borderRadius:20,border:"1px solid #e8e8e8",padding:"18px",marginBottom:16 }}>
-        <div style={{ fontFamily:FONT,fontWeight:700,fontSize:12,color:"#888888",letterSpacing:1,marginBottom:14 }}>DAYS PER WEEK</div>
-        <div style={{ display:"flex",gap:8 }}>
-          {[2,3,4,5].map(d=>(
-            <button key={d} onClick={()=>setDays(d)} style={{ flex:1,padding:"14px 0",borderRadius:14,border:`2px solid ${days===d?PRIMARY:BORDER}`,background:days===d?PRIMARY:"transparent",fontFamily:FONT,fontWeight:600,fontSize:16,color:days===d?"#fff":"#555",cursor:"pointer",transition:"all 0.2s" }}>{d}</button>
-          ))}
-        </div>
-      </div>
-
-      <SaveBtn onClick={async ()=>{
-      if (DEMO_MODE) {
-        setUser(u=>({...u,goal,level,days,fitnessLevel:level,daysPerWeek:parseInt(days)||5}));
-        setSaved(true);
-        setTimeout(()=>setSaved(false),2200);
-        return;
-      }
-      setSaving(true);
-      setSaveError(false);
-      try {
-        await apiCall('/users/profile',{ method:'PUT', body:JSON.stringify({ goal, fitnessLevel:level, daysPerWeek:parseInt(days)||5 }) });
-        setUser(u=>({...u,goal,level,days,fitnessLevel:level,daysPerWeek:parseInt(days)||5}));
-        setSaved(true);
-        setTimeout(()=>setSaved(false),2200);
-      } catch (e) {
-        track("profile_save_failed", { screen: "fitness_goal", message: e?.message });
-        setSaveError(true);
-      } finally {
-        setSaving(false);
-      }
-    }} saved={saved} saving={saving}/>
-      {saveError && (
-        <div style={{ fontFamily:FONT,fontSize:12,color:"#EF4444",textAlign:"center",marginTop:10 }}>
-          Couldn't save — check your connection and try again.
-        </div>
-      )}
-    </SubShell>
-  );
-}
 
 // ─ Change Email ───────────────────────────────────────────────────────────────
+// Email is Clerk's identity for the account (login, notifications), not a
+// plain profile field — changing it for real means going through Clerk's own
+// add-and-verify-email flow, which this page doesn't implement. Rather than
+// fake a save against a hardcoded placeholder email, show the user's real
+// current email and disable submission with an honest explanation.
 function ChangeEmailPage({ onBack }) {
-  const [email, setEmail] = useState("john@example.com");
+  const { user } = useUser();
   const [newEmail, setNewEmail] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [saved, setSaved] = useState(false);
   const match = newEmail && newEmail===confirm;
 
   return (
     <SubShell title="CHANGE EMAIL" onBack={onBack}>
       <div style={{ background:"#ffffff",borderRadius:20,border:"1px solid #e8e8e8",padding:"20px",marginBottom:14 }}>
-        <div style={{ fontFamily:FONT,fontSize:13,color:"#888888",marginBottom:18,lineHeight:1.5 }}>Current: <span style={{ color:PRIMARY,fontWeight:600 }}>{email}</span></div>
+        <div style={{ fontFamily:FONT,fontSize:13,color:"#888888",marginBottom:18,lineHeight:1.5 }}>Current: <span style={{ color:PRIMARY,fontWeight:600 }}>{user?.email || "—"}</span></div>
         <DarkInput label="NEW EMAIL" value={newEmail} onChange={setNewEmail} type="email" placeholder="Enter new email address"/>
         <DarkInput label="CONFIRM NEW EMAIL" value={confirm} onChange={setConfirm} type="email" placeholder="Confirm new email address"/>
         {confirm&&!match&&<div style={{ fontFamily:FONT,fontSize:12,color:"#EF4444",marginBottom:8,marginTop:-8 }}>Emails do not match</div>}
         {match&&<div style={{ fontFamily:FONT,fontSize:12,color:"#22C55E",marginBottom:8,marginTop:-8 }}>Emails match</div>}
       </div>
-      <SaveBtn onClick={()=>{if(match){setSaved(true);setEmail(newEmail);setNewEmail("");setConfirm("");setTimeout(()=>setSaved(false),2200);}}} saved={saved} label="UPDATE EMAIL"/>
+      <div style={{ fontFamily:FONT,fontSize:12,color:"#888888",textAlign:"center",padding:"0 8px" }}>Changing your account email isn't available yet. Contact support if you need this updated.</div>
     </SubShell>
   );
 }
@@ -7331,6 +7674,10 @@ function PaymentSheet({ initialPlan = "monthly", skipPicker = false, onClose }) 
   const [fetching,     setFetching]     = useState(false);
   const [err,          setErr]          = useState("");
 
+  // Computed once per clientSecret change (not on every render) so Stripe.js
+  // loading stays a memoized value, not a side effect invoked from JSX.
+  const stripePromise = useMemo(() => (clientSecret ? getStripePromise() : null), [clientSecret]);
+
   const PLANS = {
     monthly: { label:"Monthly",  price:"$9.99",  period:"/month", sub:"Billed monthly" },
     annual:  { label:"Annual",   price:"$69.99", period:"/year",  sub:"Save 41% · $5.83/mo", badge:"BEST VALUE" },
@@ -7427,7 +7774,7 @@ function PaymentSheet({ initialPlan = "monthly", skipPicker = false, onClose }) 
 
               {/* Feature bullets */}
               <div style={{ marginBottom:22 }}>
-                {["Unlimited workout videos & AI coaching","Full analytics, history & weekly AI report","Complete meal plans & grocery list","Apple Pay, Google Pay — saved for renewals","Cancel anytime from Account Settings"].map((f,i)=>(
+                {["Unlimited workout videos & AI coaching","Full analytics, history & weekly AI report","Complete meal plans & grocery list","Apple Pay, Google Pay: saved for renewals","Cancel anytime from Account Settings"].map((f,i)=>(
                   <div key={i} style={{ display:"flex",alignItems:"center",gap:12,marginBottom:i<4?10:0 }}>
                     <div style={{ width:20,height:20,borderRadius:"50%",background:"rgba(0,163,255,0.1)",border:"1px solid rgba(0,163,255,0.3)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
                       <svg width="10" height="8" viewBox="0 0 10 8" fill="none" stroke={PRIMARY} strokeWidth="2.5"><polyline points="1,4 3.5,7 9,1"/></svg>
@@ -7446,9 +7793,9 @@ function PaymentSheet({ initialPlan = "monthly", skipPicker = false, onClose }) 
                 🔒 Secured by Stripe · 256-bit SSL encryption
               </div>
             </>
-          ) : _stripePromise ? (
+          ) : stripePromise ? (
             <Elements
-              stripe={_stripePromise}
+              stripe={stripePromise}
               options={{
                 clientSecret,
                 appearance: STRIPE_APPEARANCE,
@@ -7488,6 +7835,22 @@ function CheckoutForm({ plan, isTrial, clientSecret, onSuccess, onBack }) {
   const PLAN_LABEL  = { monthly:"$9.99 / month", annual:"$69.99 / year" };
   const PLAN_AMOUNT = { monthly: 999, annual: 6999 };
 
+  // Stripe confirming the PaymentIntent/SetupIntent client-side only means the
+  // card was accepted — the subscription doesn't actually flip to active/trialing
+  // in our DB until the Stripe webhook lands a beat later. Poll the backend
+  // (source of truth) instead of trusting client-side confirmation alone, so we
+  // never show "Welcome to Premium" for an entitlement that isn't real yet.
+  const confirmPremiumActivated = async () => {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      try {
+        const res = await apiCall("/payments/status");
+        if (res?.data?.isPremium) return true;
+      } catch (_e) { /* keep polling */ }
+      await new Promise(r => setTimeout(r, 1500));
+    }
+    return false;
+  };
+
   // Build a PaymentRequest so we can show native Apple Pay / Google Pay buttons
   useEffect(() => {
     if (!stripe || !clientSecret) return;
@@ -7522,9 +7885,15 @@ function CheckoutForm({ plan, isTrial, clientSecret, onSuccess, onBack }) {
       } else {
         ev.complete("success");
         track("subscription_started", { plan, method: "wallet", isTrial });
-        setIsPremium(true);
-        setDone(true);
-        setTimeout(onSuccess, 2600);
+        const activated = await confirmPremiumActivated();
+        if (activated) {
+          setIsPremium(true);
+          setDone(true);
+          setTimeout(onSuccess, 2600);
+        } else {
+          setErr("Payment succeeded but activation is taking longer than expected. Check back in a moment, or contact support if Premium doesn't appear.");
+          setLoading(false);
+        }
       }
     });
   }, [stripe, clientSecret, plan, isTrial]);
@@ -7547,9 +7916,15 @@ function CheckoutForm({ plan, isTrial, clientSecret, onSuccess, onBack }) {
       return;
     }
     track("subscription_started", { plan, method: "card", isTrial });
-    setIsPremium(true);
-    setDone(true);
-    setTimeout(onSuccess, 2600);
+    const activated = await confirmPremiumActivated();
+    if (activated) {
+      setIsPremium(true);
+      setDone(true);
+      setTimeout(onSuccess, 2600);
+    } else {
+      setErr("Payment succeeded but activation is taking longer than expected. Check back in a moment, or contact support if Premium doesn't appear.");
+      setLoading(false);
+    }
   };
 
   if (done) return (
@@ -7624,21 +7999,19 @@ function CheckoutForm({ plan, isTrial, clientSecret, onSuccess, onBack }) {
 }
 
 // ── DARK MODE ROW ────────────────────────────────────────────────────────────
+// Dark-only MVP (see LIGHT = DARK above) — there's no light theme to switch to
+// yet, so this renders as a disabled "coming soon" row rather than a Toggle
+// that silently does nothing when tapped.
 function DarkModeRow() {
-  const { dark, toggle } = useTheme();
   return (
     <div style={{ display:"flex",alignItems:"center",gap:14,padding:"15px 0",borderTop:"1px solid #f0f0f0" }}>
       <div style={{ width:20,height:20,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
-        {dark
-          ? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="1.8"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
-          : <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="1.8"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-        }
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="1.8"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
       </div>
       <div style={{ flex:1 }}>
-        <div style={{ fontFamily:FONT,fontWeight:600,fontSize:15,color:"#111" }}>{dark?"Dark Mode":"Light Mode"}</div>
-        <div style={{ fontFamily:FONT,fontSize:12,color:"#888888",marginTop:2 }}>{dark?"Switch to light theme":"Switch to dark theme"}</div>
+        <div style={{ fontFamily:FONT,fontWeight:600,fontSize:15,color:"#111" }}>Dark Mode</div>
+        <div style={{ fontFamily:FONT,fontSize:12,color:"#888888",marginTop:2 }}>Light theme coming soon</div>
       </div>
-      <Toggle on={dark} onToggle={toggle}/>
     </div>
   );
 }
@@ -7725,7 +8098,7 @@ function AccountSettingsPage({ onBack, onLogout }) {
             {(()=>{
               const wu = getUnitPref("vtrx_weight_unit","kg");
               const hu = getUnitPref("vtrx_height_unit","cm");
-              const wDisp = kgToDisplay(user.weight, wu);
+              const wDisp = lbsToDisplay(user.weight, wu);
               // Handle legacy ft-format strings (e.g. "5'7") and corrupt small values
               const hIsLegacyFt = typeof user.height === "string" && user.height.includes("'");
               const hNum = parseFloat(user.height);
@@ -7861,7 +8234,6 @@ function AccountSettingsPage({ onBack, onLogout }) {
       )}
       {/* Sub-page overlays — AccountSettingsPage stays mounted preserving scroll */}
       {subPage==="personal"  && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><PersonalDetailsPage    onBack={()=>setSubPage(null)}/></div>}
-      {subPage==="goal"      && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><FitnessGoalPage         onBack={()=>setSubPage(null)}/></div>}
       {subPage==="email"     && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><ChangeEmailPage         onBack={()=>setSubPage(null)}/></div>}
       {subPage==="password"  && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><ChangePasswordPage      onBack={()=>setSubPage(null)}/></div>}
       {subPage==="payment"   && <div style={{ position:"absolute",inset:0,zIndex:50,animation:"slideR 0.3s ease both" }}><PaymentMethodPage       onBack={()=>setSubPage(null)}/></div>}
@@ -7966,7 +8338,7 @@ function FitnessPreferencesPage({ onBack }) {
         </button>
         {saveError && (
           <div style={{ fontFamily:FONT,fontSize:12,color:"#EF4444",textAlign:"center",marginTop:10 }}>
-            Couldn't save — check your connection and try again.
+            Couldn't save. Check your connection and try again.
           </div>
         )}
       </div>
@@ -8024,7 +8396,23 @@ function SupportPage({ onBack }) {
   const { dark } = useTheme();
   const T = dark ? DARK : LIGHT;
   const [msg, setMsg] = useState(""); const [sent, setSent] = useState(false); const [openFaq, setOpenFaq] = useState(null);
+  const [sending, setSending] = useState(false); const [err, setErr] = useState("");
   const suppScrollRef = useScrollPos("support-page");
+
+  const sendMessage = async () => {
+    const trimmed = msg.trim();
+    if (!trimmed || sending) return;
+    setSending(true); setErr("");
+    try {
+      await apiCall('/support/message', { method: 'POST', body: JSON.stringify({ message: trimmed }) });
+      setSent(true); setMsg("");
+      setTimeout(() => setSent(false), 3000);
+    } catch (e) {
+      setErr(e?.message || "Couldn't send your message. Please try again.");
+    } finally {
+      setSending(false);
+    }
+  };
   return (
     <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column" }}>
       <div style={{ padding:"50px 18px 16px",display:"flex",alignItems:"center",gap:16,flexShrink:0 }}>
@@ -8041,7 +8429,7 @@ function SupportPage({ onBack }) {
             {q:"How do I log a workout?", a:"Tap the Workouts tab, select your session, and tap Start Workout. Complete your sets and tap the checkmark to finish."},
             {q:"What is Streak Freeze?", a:"Streak Freeze protects your streak if you miss a day. Free users get 1 freeze per month, Premium users get 3. Tap the snowflake icon in the top right of your home screen."},
             {q:"How do I upgrade to Premium?", a:"Go to Profile > Account Settings > Upgrade Plan to view plans and start your 1-month free trial."},
-            {q:"Can I change my workout preferences?", a:"Yes — go to Profile > Fitness Preferences to update your goals, experience level, equipment and days per week."},
+            {q:"Can I change my workout preferences?", a:"Yes, go to Profile > Fitness Preferences to update your goals, experience level, equipment and days per week."},
             {q:"How do I cancel my subscription?", a:"Go to Profile > Account Settings > Cancel Subscription. You will keep access until the end of your billing period."},
           ].map((item,i,arr)=>(
             <div key={i} style={{ borderBottom:i<arr.length-1?"1px solid #f0f0f0":"none" }}>
@@ -8064,11 +8452,12 @@ function SupportPage({ onBack }) {
         {/* Contact Us */}
         <div style={{ background:"#ffffff",borderRadius:20,border:"1px solid #e8e8e8",padding:"18px" }}>
           <div style={{ fontFamily:FONT,fontWeight:700,fontSize:11,color:"#888888",letterSpacing:1,marginBottom:14 }}>CONTACT US</div>
-          <textarea value={msg} onChange={e=>setMsg(e.target.value)} placeholder="Describe your issue..." rows={4}
+          <textarea value={msg} onChange={e=>setMsg(e.target.value)} placeholder="Describe your issue..." rows={4} maxLength={2000} disabled={sending}
             style={{ width:"100%",background:"#ffffff",border:"1px solid #e0e0e0",borderRadius:12,padding:"12px 14px",fontFamily:FONT,fontSize:13,color:"#111",resize:"none",outline:"none",boxSizing:"border-box" }}/>
-          <button onClick={()=>{ if(msg.trim()){ setSent(true); setMsg(""); setTimeout(()=>setSent(false),3000); } }}
-            style={{ width:"100%",marginTop:12,padding:"13px 0",borderRadius:50,background:sent?"#22C55E":PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:13,color:"#fff",letterSpacing:1.5,cursor:"pointer",transition:"background 0.3s" }}>
-            {sent?"MESSAGE SENT!":"SEND MESSAGE"}
+          {err && <div style={{ fontFamily:FONT,fontSize:12,color:"#EF4444",marginTop:8,textAlign:"center" }}>{err}</div>}
+          <button onClick={sendMessage} disabled={!msg.trim()||sending}
+            style={{ width:"100%",marginTop:12,padding:"13px 0",borderRadius:50,background:sent?"#22C55E":PRIMARY,border:"none",fontFamily:FONT,fontWeight:800,fontSize:13,color:"#fff",letterSpacing:1.5,cursor:(!msg.trim()||sending)?"not-allowed":"pointer",opacity:(!msg.trim()||sending)?0.7:1,transition:"background 0.3s" }}>
+            {sent?"MESSAGE SENT!":sending?"SENDING...":"SEND MESSAGE"}
           </button>
         </div>
 
@@ -8077,6 +8466,11 @@ function SupportPage({ onBack }) {
 }
 
 function ProgressPhotosPage({ onBack }) {
+  const { isPremium } = useUser();
+  const scrollRef = useScrollPos("progress-photos");
+  const [photos, setPhotos] = useState([
+    { id: 1, date: "Week 1", label: "Add note...", img: null },
+  ]);
   const [compareMode, setCompareMode] = useState(false);
   const [compareA, setCompareA] = useState(0);
   const [compareB, setCompareB] = useState(2);
@@ -8097,7 +8491,7 @@ function ProgressPhotosPage({ onBack }) {
     const weekNum = photos.length + 1;
     const date = new Date();
     date.setDate(date.getDate() + (photos.length * 7));
-    const label = `Week ${weekNum} — ${date.toLocaleDateString('en-US',{month:'short',day:'numeric'})}`;
+    const label = `Week ${weekNum}: ${date.toLocaleDateString('en-US',{month:'short',day:'numeric'})}`;
     setPhotos(p => [...p, { id:Date.now(), date:label, label:"Add note...", img:null }]);
   };
 
@@ -8244,25 +8638,6 @@ function ProgressPhotosPage({ onBack }) {
 
 
 
-const TIERS = [
-  { name:"Bronze",   min:0,    max:999,  color:"#CD7F32", icon:"Br", gradient:"linear-gradient(135deg,#8B4513,#CD7F32)" },
-  { name:"Silver",   min:1000, max:2199, color:"#A8A8A8", icon:"Si", gradient:"linear-gradient(135deg,#707070,#C0C0C0)" },
-  { name:"Gold",     min:2200, max:3999, color:"#FFD700", icon:"Go", gradient:"linear-gradient(135deg,#B8860B,#FFD700)" },
-  { name:"Platinum", min:4000, max:6999, color:"#E5E4E2", icon:"Pt", gradient:"linear-gradient(135deg,#8E9EAB,#E5E4E2)" },
-  { name:"Diamond",  min:7000, max:10999,color:"#B9F2FF", icon:"Di", gradient:"linear-gradient(135deg,#00B4DB,#B9F2FF)" },
-  { name:"Elite",    min:11000,max:999999,color:"#FFB700",icon:"El",gradient:"linear-gradient(135deg,#F7971E,#FFD200)" },
-];
-
-function getTier(pts) {
-  return TIERS.find(t=>pts>=t.min&&pts<=t.max) || TIERS[0];
-}
-
-function getNextTier(pts) {
-  const idx = TIERS.findIndex(t=>pts>=t.min&&pts<=t.max);
-  return idx < TIERS.length-1 ? TIERS[idx+1] : null;
-}
-
-
 // ─────────────────────────────────────────────────────────────────────────────
 // ── ACHIEVEMENTS ─────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
@@ -8304,24 +8679,6 @@ function getProgress(req, stats) {
     default: return 0;
   }
 }
-
-function useAchievements(stats) {
-  const [seenIds, setSeenIds] = React.useState(() => {
-    try { return JSON.parse(localStorage.getItem("vtrx_seen_achievements")||"[]"); } catch(_e){ return []; }
-  });
-
-  const earned = ACHIEVEMENTS.filter(a => getProgress(a.req, stats) >= a.req.n);
-  const newlyEarned = earned.filter(a => !seenIds.includes(a.id));
-
-  const markSeen = () => {
-    const allIds = earned.map(a=>a.id);
-    setSeenIds(allIds);
-    try { localStorage.setItem("vtrx_seen_achievements", JSON.stringify(allIds)); } catch(_e){}
-  };
-
-  return { earned, newlyEarned, markSeen, getProgress };
-}
-
 
 function ProfilePage({ onBack, onLogout, onNavigate, streakDay=1, workoutsTotal=0 }) {
   const profileScrollRef = useScrollPos("profile-page");
@@ -8445,7 +8802,7 @@ function ProfilePage({ onBack, onLogout, onNavigate, streakDay=1, workoutsTotal=
         <ProfileRow label="Account Settings"     sub="Manage your profile and preferences"     onPress={()=>setSubPage("account")}
           icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={PRIMARY} strokeWidth="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>}/>
         <ProfileRow label="My Challenges"
-          sub="Coming soon — challenge mode launches next update"
+          sub="Coming soon: challenge mode launches next update"
           onPress={null}
           icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="1.8"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>}
           right={<div style={{ background:"rgba(255,193,7,0.15)",border:"1px solid rgba(255,193,7,0.4)",borderRadius:20,padding:"3px 10px" }}><span style={{ fontFamily:FONT,fontWeight:700,fontSize:9,color:"#FFC107",letterSpacing:1 }}>COMING SOON</span></div>}
@@ -8801,7 +9158,7 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
     try {
       const res = await apiCall('/nutrition/generate-plan', { method: 'POST' });
       if (res?.data?.plan) setAiNutritionPlan(res.data.plan);
-    } catch(err) { setAiPlanError(err?.code === 'AI_UNAVAILABLE' ? 'AI generation is temporarily unavailable — please try again later.' : 'Generation failed — please try again.'); }
+    } catch(err) { setAiPlanError(err?.code === 'AI_UNAVAILABLE' ? 'AI generation is temporarily unavailable. Please try again later.' : 'Generation failed. Please try again.'); }
     setAiPlanGenerating(false);
   };
 
@@ -9168,7 +9525,7 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
                       <div style={{ fontFamily:FONT,fontSize:13,color:"#555",textAlign:"center",padding:"12px 0" }}>
                         {onboardingNutritionLoading
                           ? "Preparing your nutrition analysis…"
-                          : "Still generating your personalised analysis — check back in a few minutes, or we'll notify you when it's ready."}
+                          : "Still generating your personalised analysis. Check back in a few minutes, or we'll notify you when it's ready."}
                       </div>
                     ) : (
                       <>
@@ -9361,7 +9718,7 @@ function NutritionHub({ onBack, energyKey, onLogout }) {
                 {!categorizedLoading && categorized.length === 0 && (
                   <div style={{ textAlign:"center",padding:"40px 16px" }}>
                     <div style={{ fontFamily:FONT,fontWeight:700,fontSize:14,color:"#fff",marginBottom:8 }}>No recipes available yet</div>
-                    <div style={{ fontFamily:FONT,fontSize:12,color:"#555",lineHeight:1.65 }}>Check back soon — new recipes are added regularly.</div>
+                    <div style={{ fontFamily:FONT,fontSize:12,color:"#555",lineHeight:1.65 }}>Check back soon: new recipes are added regularly.</div>
                   </div>
                 )}
                 {categorized.map(cat => {
@@ -9833,8 +10190,6 @@ function useTypewriter(text, active) {
   return {displayed,done};
 }
 
-const AI_TEXT = {empty:"Your body needed rest today — and that's wisdom, not weakness. Recovery sessions reduce cortisol by up to 26% and accelerate muscle repair.",low:"Light cardio completed. You burned 150 calories and kept your cardiovascular system active on a tough day.",okay:"Solid chest and triceps session. Your pushing muscles are showing clear progressive strength gains. VTRX recommends adding 2.5kg to your bench press next session.",good:"Outstanding full-body session. Your output today was 22% above your weekly average. You're ready to advance your squat weight next week.",peak:"MAX EFFORT achieved. Today's session ranks in your top 10% of all-time performance. Eat your post-workout meal within 45 minutes."};
-
 function StatIcon({ type, color }) {
   const s = { width:13, height:13, viewBox:"0 0 24 24", fill:"none", stroke:color||"currentColor", strokeWidth:"2.5" };
   if (type==="clock")   return <svg {...s}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
@@ -9875,7 +10230,7 @@ function TrialEndedBanner({ onUpgrade }) {
             <button onClick={onUpgrade}
               style={{ flex:1,padding:"9px 0",borderRadius:50,background:"#00A3FF",border:"none",
                 fontFamily:"Montserrat,sans-serif",fontWeight:800,fontSize:12,color:"#fff",cursor:"pointer",letterSpacing:0.5 }}>
-              KEEP PREMIUM — $9.99/MO
+              KEEP PREMIUM: $9.99/MO
             </button>
             <button onClick={()=>setShow(false)}
               style={{ padding:"9px 14px",borderRadius:50,background:"transparent",
@@ -9888,9 +10243,6 @@ function TrialEndedBanner({ onUpgrade }) {
     </div>
   );
 }
-
-
-      {/* Freeze confirmation sheet — shows status if already frozen, else activation */}
 
 
 // ── Personalise workout plan from user profile ────────────────────────────────
@@ -9919,23 +10271,6 @@ function getTailoredWorkout(user, energyKey) {
   return base;
 }
 
-// ── Tailor meal plan based on user goal ───────────────────────────────────────
-function getTailoredMealOptions(user) {
-  const goal = (user?.goal || "").toLowerCase();
-  if (goal.includes("weight") || goal.includes("fat") || goal.includes("loss")) {
-    return {
-      breakfast: MEAL_OPTIONS.breakfast.filter((_,i)=>i!==0), // skip highest cal
-      lunch:     MEAL_OPTIONS.lunch,
-      snack:     MEAL_OPTIONS.snack,
-      dinner:    MEAL_OPTIONS.dinner.filter((_,i)=>i!==3),    // skip beef
-    };
-  }
-  if (goal.includes("muscle") || goal.includes("bulk") || goal.includes("gain")) {
-    return MEAL_OPTIONS; // all options fine for muscle gain
-  }
-  return MEAL_OPTIONS;
-}
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ── Nutrition Plan Regen Page (shown from ProfilePage subPage) ───────────────
@@ -9949,7 +10284,7 @@ function NutriRegenPage({ onBack, onNavigate }) {
     try {
       await apiCall('/nutrition/generate-plan', { method:'POST' });
       setDone(true);
-    } catch(_) { setError('Generation failed — please try again.'); setGenerating(false); }
+    } catch(_) { setError('Generation failed. Please try again.'); setGenerating(false); }
   };
 
   return (
@@ -10039,7 +10374,7 @@ function MyPlanPage({ onBack, onNavigate, onPlanChanged }) {
     try {
       const res = await apiCall('/workouts/generate-plan', { method: 'POST' });
       if (res?.data?.plan) { applyPlan(res.data); onPlanChanged?.(); }
-    } catch(err) { setError(err?.code === 'AI_UNAVAILABLE' ? 'AI generation is temporarily unavailable — please try again later.' : 'Generation failed — please try again.'); }
+    } catch(err) { setError(err?.code === 'AI_UNAVAILABLE' ? 'AI generation is temporarily unavailable. Please try again later.' : 'Generation failed. Please try again.'); }
     setGenerating(false);
   };
 
@@ -10236,7 +10571,188 @@ function MyPlanPage({ onBack, onNavigate, onPlanChanged }) {
   );
 }
 
-function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, streakDay=1, energyKey, onMoodSelect, weeklyWorkoutDays=0, weeklyAvgCal=null, weeklyAvgMin=null, apiWorkout=null, notifCount=0, onNotifReset, onLogout }) {
+// ── WATER INTAKE TRACKER ────────────────────────────────────────────────────
+// Compact +/- stepper (not a row of 8 tap targets) so it stays a single slim
+// row on the dashboard. One glass is treated as one US customary cup (8 fl oz
+// / ~237 ml) purely for the L/oz display; the backend still stores glasses.
+const WATER_GOAL = 8;   // daily target shown in the UI — not a hard ceiling
+const MAX_GLASSES = 50; // matches the backend's validated range (logWater in userController.js)
+const ML_PER_GLASS = 237;
+function waterAmountLabel(glasses, unit) {
+  const ml = glasses * ML_PER_GLASS;
+  return unit === "L" ? `${(ml / 1000).toFixed(1)}L` : `${Math.round(ml / 29.5735)}oz`;
+}
+function WaterDroplet({ filled, size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? PRIMARY : "none"} stroke={filled ? PRIMARY : "#444"} strokeWidth="1.8">
+      <path d="M12 2.5c0 0-7 8.5-7 13.2a7 7 0 0014 0c0-4.7-7-13.2-7-13.2z"/>
+    </svg>
+  );
+}
+function WaterTrackerCard() {
+  const [glasses, setGlasses] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [saving,  setSaving]  = useState(false);
+  const [err,     setErr]     = useState("");
+  const [unit,    setUnit]    = useState(() => getUnitPref("vtrx_water_unit", "oz"));
+  const [showHistory, setShowHistory]   = useState(false);
+  const [history,     setHistory]       = useState(null); // null = not yet loaded
+  const [historyErr,  setHistoryErr]    = useState("");
+  const historyTriggerRef = useRef(null);
+  const historyPanelRef   = useRef(null);
+
+  useEffect(() => {
+    apiCall('/users/water')
+      .then(d => setGlasses(d?.data?.glasses ?? 0))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  // Dialog semantics for the history sheet: move focus in on open, trap Tab
+  // navigation inside it, close on Escape, and give focus back to whatever
+  // opened it — without these, keyboard/screen-reader users could keep
+  // interacting with the dashboard hidden behind the backdrop.
+  useEffect(() => {
+    if (!showHistory) return;
+    const panel = historyPanelRef.current;
+    panel?.focus();
+
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowHistory(false);
+        return;
+      }
+      if (e.key !== 'Tab' || !panel) return;
+      const focusables = panel.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      if (!focusables.length) return;
+      const first = focusables[0];
+      const last  = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      historyTriggerRef.current?.focus();
+    };
+  }, [showHistory]);
+
+  const openHistory = () => {
+    // Refetch on every open rather than caching after the first load — a
+    // failed attempt previously left history as [] (not null), which is
+    // indistinguishable from "loaded, no data" and silently blocked any
+    // retry; a successful load also went stale once today's own entry
+    // changed via the +/- steppers below.
+    setShowHistory(true);
+    setHistory(null);
+    setHistoryErr("");
+    apiCall('/users/water/history?days=14')
+      .then(d => setHistory(Array.isArray(d?.data?.logs) ? d.data.logs : []))
+      .catch(() => { setHistoryErr("Couldn't load your history. Try again."); setHistory([]); });
+  };
+
+  const setLevel = async (level) => {
+    // Clamp to the backend's actual valid range, not the daily goal — if the
+    // stored value is already above WATER_GOAL, decrementing must still step
+    // down by 1 from wherever it really is, not snap down to the goal.
+    const clamped = Math.max(0, Math.min(MAX_GLASSES, level));
+    const prev = glasses;
+    setGlasses(clamped);
+    setSaving(true); setErr("");
+    try {
+      await apiCall('/users/water', { method: 'POST', body: JSON.stringify({ glasses: clamped }) });
+    } catch (e) {
+      setGlasses(prev);
+      setErr("Couldn't save. Try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleUnit = () => {
+    const next = unit === "oz" ? "L" : "oz";
+    setUnit(next);
+    try { localStorage.setItem("vtrx_water_unit", next); } catch (_e) {}
+  };
+
+  const pct = loading ? 0 : Math.min(100, Math.round((glasses / WATER_GOAL) * 100));
+  const atMin = loading || saving || glasses <= 0;
+  const atMax = loading || saving || glasses >= WATER_GOAL;
+
+  return (
+    <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"12px 16px",marginBottom:13,animation:"fadeUp 0.4s ease 0.12s both" }}>
+      <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",gap:10 }}>
+        <button ref={historyTriggerRef} onClick={openHistory} disabled={loading} aria-label="View past water intake"
+          style={{ display:"flex",alignItems:"center",gap:9,minWidth:0,background:"none",border:"none",padding:0,textAlign:"left",cursor:loading?"default":"pointer" }}>
+          <WaterDroplet filled={glasses>0}/>
+          <div style={{ minWidth:0 }}>
+            <div style={{ fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff" }}>Water Intake</div>
+            <div style={{ fontFamily:FONT,fontWeight:600,fontSize:11,color:"#888" }}>
+              {loading ? "…" : `${waterAmountLabel(glasses, unit)} of ${waterAmountLabel(WATER_GOAL, unit)} · tap to view history`}
+            </div>
+          </div>
+        </button>
+        <div style={{ display:"flex",alignItems:"center",gap:8,flexShrink:0 }}>
+          <button aria-label="Remove a glass" disabled={atMin} onClick={() => setLevel(glasses - 1)}
+            style={{ width:26,height:26,borderRadius:"50%",border:`1px solid ${BORDER}`,background:"none",color:atMin?"#444":"#fff",fontFamily:FONT,fontWeight:700,fontSize:15,cursor:atMin?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,padding:0 }}>−</button>
+          <span style={{ fontFamily:FONT,fontWeight:700,fontSize:12,color:PRIMARY,minWidth:26,textAlign:"center" }}>{loading ? "…" : `${glasses}/${WATER_GOAL}`}</span>
+          <button aria-label="Add a glass" disabled={atMax} onClick={() => setLevel(glasses + 1)}
+            style={{ width:26,height:26,borderRadius:"50%",border:"none",background:atMax?"#333":PRIMARY,color:"#fff",fontFamily:FONT,fontWeight:700,fontSize:15,cursor:atMax?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,padding:0 }}>+</button>
+        </div>
+      </div>
+      <div style={{ height:4,background:"rgba(255,255,255,0.08)",borderRadius:2,marginTop:10,overflow:"hidden" }}>
+        <div style={{ width:`${pct}%`,height:"100%",background:PRIMARY,borderRadius:2,transition:"width 0.25s ease" }}/>
+      </div>
+      <button onClick={toggleUnit} disabled={loading}
+        style={{ background:"none",border:"none",padding:0,marginTop:8,cursor:loading?"default":"pointer",fontFamily:FONT,fontWeight:600,fontSize:10.5,color:"#555" }}>
+        {loading ? "" : `Switch to ${unit === "oz" ? "L" : "oz"}`}
+      </button>
+      {err && <div style={{ fontFamily:FONT,fontSize:11,color:"#EF4444",marginTop:8,textAlign:"center" }}>{err}</div>}
+
+      {showHistory && (
+        <>
+          <div onClick={()=>setShowHistory(false)} style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.82)",zIndex:200 }}/>
+          <div ref={historyPanelRef} role="dialog" aria-modal="true" aria-labelledby="water-history-heading" tabIndex={-1}
+            style={{ position:"fixed",bottom:0,left:0,right:0,maxWidth:430,margin:"0 auto",background:"#131313",borderRadius:"24px 24px 0 0",padding:"14px 22px 40px",zIndex:201,border:`1px solid ${BORDER}`,borderBottom:"none",maxHeight:"70vh",display:"flex",flexDirection:"column",outline:"none" }}>
+            <div style={{ display:"flex",justifyContent:"center",marginBottom:14,flexShrink:0 }}><div style={{ width:40,height:4,borderRadius:2,background:"#2a2a2a" }}/></div>
+            <div id="water-history-heading" style={{ fontFamily:FONT,fontWeight:900,fontSize:18,color:"#fff",marginBottom:2,flexShrink:0 }}>Water Intake History</div>
+            <div style={{ fontFamily:FONT,fontSize:12.5,color:"#666",marginBottom:16,flexShrink:0 }}>Last 14 days · goal is {WATER_GOAL} glasses a day</div>
+            <div style={{ overflowY:"auto",flex:1 }}>
+              {history === null ? (
+                <div style={{ fontFamily:FONT,fontSize:13,color:"#666",textAlign:"center",padding:"20px 0" }}>Loading…</div>
+              ) : historyErr ? (
+                <div style={{ fontFamily:FONT,fontSize:13,color:"#EF4444",textAlign:"center",padding:"20px 0" }}>{historyErr}</div>
+              ) : history.length === 0 ? (
+                <div style={{ fontFamily:FONT,fontSize:13,color:"#666",textAlign:"center",padding:"20px 0" }}>No water logged yet in the last 14 days.</div>
+              ) : history.map(day => {
+                const dayPct = Math.min(100, Math.round((day.glasses / WATER_GOAL) * 100));
+                const label = new Date(day.date+'T00:00:00Z').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',timeZone:'UTC'});
+                return (
+                  <div key={day.date} style={{ display:"flex",alignItems:"center",gap:12,padding:"9px 0",borderBottom:`1px solid ${BORDER}` }}>
+                    <div style={{ width:92,flexShrink:0,fontFamily:FONT,fontWeight:600,fontSize:12.5,color:"#ccc" }}>{label}</div>
+                    <div style={{ flex:1,height:6,background:"rgba(255,255,255,0.08)",borderRadius:3,overflow:"hidden" }}>
+                      <div style={{ width:`${dayPct}%`,height:"100%",background:day.glasses>=WATER_GOAL?"#22C55E":PRIMARY,borderRadius:3 }}/>
+                    </div>
+                    <div style={{ width:56,flexShrink:0,textAlign:"right",fontFamily:FONT,fontWeight:700,fontSize:12.5,color:day.glasses>=WATER_GOAL?"#22C55E":"#fff" }}>{waterAmountLabel(day.glasses, unit)}</div>
+                  </div>
+                );
+              })}
+            </div>
+            <button onClick={()=>setShowHistory(false)} style={{ width:"100%",padding:"13px 0",borderRadius:50,background:"transparent",border:`1px solid ${BORDER}`,fontFamily:FONT,fontWeight:600,fontSize:13,color:"#888",cursor:"pointer",marginTop:16,flexShrink:0 }}>Close</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, streakDay=1, energyKey, onMoodSelect, weeklyWorkoutDays=0, weeklyAvgCal=null, weeklyAvgMin=null, apiWorkout=null, moodWorkoutPreviews=null, notifCount=0, onNotifReset, onLogout }) {
   const { dark } = useTheme();
   const { user, profileImg, isPremium } = useUser();
   const [trialEndedDismissed, setTrialEndedDismissed] = useState(false);
@@ -10248,7 +10764,6 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
   const [showNotifs, setShowNotifs]   = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const hasUnread = notifCount > 0;
-  const [workoutDone,      setWorkoutDone]      = useState(false);
   const [freezeStatus, setFreezeStatus] = useState(null); // { available, cap, refillsOn, frozenToday, frozenDates }
   const [showFreezeSheet, setShowFreezeSheet] = useState(false);
   const [freezeActivating, setFreezeActivating] = useState(false);
@@ -10260,21 +10775,6 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
       .then(d=>{ if (d?.data?.streakFreeze) setFreezeStatus(d.data.streakFreeze); })
       .catch(()=>{});
   }, []);
-
-  // Check for newly earned achievements (notification badging handled by notifCount from API)
-  useEffect(()=>{
-    const stats = {
-      streakDays: streakDay, workoutsTotal: 0, earlyWorkouts:0,
-      mealStreakDays:0, savedRecipes:0, challengesJoined:0,
-      challengesDone:0, profileComplete:!!(user?.name), freezeUsed:false,
-    };
-    try {
-      const seen = JSON.parse(localStorage.getItem("vtrx_seen_achievements")||"[]");
-      const earned = ACHIEVEMENTS.filter(a=>getProgress(a.req,stats)>=a.req.n);
-      const newOnes = earned.filter(a=>!seen.includes(a.id));
-      // Could surface achievement unlocks here in future
-    } catch(_e){}
-  }, [streakDay]);
 
   const activateFreeze = async () => {
     setFreezeActivating(true);
@@ -10338,7 +10838,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
 
   return (
     <div style={{ position:"absolute",inset:0,background:BG,display:"flex",flexDirection:"column" }}>
-      <MoodSheet visible={!energyKey||showMood} onSelect={(k)=>{ onMoodSelect&&onMoodSelect(k); setShowMood(false); }}/>
+      <MoodSheet visible={!energyKey||showMood} onSelect={(k)=>{ onMoodSelect&&onMoodSelect(k); setShowMood(false); }} workoutPreviews={moodWorkoutPreviews}/>
 
       {showNotifs&&(
         <div style={{ position:"absolute",inset:0,zIndex:80,animation:"slideR 0.36s ease both" }}>
@@ -10361,14 +10861,14 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
           </div>
         </div>
         <div style={{ display:"flex",gap:9 }}>
-          <button onClick={()=>setShowNotifs(true)} style={{ width:38,height:38,borderRadius:"50%",background:hasUnread?PRIMARY:CARD,border:`1px solid ${hasUnread?PRIMARY:BORDER}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",position:"relative",transition:"all 0.25s" }}>
+          <button aria-label="Notifications" onClick={()=>setShowNotifs(true)} style={{ width:38,height:38,borderRadius:"50%",background:hasUnread?PRIMARY:CARD,border:`1px solid ${hasUnread?PRIMARY:BORDER}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",position:"relative",transition:"all 0.25s" }}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={hasUnread?"#fff":"#888"} strokeWidth="1.8">
               <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/>
               <path d="M13.73 21a2 2 0 01-3.46 0"/>
             </svg>
             {hasUnread&&<div style={{ position:"absolute",top:4,right:4,width:8,height:8,borderRadius:"50%",background:"#fff",border:`1.5px solid ${PRIMARY}` }}/>}
           </button>
-          <button onClick={()=>setShowFreezeSheet(p=>!p)} style={{ width:38,height:38,borderRadius:"50%",background:freezeStatus?.frozenToday?"#0a1f0a":showFreezeSheet?PRIMARY+"22":CARD,border:"1px solid "+(freezeStatus?.frozenToday?"#22C55E55":showFreezeSheet?PRIMARY:BORDER),display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.25s" }}>
+          <button aria-label="Streak Freeze" onClick={()=>setShowFreezeSheet(p=>!p)} style={{ width:38,height:38,borderRadius:"50%",background:freezeStatus?.frozenToday?"#0a1f0a":showFreezeSheet?PRIMARY+"22":CARD,border:"1px solid "+(freezeStatus?.frozenToday?"#22C55E55":showFreezeSheet?PRIMARY:BORDER),display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.25s" }}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={freezeStatus?.frozenToday?"#22C55E":showFreezeSheet?PRIMARY:"#888"} strokeWidth="1.8">
               <line x1="12" y1="2" x2="12" y2="22"/>
               <path d="M17 7l-5-5-5 5"/>
@@ -10378,7 +10878,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
               <path d="M17 7l5 5-5 5"/>
             </svg>
           </button>
-          <button onClick={()=>setShowProfile(true)} style={{ width:38,height:38,borderRadius:"50%",background:CARD,border:`1px solid ${BORDER}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}>
+          <button aria-label="Profile" onClick={()=>setShowProfile(true)} style={{ width:38,height:38,borderRadius:"50%",background:CARD,border:`1px solid ${BORDER}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="1.8"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
           </button>
         </div>
@@ -10464,6 +10964,9 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
           </div>
         </div>
 
+        {/* WATER INTAKE */}
+        <WaterTrackerCard/>
+
         {/* MEAL OF THE DAY */}
         <div style={{ background:CARD,borderRadius:20,border:`1px solid ${BORDER}`,padding:"16px 18px",marginBottom:13,animation:"fadeUp 0.4s ease 0.15s both" }}>
           <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:13 }}>
@@ -10530,7 +11033,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
           </div>
           {workout.moodAdapted && (
             <div style={{ fontFamily:FONT,fontSize:11,color:lvl?.color||PRIMARY,marginBottom:12 }}>
-              Adjusted for today's check-in — shorter session, fewer sets
+              Adjusted for today's check-in: shorter session, fewer sets
             </div>
           )}
           <div style={{ display:"flex",gap:13,marginBottom:15 }}>
@@ -10568,20 +11071,10 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
               );
             })}
           </div>
-          {!workoutDone?(
-            <button onClick={()=>onNavigate("workoutDetail", workout)} style={{ width:"100%",padding:"15px 0",borderRadius:50,border:"none",background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,fontFamily:FONT,fontWeight:800,fontSize:13.5,color:"#fff",letterSpacing:2,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,boxShadow:`0 4px 28px ${PRIMARY}55` }}>
-              <svg width="13" height="13" viewBox="0 0 13 13" fill="white"><polygon points="0,0 13,6.5 0,13"/></svg>
-              START WORKOUT
-            </button>
-          ):(
-            <div onClick={()=>onNavigate("aiSummary")} style={{ background:"#0c1c0c",border:"1px solid #1a3a1a",borderRadius:14,padding:"13px 16px",display:"flex",alignItems:"center",gap:12,cursor:"pointer" }}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-              <div>
-                <div style={{ fontFamily:FONT,fontWeight:700,fontSize:13.5,color:"#22C55E" }}>Workout Complete!</div>
-                <div style={{ fontFamily:FONT,fontSize:11.5,color:"#1a4a1a" }}>Tap to view AI analysis</div>
-              </div>
-            </div>
-          )}
+          <button onClick={()=>onNavigate("workoutDetail", workout)} style={{ width:"100%",padding:"15px 0",borderRadius:50,border:"none",background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,fontFamily:FONT,fontWeight:800,fontSize:13.5,color:"#fff",letterSpacing:2,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,boxShadow:`0 4px 28px ${PRIMARY}55` }}>
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="white"><polygon points="0,0 13,6.5 0,13"/></svg>
+            START WORKOUT
+          </button>
         </div>
         )}
       </div>
@@ -10602,7 +11095,7 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
               {freezeStatus?.frozenToday ? (
                 <>
                   <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff",marginBottom:8 }}>Streak Freeze Active</div>
-                  <div style={{ fontFamily:FONT,fontSize:13.5,color:"#888",lineHeight:1.65 }}>Today is already protected — your streak is safe even if you don't train today.</div>
+                  <div style={{ fontFamily:FONT,fontSize:13.5,color:"#888",lineHeight:1.65 }}>Today is already protected: your streak is safe even if you don't train today.</div>
                 </>
               ) : (freezeStatus?.available ?? 0) > 0 ? (
                 <>
@@ -10614,10 +11107,22 @@ function Dashboard({ userProfile, onNavigate, scrollRef, mealIdx=0, setMealIdx, 
                   <div style={{ fontFamily:FONT,fontWeight:900,fontSize:20,color:"#fff",marginBottom:8 }}>No Freezes Left</div>
                   <div style={{ fontFamily:FONT,fontSize:13.5,color:"#888",lineHeight:1.65 }}>
                     You've used all {freezeStatus?.cap ?? 1} of your Streak Freezes this month.
-                    {freezeStatus?.refillsOn ? ` More on ${new Date(freezeStatus.refillsOn).toLocaleDateString('en-US',{month:'short',day:'numeric'})}.` : ''}
                     {!isPremium ? ' Premium gets 3 a month instead of 1.' : ''}
                   </div>
                 </>
+              )}
+              {/* Always visible regardless of which state above is showing —
+                  "last used" and "resets on" are useful context either way,
+                  not just when freezes have run out. */}
+              {(freezeStatus?.frozenDates?.length > 0 || freezeStatus?.refillsOn) && (
+                <div style={{ fontFamily:FONT,fontSize:11.5,color:"#555",marginTop:10,lineHeight:1.6 }}>
+                  {freezeStatus?.frozenDates?.length > 0 && (
+                    <div>Last used {new Date(freezeStatus.frozenDates[0]+'T00:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'})}</div>
+                  )}
+                  {freezeStatus?.refillsOn && (
+                    <div>Resets {new Date(freezeStatus.refillsOn).toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'})}</div>
+                  )}
+                </div>
               )}
               {freezeError && <div style={{ fontFamily:FONT,fontSize:12,color:"#EF4444",marginTop:10 }}>{freezeError}</div>}
             </div>
@@ -10684,6 +11189,12 @@ function VTRXAppInner({ setPaymentPlan }) {
   const { isLoaded: clerkLoaded, isSignedIn, getToken } = useClerkAuth();
   const { signOut: clerkSignOut } = useClerk();
 
+  // Keep this ahead of any other effect that calls apiCall()/getAuthToken() on
+  // mount (e.g. the splash-transition effect below) — a real signed-in user
+  // opening a stray ?demo=1 link must never have apiCall's PUBLIC_DEMO mock
+  // branch fire on a stale (default-false) _isSignedIn read.
+  useEffect(() => { _isSignedIn = isSignedIn; return () => { _isSignedIn = false; }; }, [isSignedIn]);
+
   // ── Phase / onboarding state ──────────────────────────────────────────────
   const [phase, setPhase]           = useState("splash");
   const [pendingEmail,    setPendingEmail]    = useState("");
@@ -10703,8 +11214,19 @@ function VTRXAppInner({ setPaymentPlan }) {
   };
   const goPrev = () => {
     if (screenTransitionRef.current) return;
+    // goPrev is only ever wired to screens inside the preferences SCREENS array
+    // (BodyScreen onward) and the phase==="preferences" hardware-back handler.
+    // Screen 0 there is SignUpScreen — reaching screen 1+ always means the user
+    // is already authenticated (via signup+verify or via login), so walking
+    // back to 0 would drop an already-signed-in user onto a fresh signup form.
+    // Floor at 1, not 0 — and bail out entirely at the floor rather than
+    // setting the transition lock for a no-op setScreen call. React bails out
+    // of re-rendering when the new state is Object.is-equal to the old, so a
+    // no-op here would never fire the [screen]-keyed effect below that resets
+    // the lock, permanently blocking both goPrev and goNext until reload.
+    if (screen <= 1) return;
     screenTransitionRef.current = true;
-    setDir(-1); setScreen(s=>Math.max(0,s-1));
+    setDir(-1); setScreen(s=>Math.max(1,s-1));
   };
   useEffect(() => { screenTransitionRef.current = false; }, [screen]);
   const dashboardTransitionRef = useRef(false);
@@ -10798,7 +11320,12 @@ function VTRXAppInner({ setPaymentPlan }) {
     try {
       const saved = JSON.parse(localStorage.getItem("vtrx_mood")||"{}");
       const today = new Date().toLocaleDateString('en-CA');
-      return saved.date===today ? saved.key : null; // null = show MoodSheet
+      if (saved.date !== today) return null; // null = show MoodSheet
+      // A key saved before an energy level was retired (e.g. the old "peak"
+      // option) would otherwise stick around in a signed-in user's
+      // localStorage indefinitely — fall back to re-prompting instead of
+      // carrying a mood the picker no longer offers.
+      return ENERGY_LEVELS.some(l => l.key === saved.key) ? saved.key : null;
     } catch(_e){ return null; }
   });
   const [notifCount,    setNotifCount]    = useState(0);
@@ -10824,11 +11351,11 @@ function VTRXAppInner({ setPaymentPlan }) {
   // Push one sentinel history entry so the first back press fires popstate instead
   // of leaving the app. Must be declared before any early returns to satisfy rules of hooks.
   useEffect(() => {
-    window.history.pushState({ vtrx: true }, '', window.location.pathname);
+    window.history.pushState({ vtrx: true }, '', window.location.pathname + (PUBLIC_DEMO ? '?demo=1' : ''));
     const onPopState = () => {
       const handled = handleAppBackRef.current?.();
       if (handled) {
-        window.history.pushState({ vtrx: true }, '', window.location.pathname);
+        window.history.pushState({ vtrx: true }, '', window.location.pathname + (PUBLIC_DEMO ? '?demo=1' : ''));
       }
     };
     window.addEventListener('popstate', onPopState);
@@ -10839,7 +11366,7 @@ function VTRXAppInner({ setPaymentPlan }) {
   // Cache the result in localStorage keyed by userId+date so re-mounts don't burn API quota.
   useEffect(()=>{
     const userId = liveUser?.id;
-    if (!isSignedIn || !userId) return;
+    if ((!isSignedIn && !PUBLIC_DEMO) || !userId) return;
 
     const today    = new Date().toLocaleDateString('en-CA');
     const cacheKey = `vtrx_daily_workout_${userId}`;
@@ -10866,7 +11393,7 @@ function VTRXAppInner({ setPaymentPlan }) {
 
   useEffect(()=>{
     const userId = liveUser?.id;
-    if (!isSignedIn || !userId) return;
+    if ((!isSignedIn && !PUBLIC_DEMO) || !userId) return;
     apiCall('/workouts/active-plan')
       .then(d => {
         if (d?.data?.plan) {
@@ -10917,26 +11444,43 @@ function VTRXAppInner({ setPaymentPlan }) {
       setTimeout(() => setPhase(nextPhase), delay);
     };
 
-    if (DEMO_MODE) { afterSplash("onboarding"); return; }
-    if (!isSignedIn) { afterSplash("onboarding"); return; }
+    if (DEMO_MODE && !PUBLIC_DEMO) { afterSplash("onboarding"); return; }
+    if (!isSignedIn && !PUBLIC_DEMO) { afterSplash("onboarding"); return; }
 
     // skipAuthRedirect: this is the initial app-load fetch, fired on every page
     // load/refresh for an already-signed-in user. It already falls back to
     // onboarding on failure below — a transient 401 here shouldn't force an
     // actual Clerk sign-out for a user who is genuinely still signed in.
     // A genuinely signed-in user whose profile fetch fails must not be silently
-    // treated as "never onboarded" — retry a few more times (on top of apiCall's
-    // own internal retry) before falling back.
-    const fetchProfileWithRetry = async (attemptsLeft = 3) => {
+    // treated as "never onboarded" — retry once more (on top of apiCall's own
+    // internal retry) before falling back.
+    // `cancelled` is flipped once the outer timeout below has already given up
+    // — Promise.race doesn't abort apiCall()'s in-flight fetch (that would
+    // need an AbortSignal threaded through apiCall itself, which every other
+    // call site in the app also uses), but this at least stops this retry
+    // loop from starting another attempt once nobody is waiting on it.
+    let cancelled = false;
+    const fetchProfileWithRetry = async (attemptsLeft = 2) => {
       try {
         return await apiCall("/users/profile", { skipAuthRedirect: true });
       } catch (err) {
-        if (attemptsLeft <= 1) throw err;
+        if (attemptsLeft <= 1 || cancelled) throw err;
         await new Promise(r => setTimeout(r, 1500));
         return fetchProfileWithRetry(attemptsLeft - 1);
       }
     };
-    fetchProfileWithRetry().then(res=>{
+    // Hard ceiling on top of the retries above: apiCall() already retries
+    // internally too, so a genuinely hung backend can otherwise stack up to
+    // roughly two minutes of nested retries before the splash screen gives
+    // up. Cap the user-visible wait regardless of how those retries play
+    // out — a timed-out fetch falls through to the same "login" fallback a
+    // real failure would.
+    const PROFILE_FETCH_TIMEOUT_MS = 8000;
+    const withTimeout = (promise, ms) => Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => { cancelled = true; reject(Object.assign(new Error("Profile fetch timed out"), { code: "SPLASH_TIMEOUT", status: 0 })); }, ms)),
+    ]);
+    withTimeout(fetchProfileWithRetry(), PROFILE_FETCH_TIMEOUT_MS).then(res=>{
       if (res?.data?.user) {
         const u = res.data.user;
         setUser(prev=>({...prev,
@@ -10985,7 +11529,19 @@ function VTRXAppInner({ setPaymentPlan }) {
           if (s.totalWorkouts)                  setWorkoutsTotal(s.totalWorkouts);
         }
       }).catch(()=>{});
-    }).catch(()=>{ afterSplash("onboarding"); });
+    }).catch((e)=>{
+      // fetchProfileWithRetry has already exhausted its retries — this is a
+      // genuinely signed-in Clerk user (isSignedIn was already checked above)
+      // whose profile fetch persistently failed. Route to the login form, not
+      // the marketing/onboarding carousel: OAuth callbacks and refreshes land
+      // here too, and treating an authenticated user as a brand-new visitor
+      // is the same "silently assume new user" bug fixed elsewhere in this file.
+      // TEMP DEBUG: pinpointing why this fetch fails in production — remove
+      // once diagnosed. status 0 / code SPLASH_TIMEOUT = never got a response
+      // in time; any other status means the backend was reached and responded.
+      console.error('[VTRX DEBUG] splash /users/profile fetch failed:', { status: e?.status, code: e?.code, message: e?.message });
+      afterSplash("login");
+    });
   }, [clerkLoaded, isSignedIn]);
 
   // ── Handle Stripe redirect on app load ─────────────────────────────────────
@@ -11017,8 +11573,6 @@ function VTRXAppInner({ setPaymentPlan }) {
     _getClerkToken = () => getToken();
     return () => { _getClerkToken = null; };
   }, [getToken]);
-
-  useEffect(() => { _isSignedIn = isSignedIn; return () => { _isSignedIn = false; }; }, [isSignedIn]);
 
   // When any protected API call returns 401, clear auth and send to login.
   // The actual grace period against a transient 401 during navigation lives in
@@ -11135,6 +11689,9 @@ function VTRXAppInner({ setPaymentPlan }) {
         {/* CTA buttons — last slide only, anchored to bottom with safe area */}
         {isLast && (
           <div style={{ position:"absolute",bottom:0,left:0,right:0,zIndex:20,padding:"0 28px 44px",background:"linear-gradient(180deg,transparent 0%,rgba(0,0,0,0.7) 30%,rgba(0,0,0,0.92) 100%)",paddingTop:32,display:"flex",flexDirection:"column",gap:12,animation:"fadeUp 0.5s ease 0.5s both" }}>
+            <p style={{ fontFamily:FONT,fontSize:12.5,color:"rgba(255,255,255,0.6)",textAlign:"center",lineHeight:1.5,margin:"0 0 2px" }}>
+              Join thousands starting their first real fitness plan. No gym experience required.
+            </p>
             <button onClick={()=>{ setPhase("preferences"); setScreen(0); }}
               style={{ width:"100%",padding:"17px 0",borderRadius:50,border:"none",background:`linear-gradient(135deg,${PRIMARY},#0068CC)`,fontFamily:FONT,fontWeight:800,fontSize:14,color:"#fff",letterSpacing:2,cursor:"pointer",boxShadow:`0 4px 28px ${PRIMARY}55` }}>
               GET STARTED
@@ -11175,7 +11732,7 @@ function VTRXAppInner({ setPaymentPlan }) {
       email={pendingEmail}
       onVerified={()=>{
         // Clerk already established the session in EmailVerifyScreen via setActive()
-        setPhase("preferences"); setScreen(2);
+        setPhase("preferences"); setScreen(1);
       }}
       onBack={()=>setPhase("login")}
     />
@@ -11183,30 +11740,43 @@ function VTRXAppInner({ setPaymentPlan }) {
   if (phase==="login") return (
     <LoginScreen
       onLogin={(u) => {
-        // u comes from /users/profile — use it directly to avoid stale user state
+        // u comes from /users/profile — use it directly to avoid stale user state.
+        // isPremium defaults to false on every mount (VTRXAppInner state init) and
+        // this is the only path back to the dashboard that never went through the
+        // splash-boot fetch (which does set it) — without this, a real premium
+        // user who logs back in via the credentials form shows as non-premium.
+        // Assign in both directions (not just promote to true) — otherwise a
+        // stale true from a previous session on the same device would survive
+        // a different, non-premium user logging in.
+        setIsPremium(Boolean(u?.isPremium));
         if (u?.goal && u?.fitnessLevel) {
           setPhase("dashboard");
         } else {
           // No onboarding complete yet — send to body metrics (skip signup/verify)
-          setPhase("preferences"); setScreen(2);
+          setPhase("preferences"); setScreen(1);
         }
       }}
       onSignUp={()=>{ setPhase("preferences"); setScreen(0); }}
-      onForgot={()=>setPhase("forgot")}
-      onEmailVerify={(email)=>{ setPendingEmail(email); setPhase("emailVerify"); }}/>
+      onForgot={()=>setPhase("forgot")}/>
   );
   if (phase==="forgot") return (
     <ForgotPasswordPage onBack={()=>setPhase("login")}/>
   );
 
   if (phase==="preferences") {
+    // No EmailVerifyScreen in this array — verification only ever happens via
+    // the phase==="emailVerify" route above, which already advances straight to
+    // BodyScreen (screen 1) on success. A second EmailVerifyScreen instance
+    // here was only reachable via BodyScreen's back button and was guaranteed
+    // broken every way it could be reached: signUp already complete (nothing
+    // left to verify) or signUp never created (no pendingEmail, no signUp
+    // resource — LoginScreen's onLogin path lands on BodyScreen directly).
     const SCREENS = [
       <SignUpScreen              key={0} onContinue={(email)=>{ if(email){ setPendingEmail(email); setPhase("emailVerify"); } else goNext(); }} onBack={()=>setPhase("onboarding")} onLogin={()=>setPhase("login")}/>,
-      <EmailVerifyScreen   key={1} email={pendingEmail} onVerified={goNext} onBack={goPrev}/>,
-      <BodyScreen                key={2} onContinue={goNext} onBack={goPrev}/>,
-      <TrainingScreen            key={3} onContinue={goNext} onBack={goPrev}/>,
-      <PricingScreen             key={4} onContinue={goNext} onBack={goPrev}/>,
-      <ReadyScreen               key={5} onFinish={goToDashboard}/>,
+      <BodyScreen                key={1} onContinue={goNext} onBack={goPrev}/>,
+      <TrainingScreen            key={2} onContinue={goNext} onBack={goPrev}/>,
+      <PricingScreen             key={3} onContinue={goNext} onBack={goPrev}/>,
+      <ReadyScreen               key={4} onFinish={goToDashboard}/>,
     ];
     return SCREENS[Math.min(screen, SCREENS.length-1)];
   }
@@ -11295,9 +11865,14 @@ function VTRXAppInner({ setPaymentPlan }) {
 
   if (phase !== "dashboard") return null;
 
-  const buildSessionWorkout = (session, pos, total, applyMood=false) => {
+  // moodKey: which ENERGY_LEVELS key's adaptation factors to apply, or null/
+  // undefined for the session exactly as programmed. Takes an explicit key
+  // (rather than closing over the committed energyKey) so callers can also
+  // preview a *hypothetical* mood — e.g. "what would today look like if I
+  // picked Feeling Good" — without actually committing to it.
+  const buildSessionWorkout = (session, pos, total, moodKey=null) => {
     const muscleGroups = [...new Set((session.exercises||[]).map(e=>e.muscleGroup).filter(Boolean))];
-    const adaptation = applyMood ? (MOOD_SESSION_ADAPTATION[energyKey] || null) : null;
+    const adaptation = moodKey ? (MOOD_SESSION_ADAPTATION[moodKey] || null) : null;
     const rawExercises = session.exercises || [];
     // Trim trailing (accessory) exercises first, then scale sets on what's left —
     // never drop below 1 exercise regardless of how low energy is today.
@@ -11319,11 +11894,14 @@ function VTRXAppInner({ setPaymentPlan }) {
       exercises,
       dayLabel: `Day ${pos + 1}`, fromPlan: true,
       planSessionIdx: pos, totalSessions: total,
-      moodAdapted: adaptation ? energyKey : null,
+      moodAdapted: adaptation ? moodKey : null,
     };
   };
 
-  const planWorkout = (() => {
+  // Today's raw plan session (pre-mood-adaptation), shared by planWorkout
+  // below and by the mood-picker's per-option previews so both derive today's
+  // actual workout from the same source instead of a static lookup table.
+  const todaySessionInfo = (() => {
     if (!activePlan?.plan) return null;
     const week = activePlan.plan.weeks?.[activePlan.weekNumber - 1];
     const trainingSessions = (week?.sessions || []).filter(s => !s.isRestDay);
@@ -11332,8 +11910,24 @@ function VTRXAppInner({ setPaymentPlan }) {
     const origIdx = sessionOrder[pos] ?? pos;
     const session = trainingSessions[origIdx];
     if (!session) return null;
-    return buildSessionWorkout(session, pos, trainingSessions.length, true);
+    return { session, pos, total: trainingSessions.length };
   })();
+
+  const planWorkout = todaySessionInfo
+    ? buildSessionWorkout(todaySessionInfo.session, todaySessionInfo.pos, todaySessionInfo.total, energyKey)
+    : null;
+
+  // What today would actually look like under each selectable mood — shown
+  // in the mood picker before the user commits to one. Derived from the same
+  // real plan session as planWorkout (via buildSessionWorkout) whenever one
+  // exists; only falls back to the goal/level-tailored estimate used
+  // elsewhere on the dashboard when there's no active plan to preview from.
+  const moodWorkoutPreviews = Object.fromEntries(ENERGY_LEVELS.map(l => [
+    l.key,
+    todaySessionInfo
+      ? buildSessionWorkout(todaySessionInfo.session, todaySessionInfo.pos, todaySessionInfo.total, l.key)
+      : getTailoredWorkout(user, l.key),
+  ]));
 
   // Full week in the user's current order, for the Workouts page — shows
   // every session (done/current/upcoming) so the user can reorder what's
@@ -11351,7 +11945,7 @@ function VTRXAppInner({ setPaymentPlan }) {
         position:  pos,
         // Mood only ever adapts today's session — done sessions already
         // happened, and upcoming ones will get their own day's check-in.
-        workout:   buildSessionWorkout(session, pos, trainingSessions.length, pos === currentPos),
+        workout:   buildSessionWorkout(session, pos, trainingSessions.length, pos === currentPos ? energyKey : null),
         isDone:    pos < currentPos,
         isCurrent: pos === currentPos,
       };
@@ -11364,8 +11958,6 @@ function VTRXAppInner({ setPaymentPlan }) {
   if (innerPage==="aiSummary")     return <AISummaryPage energyKey={energyKey} workoutDone={workoutDone} logId={lastWorkoutLogId} onBack={goBack}/>;
   if (innerPage==="nutrition")     { const _mealPool = getMealPool(user); return <NutritionPage meal={_mealPool[mealIdx % _mealPool.length]} onBack={goBack}/>; }
   if (innerPage==="fitnessStats")  return <FitnessStatsPage onBack={goBack} loggedWorkouts={loggedWorkouts}/>;
-  if (innerPage==="notifications") return <NotificationsPage onBack={goBack}/>;
-  if (innerPage==="profile") return <ProfilePage onBack={goBack} onLogout={handleLogout} onNavigate={navigate} streakDay={streakDay} workoutsTotal={workoutsTotal}/>;
   if (innerPage==="workoutDetail") {
     const fallbackW = WEEKLY_WORKOUTS[TODAY_IDX % WEEKLY_WORKOUTS.length];
     const activeW   = selectedScheduleWorkout || apiWorkout || fallbackW;
@@ -11507,7 +12099,7 @@ function VTRXAppInner({ setPaymentPlan }) {
               const _trainingSessions = (_week?.sessions||[]).filter(s=>!s.isRestDay);
               const _nextIdx = (activeW.planSessionIdx ?? planSessionIdx) + 1;
               if (_nextIdx >= _trainingSessions.length) {
-                const _newWeek = Math.min(activePlan.weekNumber + 1, 4);
+                const _newWeek = Math.min(activePlan.weekNumber + 1, activePlan.plan.weeks?.length || 1);
                 apiCall('/workouts/active-plan/advance-week', { method:'PATCH' }).catch(()=>{});
                 setActivePlan(prev => prev ? {...prev, weekNumber: _newWeek} : prev);
                 setPlanSessionIdx(0);
@@ -11554,7 +12146,7 @@ function VTRXAppInner({ setPaymentPlan }) {
             });
             setShowComplete(true);
           } else {
-            alert("Couldn't save your workout — check your connection and try again.");
+            alert("Couldn't save your workout. Check your connection and try again.");
           }
         }
 
@@ -11605,6 +12197,7 @@ function VTRXAppInner({ setPaymentPlan }) {
             weeklyAvgCal={weeklyAvgCal}
             weeklyAvgMin={weeklyAvgMin}
             apiWorkout={planWorkout || apiWorkout}
+            moodWorkoutPreviews={moodWorkoutPreviews}
             scrollRef={dashScrollRef}
             mealIdx={mealIdx}
             setMealIdx={setMealIdx}
@@ -11712,11 +12305,55 @@ function VTRXApp() {
   const [profileImg, setProfileImg] = useState(null);
   const [isPremium, setIsPremium] = useState(false);
   const [paymentPlan, setPaymentPlan] = useState(null);
-  return (
+  const content = (
     <UserCtx.Provider value={{ user, setUser, profileImg, setProfileImg, isPremium, setIsPremium }}>
       <VTRXAppInner setPaymentPlan={setPaymentPlan}/>
       {paymentPlan && <PaymentSheet initialPlan={paymentPlan.plan} skipPicker={paymentPlan.skipPicker} onClose={()=>setPaymentPlan(null)}/>}
     </UserCtx.Provider>
+  );
+
+  // Public demo visitors are as likely to open this on a desktop browser as a
+  // phone, but the UI itself is mobile-only (bottom tab bar, single-column
+  // cards) — so constrain it to a phone-width frame instead of stretching
+  // every card full-bleed across a wide window. Real app usage (PUBLIC_DEMO
+  // false, incl. any real mobile/PWA session) renders exactly as before.
+  if (!PUBLIC_DEMO) return content;
+  return (
+    <div style={{ minHeight:"100vh", width:"100%", background:"#000", display:"flex", justifyContent:"center" }}>
+      <div style={{
+        width:"100%", maxWidth:430, minHeight:"100vh", background:"#0a0a0a",
+        position:"relative", overflow:"hidden", boxShadow:"0 0 80px rgba(0,0,0,0.7)",
+        // A transform establishes a containing block for position:fixed
+        // descendants (the bottom tab bar, sheets, modals) so they constrain
+        // to this frame instead of the full browser viewport.
+        transform:"translateZ(0)",
+      }}>
+        <button
+          onClick={() => {
+            // Demo links open in a new tab, and browsers only honor
+            // window.close() on tabs a script opened itself — a real user
+            // click on a target="_blank" link doesn't count. Try anyway (free
+            // when it works), then fall back to navigating back to whatever
+            // linked here (the landing page), which always works.
+            window.close();
+            if (document.referrer) window.location.href = document.referrer;
+            else window.history.back();
+          }}
+          aria-label="Exit demo"
+          style={{
+            position:"fixed", top:14, right:14, zIndex:99999,
+            width:36, height:36, borderRadius:"50%",
+            background:"rgba(0,0,0,0.55)", border:"1px solid rgba(255,255,255,0.25)",
+            color:"#fff", cursor:"pointer",
+            display:"flex", alignItems:"center", justifyContent:"center",
+            backdropFilter:"blur(4px)", padding:0,
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+        {content}
+      </div>
+    </div>
   );
 }
 

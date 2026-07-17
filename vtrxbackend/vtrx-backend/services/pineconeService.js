@@ -47,7 +47,7 @@ const initIndex = async () => {
     _index = pc.index(INDEX_NAME);
     logger.info(`Pinecone: connected to index "${INDEX_NAME}"`);
   } catch (err) {
-    logger.error('Pinecone init error:', err.message);
+    logger.error(`Pinecone init error: ${err.message}`);
   }
 };
 

@@ -58,7 +58,7 @@ const getRecommendations = async (req, res) => {
       },
     });
   } catch (err) {
-    logger.error('getRecommendations error:', err.message);
+    logger.error(`getRecommendations error: ${err.message}`);
     res.status(500).json({ success: false, message: 'Failed to fetch recommendations' });
   }
 };

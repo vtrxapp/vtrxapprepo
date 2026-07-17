@@ -15,6 +15,18 @@ const getClient = () => {
 
 const FROM = process.env.RESEND_FROM_EMAIL || 'VTRX <onboarding@resend.dev>';
 
+// Destination for user-submitted support messages — falls back to FROM (the
+// same address already configured for outbound mail) so this feature works
+// without requiring a second env var to be set up.
+const SUPPORT_TO = process.env.SUPPORT_EMAIL || FROM;
+
+const escapeHtml = (str) => String(str)
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+
 // ── Welcome email ─────────────────────────────────────────────────────────────
 const sendWelcomeEmail = async ({ email, name }) => {
   const client = getClient();
@@ -118,13 +130,59 @@ const sendWelcomeEmail = async ({ email, name }) => {
       html,
     });
     if (error) {
-      logger.warn(`Welcome email failed for ${email}:`, error.message);
+      logger.warn(`Welcome email failed for ${email}: ${error.message}`);
     } else {
       logger.info(`Welcome email sent to ${email} (id: ${data?.id})`);
     }
   } catch (err) {
-    logger.warn(`Welcome email error for ${email}:`, err.message);
+    logger.warn(`Welcome email error for ${email}: ${err.message}`);
   }
 };
 
-module.exports = { sendWelcomeEmail };
+// ── Support message ───────────────────────────────────────────────────────────
+// Unlike sendWelcomeEmail (best-effort, failures are swallowed since nothing
+// depends on it), this one throws on failure — the caller needs to know
+// whether the message actually went out before telling the user it did.
+const sendSupportMessage = async ({ userEmail, userName, userId, message }) => {
+  const client = getClient();
+  if (!client) throw new Error('Email sending is not configured');
+
+  const displayName = userName || userEmail || 'A user';
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"/></head>
+<body style="margin:0;padding:0;background:#0a0a0a;font-family:'Helvetica Neue',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0a;padding:40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#111111;border-radius:24px;border:1px solid #1e1e1e;padding:40px;">
+          <tr>
+            <td>
+              <p style="margin:0 0 8px;font-size:13px;font-weight:700;color:#00A3FF;letter-spacing:2px;text-transform:uppercase;">Support message</p>
+              <h1 style="margin:0 0 20px;font-size:22px;font-weight:900;color:#ffffff;">From ${escapeHtml(displayName)}</h1>
+              <p style="margin:0 0 4px;font-size:13px;color:#888888;">Email: ${escapeHtml(userEmail || 'unknown')}</p>
+              <p style="margin:0 0 20px;font-size:13px;color:#888888;">User ID: ${escapeHtml(userId || 'unknown')}</p>
+              <div style="height:1px;background:#1e1e1e;margin-bottom:20px;"></div>
+              <p style="margin:0;font-size:15px;color:#ffffff;line-height:1.6;white-space:pre-wrap;">${escapeHtml(message)}</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  const { data, error } = await client.emails.send({
+    from:    FROM,
+    to:      SUPPORT_TO,
+    replyTo: userEmail || undefined,
+    subject: `Support message from ${displayName}`,
+    html,
+  });
+  if (error) throw new Error(error.message || 'Failed to send support message');
+  return { id: data?.id };
+};
+
+module.exports = { sendWelcomeEmail, sendSupportMessage };

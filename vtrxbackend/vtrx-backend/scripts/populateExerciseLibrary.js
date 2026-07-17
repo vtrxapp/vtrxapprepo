@@ -5,7 +5,7 @@
 // library, matches them by name, and upserts ymove IDs + thumbnail URLs into
 // the exercises table.
 //
-// Run on Railway (where YMOVE_API_KEY is set):
+// Run wherever YMOVE_API_KEY is set (production host or local .env):
 //   node scripts/populateExerciseLibrary.js
 //
 // Safe to re-run — uses upsert so nothing is duplicated.
