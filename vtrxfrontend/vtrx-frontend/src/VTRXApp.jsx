@@ -11745,7 +11745,10 @@ function VTRXAppInner({ setPaymentPlan }) {
         // this is the only path back to the dashboard that never went through the
         // splash-boot fetch (which does set it) — without this, a real premium
         // user who logs back in via the credentials form shows as non-premium.
-        if (u?.isPremium) setIsPremium(true);
+        // Assign in both directions (not just promote to true) — otherwise a
+        // stale true from a previous session on the same device would survive
+        // a different, non-premium user logging in.
+        setIsPremium(Boolean(u?.isPremium));
         if (u?.goal && u?.fitnessLevel) {
           setPhase("dashboard");
         } else {

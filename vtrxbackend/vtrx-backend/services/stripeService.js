@@ -173,8 +173,8 @@ const handleWebhookEvent = async (rawBody, signature) => {
 
       if (!userId) break;
 
+      // activatePremium() logs its own activation; no need to duplicate here.
       await activatePremium({ userId, plan, stripeSubscriptionId: session.subscription });
-      logger.info(`Premium activated for user ${userId} via checkout`);
       break;
     }
 
@@ -288,16 +288,23 @@ const handleWebhookEvent = async (rawBody, signature) => {
       const shouldActivate = curr === 'active' || (curr === 'trialing' && hasConfirmedPaymentMethod);
 
       if (shouldActivate) {
-        // 'updated' fires again for unrelated later changes (e.g. toggling
-        // cancel-at-period-end) — skip re-activating (and re-sending the
-        // welcome notification) once this exact subscription is already on.
+        const plan = sub.metadata?.plan || 'monthly';
+        // activatePremium() itself no-ops if this exact subscription is
+        // already recorded active, so 'updated' firing again for unrelated
+        // later changes (e.g. toggling cancel-at-period-end) can't re-send
+        // the welcome notification.
+        await activatePremium({ userId, plan, stripeSubscriptionId: sub.id });
+      } else {
+        // A previously-eligible subscription can become ineligible again —
+        // e.g. its payment method is detached mid-trial, before the
+        // trial-end invoice would otherwise catch it via
+        // invoice.payment_failed. Without this, isPremium/subscription
+        // status stay stuck on the earlier legitimate activation.
         const existing = await prisma.subscription.findUnique({ where: { userId } });
-        const alreadyActive = existing?.status === 'active' && existing?.stripeSubId === sub.id;
-
-        if (!alreadyActive) {
-          const plan = sub.metadata?.plan || 'monthly';
-          await activatePremium({ userId, plan, stripeSubscriptionId: sub.id });
-          logger.info(`Premium activated for user ${userId} via ${event.type} (${curr}, payment method confirmed)`);
+        if (existing?.status === 'active' && existing?.stripeSubId === sub.id) {
+          await prisma.user.update({ where: { id: userId }, data: { isPremium: false } });
+          await prisma.subscription.update({ where: { userId }, data: { status: 'inactive' } });
+          logger.warn(`Premium revoked for user ${userId}: subscription ${sub.id} no longer eligible (status=${curr}, default_payment_method=${hasConfirmedPaymentMethod})`);
         }
       }
       break;
@@ -341,35 +348,41 @@ const activatePremium = async ({ userId, plan, stripeSubscriptionId }) => {
   const stripeSub = stripeSubscriptionId
     ? await stripe.subscriptions.retrieve(stripeSubscriptionId)
     : null;
+  const currentPeriodEnd = stripeSub ? new Date(stripeSub.current_period_end * 1000) : null;
+
+  // Atomic idempotency guard: every caller (webhook subscription events,
+  // checkout.session.completed, n8n tagPremium) funnels through here. A
+  // plain findUnique()-then-if check isn't enough — two concurrent webhook
+  // deliveries for the same subscription (created + updated arriving close
+  // together, or a Stripe retry) could both read "not active yet" before
+  // either commits, and both fall through to double-send the welcome
+  // notification / Make.com ping. Making the row update itself conditional
+  // is what actually closes that: only the delivery that "wins" the update
+  // (count === 1) proceeds to the side effects below; a loser (count === 0,
+  // because the row already matched this exact subscription by the time its
+  // UPDATE ran) stops here.
+  //
+  // Subscription.userId is @unique and a row always exists by this point
+  // (createOrGetCustomer creates it up front), so this always targets
+  // exactly one row and never needs to insert.
+  const { count } = await prisma.subscription.updateMany({
+    where: {
+      userId,
+      OR: [
+        { status: { not: 'active' } },
+        { stripeSubId: { not: stripeSubscriptionId } },
+      ],
+    },
+    data: { plan, status: 'active', stripeSubId: stripeSubscriptionId, currentPeriodEnd },
+  });
+
+  if (count === 0) return; // already active for this exact subscription — no-op
 
   await prisma.$transaction([
-    // Update user
     prisma.user.update({
       where: { id: userId },
       data:  { isPremium: true },
     }),
-    // Update subscription record
-    prisma.subscription.upsert({
-      where:  { userId },
-      create: {
-        userId,
-        plan,
-        status:           'active',
-        stripeSubId:      stripeSubscriptionId,
-        currentPeriodEnd: stripeSub
-          ? new Date(stripeSub.current_period_end * 1000)
-          : null,
-      },
-      update: {
-        plan,
-        status:           'active',
-        stripeSubId:      stripeSubscriptionId,
-        currentPeriodEnd: stripeSub
-          ? new Date(stripeSub.current_period_end * 1000)
-          : null,
-      },
-    }),
-    // Welcome notification
     prisma.notification.create({
       data: {
         userId,
@@ -382,6 +395,7 @@ const activatePremium = async ({ userId, plan, stripeSubscriptionId }) => {
 
   // Notify Make.com → Slack + CRM tag
   make.send('SUBSCRIPTION', { userId, plan, stripeSubscriptionId });
+  logger.info(`Premium activated for user ${userId} (subscription ${stripeSubscriptionId})`);
 };
 
 // ── Get Subscription Status ────────────────────────────────────────────────────
