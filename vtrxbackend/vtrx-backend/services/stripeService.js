@@ -266,24 +266,39 @@ const handleWebhookEvent = async (rawBody, signature) => {
     }
 
     // ── Subscription created / became active or trialing ───────────────────
-    // Fires when in-app subscription intent is confirmed (trial or immediate)
+    // createSubscriptionIntent always passes trial_period_days, so a new
+    // subscription's status flips straight to 'trialing' the instant it's
+    // created — before the card form has even rendered, let alone been
+    // submitted. Treating bare 'trialing' as "paid" let anyone get full
+    // Premium by tapping Upgrade and closing the sheet with no card entered.
+    // A subscription is only real once payment is actually confirmed:
+    //   - status 'active': the initial invoice was charged (non-trial path).
+    //   - status 'trialing' AND default_payment_method is set: the user
+    //     confirmed their card via the auto-generated SetupIntent (Stripe
+    //     only attaches it as the subscription's default_payment_method once
+    //     stripe.confirmSetup() actually succeeds client-side).
     case 'customer.subscription.created':
     case 'customer.subscription.updated': {
       const sub    = event.data.object;
       const userId = sub.metadata?.userId;
       if (!userId) break;
 
-      const prev = event.data.previous_attributes?.status;
       const curr = sub.status;
+      const hasConfirmedPaymentMethod = !!sub.default_payment_method;
+      const shouldActivate = curr === 'active' || (curr === 'trialing' && hasConfirmedPaymentMethod);
 
-      // Activate when first transitioning from incomplete → active/trialing
-      if (
-        ['active', 'trialing'].includes(curr) &&
-        (prev === 'incomplete' || prev === undefined || event.type === 'customer.subscription.created')
-      ) {
-        const plan = sub.metadata?.plan || 'monthly';
-        await activatePremium({ userId, plan, stripeSubscriptionId: sub.id });
-        logger.info(`Premium activated for user ${userId} via ${event.type} (${curr})`);
+      if (shouldActivate) {
+        // 'updated' fires again for unrelated later changes (e.g. toggling
+        // cancel-at-period-end) — skip re-activating (and re-sending the
+        // welcome notification) once this exact subscription is already on.
+        const existing = await prisma.subscription.findUnique({ where: { userId } });
+        const alreadyActive = existing?.status === 'active' && existing?.stripeSubId === sub.id;
+
+        if (!alreadyActive) {
+          const plan = sub.metadata?.plan || 'monthly';
+          await activatePremium({ userId, plan, stripeSubscriptionId: sub.id });
+          logger.info(`Premium activated for user ${userId} via ${event.type} (${curr}, payment method confirmed)`);
+        }
       }
       break;
     }
@@ -382,7 +397,14 @@ const getSubscriptionStatus = async (userId) => {
   // Verify with Stripe directly (always source of truth)
   try {
     const stripeSub = await stripe.subscriptions.retrieve(sub.stripeSubId);
-    const isActive  = ['active', 'trialing'].includes(stripeSub.status);
+    // Same "trialing alone isn't proof of payment" gate as the webhook
+    // handler above — trial subscriptions report 'trialing' the instant
+    // they're created, before any card is attached. Without this check,
+    // this direct-from-Stripe resync (which CheckoutForm's own polling
+    // calls right after opening the payment sheet) independently re-grants
+    // the exact bypass the webhook fix closes.
+    const isActive = stripeSub.status === 'active'
+      || (stripeSub.status === 'trialing' && !!stripeSub.default_payment_method);
 
     if (isActive !== (sub.status === 'active')) {
       // Sync our database with Stripe
