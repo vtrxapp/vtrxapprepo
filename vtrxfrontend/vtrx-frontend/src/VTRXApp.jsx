@@ -11740,7 +11740,15 @@ function VTRXAppInner({ setPaymentPlan }) {
   if (phase==="login") return (
     <LoginScreen
       onLogin={(u) => {
-        // u comes from /users/profile — use it directly to avoid stale user state
+        // u comes from /users/profile — use it directly to avoid stale user state.
+        // isPremium defaults to false on every mount (VTRXAppInner state init) and
+        // this is the only path back to the dashboard that never went through the
+        // splash-boot fetch (which does set it) — without this, a real premium
+        // user who logs back in via the credentials form shows as non-premium.
+        // Assign in both directions (not just promote to true) — otherwise a
+        // stale true from a previous session on the same device would survive
+        // a different, non-premium user logging in.
+        setIsPremium(Boolean(u?.isPremium));
         if (u?.goal && u?.fitnessLevel) {
           setPhase("dashboard");
         } else {

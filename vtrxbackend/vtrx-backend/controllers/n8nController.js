@@ -51,7 +51,12 @@ const tagPremium = async (req, res) => {
 
     const sub = await stripeClient.subscriptions.retrieve(subscriptionId);
     const belongsToUser = sub.metadata?.userId === user.id;
-    const isActive      = ['active', 'trialing'].includes(sub.status);
+    // 'trialing' alone isn't proof of payment — Stripe sets that status the
+    // instant a subscription is created, before any card is confirmed (see
+    // stripeService.js's webhook handler for the same check). Require an
+    // actual charge (active) or a confirmed card during trial.
+    const isActive = sub.status === 'active'
+      || (sub.status === 'trialing' && !!sub.default_payment_method);
 
     if (!belongsToUser || !isActive) {
       logger.warn(`n8n tagPremium rejected: subscription ${subscriptionId} not a valid active subscription for user ${user.id}`);
