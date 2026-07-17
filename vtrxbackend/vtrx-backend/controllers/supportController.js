@@ -18,7 +18,9 @@ const sendMessage = async (req, res) => {
       userEmail: req.user.email,
       userName:  req.user.name,
       userId:    req.user.id,
-      message:   req.body.message.trim(),
+      // Already validated as a string and trimmed in place by the route's
+      // express-validator chain (routes/support.js) — safe to use directly.
+      message:   req.body.message,
     });
     res.json({ success: true, message: 'Message sent.' });
   } catch (error) {
