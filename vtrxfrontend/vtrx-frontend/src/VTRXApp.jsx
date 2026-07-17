@@ -8408,7 +8408,7 @@ function SupportPage({ onBack }) {
       setSent(true); setMsg("");
       setTimeout(() => setSent(false), 3000);
     } catch (e) {
-      setErr("Couldn't send your message. Please try again.");
+      setErr(e?.message || "Couldn't send your message. Please try again.");
     } finally {
       setSending(false);
     }
